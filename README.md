@@ -19,4 +19,4 @@ Solution for tracking estate biodiversity, community cats, and resident reports.
 *Coming soon — see backend/.env.example and frontend/.env.example for required env vars.*
 
 ## Status
-Week 5 — scaffolding phase. Real coding starts post-exams.
+Week 7 or 8 — scaffolding phase. Real coding starts post-exams.
