@@ -1,5 +1,34 @@
 # CLAUDE.md
 
+## PROJECT CONTEXT
+
+Project: PS 4E - Flora, Fauna & Estate Biodiversity Tracker (Full Stack PoC, SCCCI AI Challenge)
+Client: EM Services (Town Council estate management)
+
+My module (Member 3 / Klemens): Resident Reports & Authentication
+- ResidentReport CRUD (photo upload via Cloudinary, GPS pin, case status workflow: Open/In-Progress/Resolved)
+- Shared JWT authentication + RBAC middleware (roles: resident / staff / admin)
+- This auth layer is the keystone - consumed by ALL other modules (M1 flora, M2 fauna, M4 alerts)
+- Rule-based auto-email to resident when their case is resolved
+
+Tech Stack:
+- Frontend: React + Vite, shadcn/ui, Formik, Yup, Axios
+- Backend: Node.js + Express, Sequelize ORM, Yup validation
+- Database: SQLite (local dev) -> PostgreSQL via Neon (production)
+- Images: Cloudinary
+- Auth: JWT (jsonwebtoken) + bcryptjs
+
+JWT payload shape: { user_id, role, name }
+
+Key Files:
+- Submission guide and task allocation in project docs
+- Backend code in backend/src/
+
+Writing Style:
+- Use hyphen (-) instead of em dash in all generated documents and code
+
+## BEHAVIORAL GUIDELINES
+
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
@@ -47,15 +76,15 @@ The test: Every changed line should trace directly to the user's request.
 **Define success criteria. Loop until verified.**
 
 Transform tasks into verifiable goals:
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
+- "Add validation" - "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" - "Write a test that reproduces it, then make it pass"
+- "Refactor X" - "Ensure tests pass before and after"
 
 For multi-step tasks, state a brief plan:
 ```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
+1. [Step] - verify: [check]
+2. [Step] - verify: [check]
+3. [Step] - verify: [check]
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
