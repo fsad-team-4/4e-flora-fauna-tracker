@@ -1,0 +1,138 @@
+const yup = require('yup');
+const { ResidentReport, CaseStatusLog } = require('../models');
+
+const CATEGORIES = ['flora_health', 'community_cat', 'pigeon', 'pest', 'other'];
+const STATUSES = ['open', 'in_progress', 'resolved'];
+
+const createSchema = yup.object({
+  category: yup.string().required().oneOf(CATEGORIES),
+  title: yup.string().required().trim().max(200),
+  description: yup.string().required().trim(),
+  photo_urls: yup.array().of(yup.string().url()).max(5),
+  gps_lat: yup.number(),
+  gps_lng: yup.number(),
+  block_number: yup.string(),
+  floor_level: yup.string(),
+});
+
+const statusSchema = yup.object({
+  status: yup.string().required().oneOf(STATUSES),
+});
+
+async function createReport(req, res) {
+  let data;
+  try {
+    data = await createSchema.validate(req.body, { abortEarly: false });
+  } catch (err) {
+    return res.status(400).json({ error: err.errors });
+  }
+
+  const report = await ResidentReport.create({
+    category: data.category,
+    title: data.title,
+    description: data.description,
+    photo_urls: data.photo_urls || [],
+    gps_lat: data.gps_lat,
+    gps_lng: data.gps_lng,
+    block_number: data.block_number,
+    floor_level: data.floor_level,
+    reported_by: req.user.user_id,
+  });
+
+  return res.status(201).json(report);
+}
+
+async function listReports(req, res) {
+  const where = { is_deleted: false };
+
+  if (req.user.role === 'resident') {
+    where.reported_by = req.user.user_id;
+  }
+  if (req.query.status) {
+    where.status = req.query.status;
+  }
+  if (req.query.category) {
+    where.category = req.query.category;
+  }
+
+  const reports = await ResidentReport.findAll({
+    where,
+    include: [{ association: 'reporter', attributes: ['id', 'name'] }],
+    order: [['createdAt', 'DESC']],
+  });
+
+  return res.status(200).json(reports);
+}
+
+async function getReport(req, res) {
+  const report = await ResidentReport.findOne({
+    where: { id: req.params.id, is_deleted: false },
+    include: [
+      { association: 'reporter', attributes: ['id', 'name'] },
+      {
+        model: CaseStatusLog,
+        include: [{ association: 'changer', attributes: ['id', 'name'] }],
+      },
+    ],
+  });
+
+  if (!report) {
+    return res.status(404).json({ error: 'Report not found' });
+  }
+  if (req.user.role === 'resident' && report.reported_by !== req.user.user_id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  return res.status(200).json(report);
+}
+
+async function updateStatus(req, res) {
+  let data;
+  try {
+    data = await statusSchema.validate(req.body, { abortEarly: false });
+  } catch (err) {
+    return res.status(400).json({ error: err.errors });
+  }
+
+  const report = await ResidentReport.findOne({
+    where: { id: req.params.id, is_deleted: false },
+  });
+  if (!report) {
+    return res.status(404).json({ error: 'Report not found' });
+  }
+
+  if (report.status !== data.status) {
+    await CaseStatusLog.create({
+      report_id: report.id,
+      old_status: report.status,
+      new_status: data.status,
+      changed_by: req.user.user_id,
+    });
+    report.status = data.status;
+    await report.save();
+  }
+
+  return res.status(200).json(report);
+}
+
+async function softDeleteReport(req, res) {
+  const report = await ResidentReport.findOne({
+    where: { id: req.params.id, is_deleted: false },
+  });
+  if (!report) {
+    return res.status(404).json({ error: 'Report not found' });
+  }
+
+  report.is_deleted = true;
+  await report.save();
+
+  return res.status(200).json({ message: 'Report deleted' });
+}
+
+module.exports = {
+  createReport,
+  listReports,
+  getReport,
+  updateStatus,
+  softDeleteReport,
+};
