@@ -1,8 +1,10 @@
-# Auth System - Test Cases (Member 3 / Klemens)
+# Auth + Resident Reports - Test Cases (Member 3 / Klemens)
 
 Tested with Jest + Supertest against the Express app, using an isolated
 in-memory SQLite database (`sqlite::memory:`, `sync({ force: true })`) so the
-dev database is never touched. File: `auth.test.js`.
+dev database is never touched. Files: `auth.test.js`, `reports.test.js`.
+
+## Auth (`auth.test.js`)
 
 | # | Endpoint | Scenario | Input | Expected |
 |---|----------|----------|-------|----------|
@@ -11,6 +13,23 @@ dev database is never touched. File: `auth.test.js`.
 | 3 | POST /api/auth/register | Invalid input | Bad email format + password too short ("12") | 400 (yup validation failure) |
 | 4 | POST /api/auth/login | Correct credentials (happy path) | Email + password from test 1 | 200; body has a JWT `token` (string) |
 | 5 | POST /api/auth/login | Wrong password | Valid email, wrong password | 401; generic message, does not reveal which field was wrong |
+
+## Resident Reports (`reports.test.js`)
+
+Setup: registers and logs in two residents (res1, res2), one staff, and one
+admin in `beforeAll`; res1 and res2 each create a report.
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 6 | POST /api/reports | Resident creates report (happy path) | Valid category/title/description with `reported_by: 999` spoofed in body | 201; `reported_by` taken from the JWT (res1's id), body value ignored |
+| 7 | POST /api/reports | Invalid category | `category: "bogus"` | 400 (yup validation failure) |
+| 8 | GET /api/reports | Resident list scoping | res1 lists reports | 200; only res1's own report returned |
+| 9 | GET /api/reports | Staff list scoping | staff lists reports | 200; all reports returned |
+| 10 | GET /api/reports/:id | Resident views another resident's report | res2 requests res1's report | 403 |
+| 11 | PATCH /api/reports/:id/status | Resident attempts status change | res1 patches status | 403 (restrictTo staff/admin) |
+| 12 | PATCH /api/reports/:id/status | Staff changes status | staff sets `in_progress` | 200; exactly one CaseStatusLog created (open -> in_progress) |
+| 13 | DELETE /api/reports/:id | Staff attempts delete | staff deletes report | 403 (restrictTo admin) |
+| 14 | DELETE /api/reports/:id | Admin soft-deletes | admin deletes, then GET same id | DELETE 200; subsequent GET 404 |
 
 ## Notes
 
