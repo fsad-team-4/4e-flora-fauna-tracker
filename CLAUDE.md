@@ -12,7 +12,7 @@ My module (Member 3 / Klemens): Resident Reports & Authentication
 - Rule-based auto-email to resident when their case is resolved
 
 Tech Stack:
-- Frontend: React + Vite, shadcn/ui, Formik, Yup, Axios
+- Frontend: React + Vite, MUI/ui, Formik, Yup, Axios
 - Backend: Node.js + Express, Sequelize ORM, Yup validation
 - Database: SQLite (local dev) -> PostgreSQL via Neon (production)
 - Images: Cloudinary
