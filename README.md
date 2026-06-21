@@ -4,10 +4,10 @@ PoC for SCCCI AI Challenge (Problem Statement 4E).
 Solution for tracking estate biodiversity, community cats, and resident reports.
 
 ## Team
-- Member 1 (Flora)
-- Member 2 (Fauna)
+- Member 1 (Flora) - Shernell
+- Member 2 (Fauna) - Renee
 - Member 3 (Resident reports + Auth) — Klemens
-- Member 4 (Alerts + Dashboard)
+- Member 4 (Alerts + Dashboard) - Angelyn
 
 ## Tech Stack
 - Frontend: React (Vercel)
@@ -16,7 +16,7 @@ Solution for tracking estate biodiversity, community cats, and resident reports.
 - Storage: Cloudinary
 
 ## Setup
-*Coming soon — see backend/.env.example and frontend/.env.example for required env vars.*
+*Coming soon — see backend/.env.example and frontend/.env.example for required env vars.* 
 
 ## Status
-Week 7 or 8 — scaffolding phase. Real coding starts post-exams.
+Week 7 or 8 — scaffolding phase. Real coding starts post-exams. (in progress)
