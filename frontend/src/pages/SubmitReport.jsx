@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
-import { Box, TextField, Button, Typography, Alert, MenuItem } from '@mui/material';
+import { Box, TextField, Button, Typography, Alert, MenuItem, Stack } from '@mui/material';
 import http from '../http';
 
 const CATEGORIES = [
@@ -24,6 +24,10 @@ const validationSchema = yup.object({
 export default function SubmitReport() {
   const navigate = useNavigate();
   const [apiError, setApiError] = useState('');
+  const [photoUrls, setPhotoUrls] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef(null);
 
   const formik = useFormik({
     initialValues: {
@@ -37,7 +41,7 @@ export default function SubmitReport() {
     onSubmit: async (values) => {
       setApiError('');
       try {
-        await http.post('/api/reports', values);
+        await http.post('/api/reports', { ...values, photo_urls: photoUrls });
         navigate('/reports');
       } catch (err) {
         const data = err.response?.data?.error;
@@ -45,6 +49,31 @@ export default function SubmitReport() {
       }
     },
   });
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setUploadError('');
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await http.post('/api/uploads', formData);
+      setPhotoUrls([res.data.url]);
+    } catch (err) {
+      setUploadError(err.response?.data?.error || 'Upload failed');
+      // reset the input so the same file can be retried
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setPhotoUrls([]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   return (
     <Box component="form" onSubmit={formik.handleSubmit} sx={{ maxWidth: 500, mx: 'auto', mt: 4 }}>
@@ -108,9 +137,46 @@ export default function SubmitReport() {
         onChange={formik.handleChange}
         onBlur={formik.handleBlur}
       />
-      <Button fullWidth type="submit" variant="contained" sx={{ mt: 2 }} disabled={formik.isSubmitting}>
-        Submit
-      </Button>
+
+      <Box sx={{ mt: 2 }}>
+        {uploadError && <Alert severity="error" sx={{ mb: 1 }}>{uploadError}</Alert>}
+        <Button variant="outlined" component="label" disabled={uploading}>
+          {uploading ? 'Uploading...' : 'Add Photo'}
+          <input
+            type="file"
+            hidden
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+          />
+        </Button>
+        {photoUrls.length > 0 && (
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+            <img
+              src={photoUrls[0]}
+              alt="Uploaded preview"
+              style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4 }}
+            />
+            <Button color="error" onClick={handleRemovePhoto} size="small">
+              Remove
+            </Button>
+          </Stack>
+        )}
+      </Box>
+
+      <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
+        <Button
+          variant="outlined"
+          color="secondary"
+          onClick={() => navigate('/reports')}
+          disabled={formik.isSubmitting || uploading}
+        >
+          Cancel
+        </Button>
+        <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting || uploading}>
+          Submit
+        </Button>
+      </Stack>
     </Box>
   );
 }
