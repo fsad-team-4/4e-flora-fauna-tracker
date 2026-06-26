@@ -31,6 +31,22 @@ admin in `beforeAll`; res1 and res2 each create a report.
 | 13 | DELETE /api/reports/:id | Staff attempts delete | staff deletes report | 403 (restrictTo admin) |
 | 14 | DELETE /api/reports/:id | Admin soft-deletes | admin deletes, then GET same id | DELETE 200; subsequent GET 404 |
 
+## Image Upload (manual testing via Postman)
+
+The `POST /api/uploads` endpoint streams the uploaded image to Cloudinary, an
+external service. It has no automated jest tests because that would require
+mocking the Cloudinary SDK; instead the cases below were verified manually with
+Postman against a running server.
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 15 | POST /api/uploads | Valid image upload (happy path) | Auth token + image file in field `image` | 200; body `{ url }` containing a Cloudinary `secure_url` |
+| 16 | POST /api/uploads | No auth token | Image file, no Authorization header | 401 |
+| 17 | POST /api/uploads | Wrong field name | Image file sent under a field other than `image` | 400 "Image must be sent in a field named 'image'" |
+| 18 | POST /api/uploads | Non-image file | A `.txt` file in field `image` | 400 "Only JPEG, PNG, and WebP images are allowed" |
+| 19 | POST /api/uploads | File over size limit | An image larger than 5MB in field `image` | 400 "Image must be 5MB or smaller" |
+| 20 | POST /api/uploads | No file | Auth token, no file attached | 400 "No image file provided" |
+
 ## Notes
 
 - Tests 1, 2, and 4 share state intentionally: test 1 creates the user that
