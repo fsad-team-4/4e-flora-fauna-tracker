@@ -1,5 +1,6 @@
 const yup = require('yup');
 const { ResidentReport, CaseStatusLog } = require('../models');
+const { sendMail } = require('../config/mailer');
 
 const CATEGORIES = ['flora_health', 'community_cat', 'pigeon', 'pest', 'other'];
 const STATUSES = ['open', 'in_progress', 'resolved'];
@@ -110,6 +111,20 @@ async function updateStatus(req, res) {
     });
     report.status = data.status;
     await report.save();
+
+    // Rule-based notification: email the reporter when their case is resolved.
+    // Fire-and-forget - sendMail swallows its own errors, so we don't await it
+    // and the status response returns without waiting on SMTP.
+    if (data.status === 'resolved') {
+      const reporter = await report.getReporter();
+      if (reporter) {
+        sendMail({
+          to: reporter.email,
+          subject: 'Your report has been resolved',
+          text: `Hi ${reporter.name},\n\nYour report "${report.title}" has been marked as resolved.\n\nThank you for helping keep the estate in good shape.\n\n- 4E Biodiversity Tracker`,
+        });
+      }
+    }
   }
 
   return res.status(200).json(report);
