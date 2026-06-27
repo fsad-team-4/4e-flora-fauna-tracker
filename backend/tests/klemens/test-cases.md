@@ -2,7 +2,8 @@
 
 Tested with Jest + Supertest against the Express app, using an isolated
 in-memory SQLite database (`sqlite::memory:`, `sync({ force: true })`) so the
-dev database is never touched. Files: `auth.test.js`, `reports.test.js`.
+dev database is never touched. Files: `auth.test.js`, `reports.test.js`,
+`email-notification.test.js`.
 
 ## Auth (`auth.test.js`)
 
@@ -31,6 +32,17 @@ admin in `beforeAll`; res1 and res2 each create a report.
 | 13 | DELETE /api/reports/:id | Staff attempts delete | staff deletes report | 403 (restrictTo admin) |
 | 14 | DELETE /api/reports/:id | Admin soft-deletes | admin deletes, then GET same id | DELETE 200; subsequent GET 404 |
 
+## Resolved-Email Notification (`email-notification.test.js`)
+
+`config/mailer` is mocked with `jest.fn()` so no real SMTP/Ethereal call is
+made; the tests assert only the controller's notification rule. The actual email
+delivery (Ethereal preview URL) is verified manually - see the Notes section.
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 15 | PATCH /api/reports/:id/status | Non-resolved status change | staff sets `in_progress` | 200; `sendMail` is NOT called |
+| 16 | PATCH /api/reports/:id/status | Resolved status change | staff sets `resolved` | 200; `sendMail` called once with `to` = the reporter's email |
+
 ## Image Upload (manual testing via Postman)
 
 The `POST /api/uploads` endpoint streams the uploaded image to Cloudinary, an
@@ -40,12 +52,12 @@ Postman against a running server.
 
 | # | Endpoint | Scenario | Input | Expected |
 |---|----------|----------|-------|----------|
-| 15 | POST /api/uploads | Valid image upload (happy path) | Auth token + image file in field `image` | 200; body `{ url }` containing a Cloudinary `secure_url` |
-| 16 | POST /api/uploads | No auth token | Image file, no Authorization header | 401 |
-| 17 | POST /api/uploads | Wrong field name | Image file sent under a field other than `image` | 400 "Image must be sent in a field named 'image'" |
-| 18 | POST /api/uploads | Non-image file | A `.txt` file in field `image` | 400 "Only JPEG, PNG, and WebP images are allowed" |
-| 19 | POST /api/uploads | File over size limit | An image larger than 5MB in field `image` | 400 "Image must be 5MB or smaller" |
-| 20 | POST /api/uploads | No file | Auth token, no file attached | 400 "No image file provided" |
+| 17 | POST /api/uploads | Valid image upload (happy path) | Auth token + image file in field `image` | 200; body `{ url }` containing a Cloudinary `secure_url` |
+| 18 | POST /api/uploads | No auth token | Image file, no Authorization header | 401 |
+| 19 | POST /api/uploads | Wrong field name | Image file sent under a field other than `image` | 400 "Image must be sent in a field named 'image'" |
+| 20 | POST /api/uploads | Non-image file | A `.txt` file in field `image` | 400 "Only JPEG, PNG, and WebP images are allowed" |
+| 21 | POST /api/uploads | File over size limit | An image larger than 5MB in field `image` | 400 "Image must be 5MB or smaller" |
+| 22 | POST /api/uploads | No file | Auth token, no file attached | 400 "No image file provided" |
 
 ## Notes
 
@@ -55,3 +67,7 @@ Postman against a running server.
   by the API.
 - Login does not distinguish "unknown email" from "wrong password" - both
   return the same 401 so the API does not leak which accounts exist.
+- The resolved-email is sent fire-and-forget (not awaited), so the status
+  response returns without waiting on SMTP, and a mail failure cannot break the
+  status update. The jest tests mock the mailer; actual delivery is verified
+  manually by triggering a resolve and opening the logged Ethereal preview URL.
