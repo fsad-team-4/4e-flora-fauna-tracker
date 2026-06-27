@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import SubmitReport from './pages/SubmitReport'
 import MyReports from './pages/MyReports'
+import ReportDetail from './pages/ReportDetail'
 
 function Home() {
   const { user, setUser } = useUser()
@@ -64,6 +65,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/submit-report" element={<ProtectedRoute><SubmitReport /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
+            <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
       </BrowserRouter>

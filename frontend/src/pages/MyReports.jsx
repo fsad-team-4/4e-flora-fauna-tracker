@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { Box, Typography, Button, Card, CardContent, Chip, Alert } from '@mui/material';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { Box, Typography, Button, Card, CardActionArea, CardContent, Chip, Alert } from '@mui/material';
 import http from '../http';
 
 const CATEGORY_LABELS = {
@@ -20,6 +20,7 @@ const STATUS_COLORS = {
 export default function MyReports() {
   const [reports, setReports] = useState([]);
   const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     http
@@ -47,25 +48,27 @@ export default function MyReports() {
       ) : (
         reports.map((report) => (
           <Card key={report.id} sx={{ mb: 2 }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">{report.title}</Typography>
-                <Chip
-                  label={report.status}
-                  color={STATUS_COLORS[report.status] || 'default'}
-                  size="small"
-                />
-              </Box>
-              <Typography color="text.secondary">
-                {CATEGORY_LABELS[report.category] || report.category}
-              </Typography>
-              {report.block_number && (
-                <Typography variant="body2">Block: {report.block_number}</Typography>
-              )}
-              <Typography variant="caption" color="text.secondary">
-                {new Date(report.createdAt).toLocaleString()}
-              </Typography>
-            </CardContent>
+            <CardActionArea onClick={() => navigate(`/reports/${report.id}`)}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography variant="h6">{report.title}</Typography>
+                  <Chip
+                    label={report.status}
+                    color={STATUS_COLORS[report.status] || 'default'}
+                    size="small"
+                  />
+                </Box>
+                <Typography color="text.secondary">
+                  {CATEGORY_LABELS[report.category] || report.category}
+                </Typography>
+                {report.block_number && (
+                  <Typography variant="body2">Block: {report.block_number}</Typography>
+                )}
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(report.createdAt).toLocaleString()}
+                </Typography>
+              </CardContent>
+            </CardActionArea>
           </Card>
         ))
       )}
