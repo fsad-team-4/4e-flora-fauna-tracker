@@ -6,22 +6,7 @@ import {
 } from '@mui/material';
 import http from '../http';
 import { useUser } from '../contexts/UserContext';
-
-const CATEGORY_LABELS = {
-  flora_health: 'Flora Health',
-  community_cat: 'Community Cat',
-  pigeon: 'Pigeon',
-  pest: 'Pest',
-  other: 'Other',
-};
-
-const STATUS_COLORS = {
-  open: 'warning',
-  in_progress: 'info',
-  resolved: 'success',
-};
-
-const STATUS_OPTIONS = ['open', 'in_progress', 'resolved'];
+import { CATEGORY_LABELS, STATUS_COLORS, STATUS_OPTIONS } from '../constants';
 
 export default function ReportDetail() {
   const { id } = useParams();

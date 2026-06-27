@@ -2,20 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Card, CardActionArea, CardContent, Chip, Alert } from '@mui/material';
 import http from '../http';
-
-const CATEGORY_LABELS = {
-  flora_health: 'Flora Health',
-  community_cat: 'Community Cat',
-  pigeon: 'Pigeon',
-  pest: 'Pest',
-  other: 'Other',
-};
-
-const STATUS_COLORS = {
-  open: 'warning',
-  in_progress: 'info',
-  resolved: 'success',
-};
+import { CATEGORY_LABELS, STATUS_COLORS } from '../constants';
 
 export default function MyReports() {
   const [reports, setReports] = useState([]);
