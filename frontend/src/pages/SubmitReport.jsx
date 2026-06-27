@@ -4,14 +4,7 @@ import { useFormik } from 'formik';
 import * as yup from 'yup';
 import { Box, TextField, Button, Typography, Alert, MenuItem, Stack } from '@mui/material';
 import http from '../http';
-
-const CATEGORIES = [
-  { value: 'flora_health', label: 'Flora Health' },
-  { value: 'community_cat', label: 'Community Cat' },
-  { value: 'pigeon', label: 'Pigeon' },
-  { value: 'pest', label: 'Pest' },
-  { value: 'other', label: 'Other' },
-];
+import { CATEGORIES } from '../constants';
 
 const validationSchema = yup.object({
   category: yup.string().required('Category is required'),
