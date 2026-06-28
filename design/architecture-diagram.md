@@ -6,6 +6,7 @@ uploads) plus the planned cloud services. Teammate modules (M1 Flora, M2 Fauna,
 M4 Alerts) are additional routes/controllers within the same backend - marked as
 placeholders.
 
+
 ```mermaid
 graph TD
     User([User Browser])

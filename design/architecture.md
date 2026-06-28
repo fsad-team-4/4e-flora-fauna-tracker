@@ -23,6 +23,10 @@ records.
 
 ---
 
+See architecture-diagram.md (Mermaid source) and architecture-diagram.png for the full system architecture diagram.
+
+---
+
 ## 2. Backend Folder Structure (`backend/src/`)
 
 | Folder / file | Purpose |
