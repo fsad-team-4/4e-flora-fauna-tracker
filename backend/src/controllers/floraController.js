@@ -1,5 +1,5 @@
 const yup = require('yup');
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenAI } = require('@google/genai');
 const { GreeneryRecord } = require('../models');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
@@ -153,7 +153,7 @@ async function careRecommendation(req, res) {
     return res.status(404).json({ error: 'Greenery record not found' });
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({ error: 'AI service not configured' });
   }
 
@@ -165,20 +165,18 @@ Species: ${record.species}
 Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
-Health notes: ${record.health_notes || 'none'}`;
+Health notes: ${record.health_notes || 'none'}
+Respond with only the recommendation itself, in 3-5 short bullet points. No preamble or introduction.`;
 
   let recommendation;
   try {
-    const client = new Anthropic();
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 300,
-      messages: [{ role: 'user', content: prompt }],
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await client.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
     });
-    recommendation = message.content
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
+    recommendation = response.text;
   } catch (err) {
     return res.status(502).json({ error: `AI request failed: ${err.message}` });
   }
