@@ -32,6 +32,10 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  care_recommendation: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
   last_inspected_at: {
     type: DataTypes.DATE,
     allowNull: true,

@@ -1,4 +1,5 @@
 const yup = require('yup');
+const Anthropic = require('@anthropic-ai/sdk');
 const { GreeneryRecord } = require('../models');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
@@ -143,10 +144,56 @@ async function bulkUploadCSV(req, res) {
   return res.status(201).json({ created: created.length, errors });
 }
 
+// Generate an AI care recommendation for a plant asset
+async function careRecommendation(req, res) {
+  const record = await GreeneryRecord.findOne({
+    where: { id: req.params.id, is_deleted: false },
+  });
+  if (!record) {
+    return res.status(404).json({ error: 'Greenery record not found' });
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  const prompt = `You are advising estate maintenance staff in Singapore's tropical climate.
+Give a concise, actionable care recommendation for this plant. Keep it practical -
+cover watering, shade, pest treatment, pruning, and when to escalate to a specialist.
+
+Species: ${record.species}
+Common name: ${record.common_name || 'unknown'}
+Location zone: ${record.location_zone || 'unspecified'}
+Health status: ${record.health_status}
+Health notes: ${record.health_notes || 'none'}`;
+
+  let recommendation;
+  try {
+    const client = new Anthropic();
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 300,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    recommendation = message.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('');
+  } catch (err) {
+    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+  }
+
+  record.care_recommendation = recommendation;
+  await record.save();
+
+  return res.status(200).json(record);
+}
+
 module.exports = {
   getAllGreenery,
   createGreenery,
   updateGreenery,
   softDeleteGreenery,
   bulkUploadCSV,
+  careRecommendation,
 };

@@ -12,5 +12,6 @@ router.post('/', protect, restrictTo('staff', 'admin'), floraController.createGr
 router.patch('/:id', protect, restrictTo('staff', 'admin'), floraController.updateGreenery);   // Update a record
 router.delete('/:id', protect, restrictTo('staff', 'admin'), floraController.softDeleteGreenery); // Soft-delete a record
 router.post('/bulk', protect, restrictTo('staff', 'admin'), csvUpload.single('file'), floraController.bulkUploadCSV);   // Bulk import spreadsheet hook
+router.post('/:id/care-recommendation', protect, restrictTo('staff', 'admin'), floraController.careRecommendation);   // AI care recommendation
 
 module.exports = router;
