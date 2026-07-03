@@ -8,6 +8,7 @@ import SubmitReport from './pages/SubmitReport'
 import MyReports from './pages/MyReports'
 import ReportDetail from './pages/ReportDetail'
 import AllReports from './pages/AllReports'
+import FloraList from './pages/FloraList'
 
 function Home() {
   const { user, setUser } = useUser()
@@ -48,7 +49,10 @@ function NavBar() {
             <Button color="inherit" component={RouterLink} to="/submit-report">Submit Report</Button>
             <Button color="inherit" component={RouterLink} to="/reports">My Reports</Button>
             {(user.role === 'staff' || user.role === 'admin') && (
-              <Button color="inherit" component={RouterLink} to="/all-reports">All Reports</Button>
+              <>
+                <Button color="inherit" component={RouterLink} to="/all-reports">All Reports</Button>
+                <Button color="inherit" component={RouterLink} to="/flora">Flora</Button>
+              </>
             )}
           </>
         )}
@@ -70,6 +74,7 @@ function App() {
             <Route path="/submit-report" element={<ProtectedRoute><SubmitReport /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
             <Route path="/all-reports" element={<ProtectedRoute><AllReports /></ProtectedRoute>} />
+            <Route path="/flora" element={<ProtectedRoute><FloraList /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
