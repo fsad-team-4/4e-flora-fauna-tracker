@@ -9,6 +9,7 @@ import MyReports from './pages/MyReports'
 import ReportDetail from './pages/ReportDetail'
 import AllReports from './pages/AllReports'
 import FloraList from './pages/FloraList'
+import AddFlora from './pages/AddFlora'
 
 function Home() {
   const { user, setUser } = useUser()
@@ -75,6 +76,7 @@ function App() {
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
             <Route path="/all-reports" element={<ProtectedRoute><AllReports /></ProtectedRoute>} />
             <Route path="/flora" element={<ProtectedRoute><FloraList /></ProtectedRoute>} />
+            <Route path="/flora/add" element={<ProtectedRoute><AddFlora /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
           </Routes>
         </Container>

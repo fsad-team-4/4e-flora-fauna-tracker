@@ -96,7 +96,7 @@ export default function FloraList() {
         </CardContent>
       </Card>
 
-      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center">
         <TextField
           select
           label="Health Status"
@@ -110,6 +110,9 @@ export default function FloraList() {
             <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
           ))}
         </TextField>
+        <Button variant="contained" onClick={() => navigate('/flora/add')}>
+          Add Plant
+        </Button>
       </Stack>
 
       {loading && <Typography>Loading...</Typography>}
