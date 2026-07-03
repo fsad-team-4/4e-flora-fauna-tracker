@@ -166,7 +166,7 @@ Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
 Health notes: ${record.health_notes || 'none'}
-Respond with only the recommendation itself, in 3-5 short bullet points. No preamble or introduction.`;
+Respond with only the recommendation itself, as 3-5 short bullet points. Plain text only - no markdown, no asterisks, no bold. Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. No preamble or introduction.`;
 
   let recommendation;
   try {
