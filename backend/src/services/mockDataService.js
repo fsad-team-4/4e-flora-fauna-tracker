@@ -1,10 +1,10 @@
 // angelyn
-// fake data that pretends to come from M1/M2/M3 tables
-// when teammates ship their real tables, replace each function body with actual SQL queries
+// fake data that pretends to come from Shernell/Renee/Klemens tables
+// when teammates ship their real tables, replace each function body with actual queries
 // keeping the function signatures the same so the rest of m4 doesnt have to change
 //
-// note: block field is included on everything so we can do zone filtering
-// for welfare partners
+// note: cases use createdAt (not reported_at) to match klemens' ResidentReport model
+// so the field name lines up when we swap mock data for the real query later
 
 function getFloraRecords() {
   return [
@@ -32,13 +32,13 @@ function getFaunaSightings() {
 
 function getCases() {
   return [
-    { id: 1, category: 'community_cat', block: 'Block 123', title: 'Cat keeps coming up to L5', status: 'open', reported_at: '2026-05-20' },
-    { id: 2, category: 'pigeon', block: 'Block 456', title: 'Pigeon feeding at void deck', status: 'in_progress', reported_at: '2026-05-19' },
-    { id: 3, category: 'flora_health', block: 'Block 123', title: 'Bougainvillea looking sick', status: 'open', reported_at: '2026-05-18' },
-    { id: 4, category: 'pest', block: 'Block 234', title: 'Rodent sighting near garden', status: 'resolved', reported_at: '2026-05-15' },
-    { id: 5, category: 'community_cat', block: 'Block 123', title: 'Cat litter at staircase', status: 'open', reported_at: '2026-05-17' },
-    { id: 6, category: 'flora_health', block: 'Block 567', title: 'Dry patch on grass', status: 'in_progress', reported_at: '2026-05-16' },
-    { id: 7, category: 'pigeon', block: 'Block 456', title: 'Bird droppings on Block 456 corridor', status: 'open', reported_at: '2026-05-19' }
+    { id: 1, category: 'community_cat', block: 'Block 123', title: 'Cat keeps coming up to L5', status: 'open', createdAt: '2026-05-20' },
+    { id: 2, category: 'pigeon', block: 'Block 456', title: 'Pigeon feeding at void deck', status: 'in_progress', createdAt: '2026-05-19' },
+    { id: 3, category: 'flora_health', block: 'Block 123', title: 'Bougainvillea looking sick', status: 'open', createdAt: '2026-05-18' },
+    { id: 4, category: 'pest', block: 'Block 234', title: 'Rodent sighting near garden', status: 'resolved', createdAt: '2026-05-15' },
+    { id: 5, category: 'community_cat', block: 'Block 123', title: 'Cat litter at staircase', status: 'open', createdAt: '2026-05-17' },
+    { id: 6, category: 'flora_health', block: 'Block 567', title: 'Dry patch on grass', status: 'in_progress', createdAt: '2026-05-16' },
+    { id: 7, category: 'pigeon', block: 'Block 456', title: 'Bird droppings on Block 456 corridor', status: 'open', createdAt: '2026-05-19' }
   ];
 }
 
