@@ -7,59 +7,68 @@ in production.
 Notes that apply to all tables:
 
 - Table names are the Sequelize-pluralized model names
-  (`FaunaSighting` -> `FaunaSightings`).
+  (`FaunaSighting` → `FaunaSightings`).
 - Every table has `timestamps: true` (Sequelize default), giving `createdAt`
   and `updatedAt` (`DATETIME`, NOT NULL).
-- ENUM columns also carry an `isIn` validator. SQLite stores ENUM as plain
-  TEXT with no value check, so the validator enforces the allowed values for
-  SQLite/PostgreSQL parity.
+- ENUM columns carry an `isIn` validator for SQLite/PostgreSQL parity.
 
 ---
 
 ## FaunaSightings
 
-A fauna sighting filed by a resident or volunteer (community cat or bird
-incident), including photo, GPS coordinates, floor level, and behaviour tags.
-Cat GPS coordinates are hidden from residents via RBAC at the API layer — the
-column is always stored but stripped from responses for non-staff roles.
+A structured fauna sighting record, automatically created by the system when
+a resident submits a ResidentReport with category `community_cat` or `pigeon`.
+There is no resident-facing submission form — sightings are derived from
+resident complaints and used exclusively by staff for hotspot trend analysis,
+AI zone summaries, and agency routing decisions.
 
 | Column | Type | Constraints |
 |--------|------|-------------|
 | id | INTEGER | PK, auto-increment |
-| species | ENUM('cat', 'pigeon', 'crow', 'mynah', 'other') | NOT NULL, `isIn` validator |
-| block_number | STRING | NOT NULL, e.g. `"Block 203"` |
-| floor_level | STRING | nullable, e.g. `"Ground"`, `"2nd"`, `"5th+"` |
-| behaviour_tags | JSON | NOT NULL, default `[]` (array of tag strings) |
-| gps_lat | FLOAT | nullable — stripped from resident responses for cat sightings |
-| gps_lng | FLOAT | nullable — stripped from resident responses for cat sightings |
-| photo_url | STRING | nullable — Cloudinary hosted URL |
-| notes | TEXT | nullable — free-text description, max 500 chars |
-| status | ENUM('open', 'in_progress', 'resolved') | NOT NULL, default `'open'`, `isIn` validator |
-| reported_by | INTEGER | NOT NULL, FK -> `Users.id` |
+| species | ENUM('cat','pigeon','crow','mynah','other') | NOT NULL, `isIn` validator |
+| block_number | STRING | nullable (carries value from ResidentReport) |
+| floor_level | STRING | nullable |
+| behaviour_tags | JSON | NOT NULL, default `[]` |
+| gps_lat | FLOAT | nullable — stripped for residents if accessed directly |
+| gps_lng | FLOAT | nullable — stripped for residents if accessed directly |
+| photo_url | STRING | nullable — Cloudinary URL from ResidentReport |
+| notes | TEXT | nullable — taken from ResidentReport description |
+| status | ENUM('open','in_progress','resolved') | NOT NULL, default `'open'` |
+| reported_by | INTEGER | NOT NULL, FK → `Users.id` |
 | is_deleted | BOOLEAN | NOT NULL, default `false` (soft-delete flag) |
-| createdAt | DATETIME | NOT NULL |
-| updatedAt | DATETIME | NOT NULL |
+| createdAt | DATETIME | NOT NULL, auto |
+| updatedAt | DATETIME | NOT NULL, auto |
 
 Relationships:
 
-- `FaunaSightings.reported_by` -> `Users.id` (association alias `reporter`)
+- `FaunaSightings.reported_by` → `Users.id` (association alias `reporter`)
 
-Soft delete: rows are never physically removed. `DELETE /api/fauna/:id` sets
-`is_deleted = true`, and all read queries filter on `is_deleted = false`, so
-deleted sightings disappear from the API while remaining in the table for
-audit.
+How records are created:
 
-RBAC note: `gps_lat` and `gps_lng` are stored for all species but the API
-controller strips them from responses when `req.user.role === 'resident'` and
-`species === 'cat'`. This prevents residents from locating community cats and
-potentially causing harm.
+FaunaSighting records are never created directly by residents. They are
+created automatically inside `reportController.js` immediately after a
+ResidentReport is saved, when the report category is `community_cat` or
+`pigeon`. The creation is fire-and-forget — a failure does not affect the
+ResidentReport response.
+
+RBAC note:
+
+`gps_lat` and `gps_lng` are stored for all species. The API controller
+strips them from responses when `req.user.role === 'resident'` and
+`species === 'cat'`. All fauna list and detail endpoints are currently
+restricted to `staff` and `admin` — the GPS stripping is a defence-in-depth
+measure in case access is extended to residents in future.
+
+Soft delete:
+
+Rows are never physically removed. `DELETE /api/fauna/:id` sets
+`is_deleted = true`. All read queries filter on `is_deleted = false`.
 
 ---
 
 ## Allowed behaviour_tags values
 
-The `behaviour_tags` column stores a JSON array. The following values are
-accepted at the API layer (validated in the controller):
+`behaviour_tags` stores a JSON array. The following values are accepted:
 
 | Tag | Description |
 |-----|-------------|
@@ -69,12 +78,15 @@ accepted at the API layer (validated in the controller):
 | `droppings` | Bird droppings causing hygiene issues |
 | `aggressive` | Animal showing aggressive behaviour toward residents |
 
-Multiple tags may be selected per sighting. An empty array is valid (tags are
-optional).
+Tags default to `[]` at auto-creation since the ResidentReport complaint form
+does not capture structured behaviour data. Staff can update tags via
+`PATCH /api/fauna/:id`.
 
 ---
 
-## Allowed species values and agency mapping
+## Species-to-agency mapping
+
+Derived at the API layer (not stored). Returned in the hotspot summary response.
 
 | Species | Agency recommendation |
 |---------|-----------------------|
@@ -83,9 +95,6 @@ optional).
 | `crow` | ACRES |
 | `mynah` | ACRES |
 | `other` | Town Council to assess |
-
-The agency recommendation is derived at the API layer (not stored in the
-database) and returned in the hotspot summary response.
 
 ---
 
@@ -100,6 +109,8 @@ database) and returned in the hotspot summary response.
 ## Relationship to existing tables
 
 This module adds one new table (`FaunaSightings`) to the shared schema. It
-references the existing `Users` table (owned by Klemens) for `reported_by`
-and the JWT auth system for role-based access control. No changes are required
-to any existing tables.
+references the existing `Users` table (owned by Klemens) for `reported_by`.
+It is populated from `ResidentReports` (owned by Klemens) via the
+auto-creation logic in `reportController.js` — there is no foreign key to
+`ResidentReports` in the schema, but the data origin is documented here for
+clarity.
