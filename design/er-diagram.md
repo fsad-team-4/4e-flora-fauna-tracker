@@ -9,6 +9,7 @@ erDiagram
     User ||--o{ ResidentReport : "files (reported_by)"
     ResidentReport ||--o{ CaseStatusLog : "has history"
     User ||--o{ CaseStatusLog : "makes changes (changed_by)"
+    User ||--o{ GreeneryRecord : "records (recorded_by)"
 
     User {
         int id PK
@@ -41,10 +42,21 @@ erDiagram
         int changed_by FK
     }
 
+    GreeneryRecord {
+        int id PK
+        string species
+        string common_name "nullable"
+        string location_zone "nullable"
+        enum health_status "healthy, at_risk, critical"
+        text health_notes "nullable"
+        text care_recommendation "nullable, AI-generated"
+        datetime last_inspected_at "nullable"
+        int recorded_by FK
+        boolean is_deleted "soft delete"
+    }
+
     %% ----------------------------------------------------------------
     %% Teammate entities - add below, plus their relationships above.
-    %% M1 Flora (Shernell): add GreeneryRecord (or your flora entities)
-    %%   + relationships to User.
     %% M2 Fauna (Renee): add FaunaSighting (or your fauna entities)
     %%   + relationships.
     %% M4 Alerts (Angelyn): add Alert/Notification entities
@@ -52,7 +64,6 @@ erDiagram
     %% ----------------------------------------------------------------
 ```
 
-<!-- M1 Flora (Shernell): add GreeneryRecord (or your flora entities) + relationships to User -->
 <!-- M2 Fauna (Renee): add FaunaSighting (or your fauna entities) + relationships -->
 <!-- M4 Alerts (Angelyn): add Alert/Notification entities + relationships -->
 
