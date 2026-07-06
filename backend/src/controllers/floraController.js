@@ -172,7 +172,7 @@ Respond with only the recommendation itself, as 3-5 short bullet points. Plain t
   try {
     const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       contents: prompt,
       config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
     });
