@@ -33,7 +33,7 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
 
     const blockCounts = {};
     sightings.forEach(s => {
-      blockCounts[s.block] = (blockCounts[s.block] || 0) + 1;
+      blockCounts[s.block_number] = (blockCounts[s.block_number] || 0) + 1;
     });
     const hotspots = Object.entries(blockCounts)
       .filter(([_, n]) => n >= 3)

@@ -83,15 +83,16 @@ function gatherStats() {
 
   const criticalPlants = flora
     .filter(f => f.health_status === 'critical')
-    .map(f => `${f.species} at ${f.block}`);
+    .map(f => `${f.species} at ${f.block_number}`);
+
 
   const atRiskPlants = flora
     .filter(f => f.health_status === 'at-risk')
-    .map(f => `${f.species} at ${f.block}`);
+    .map(f => `${f.species} at ${f.block_number}`);
 
   const blockCounts = {};
   sightings.forEach(s => {
-    blockCounts[s.block] = (blockCounts[s.block] || 0) + 1;
+    blockCounts[s.block_number] = (blockCounts[s.block_number] || 0) + 1;
   });
   const hotspots = Object.entries(blockCounts)
     .filter(([_, n]) => n >= 3)
