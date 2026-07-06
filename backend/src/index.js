@@ -22,6 +22,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/flora', require('./routes/floraRoutes'));
+app.use('/api/fauna', require('./routes/faunaRoutes'));
 
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {
