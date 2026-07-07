@@ -1,8 +1,39 @@
 const yup = require('yup');
+const { Op } = require('sequelize');
 const { GoogleGenAI } = require('@google/genai');
-const { GreeneryRecord } = require('../models');
+const { GreeneryRecord, User } = require('../models');
+const { sendMail } = require('../config/mailer');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
+const ALERT_STATUSES = ['at_risk', 'critical'];
+
+// Rule-based notification: email all staff/admin when a plant's health becomes
+// at_risk or critical. Fire-and-forget - sendMail swallows its own errors, so
+// callers don't await this and the request returns without waiting on SMTP.
+async function sendHealthAlert(record) {
+  const recipients = await User.findAll({
+    where: { role: { [Op.in]: ['staff', 'admin'] } },
+    attributes: ['email'],
+  });
+  if (recipients.length === 0) return;
+
+  const to = recipients.map((u) => u.email).join(',');
+  sendMail({
+    to,
+    subject: `Flora health alert: ${record.species} is ${record.health_status}`,
+    text: `A plant asset has been flagged as ${record.health_status}.
+
+Species: ${record.species}
+Common name: ${record.common_name || 'unknown'}
+Location zone: ${record.location_zone || 'unspecified'}
+Health status: ${record.health_status}
+Health notes: ${record.health_notes || 'none'}
+
+Check the app for the AI care recommendation.
+
+- 4E Biodiversity Tracker`,
+  });
+}
 
 const createSchema = yup.object({
   species: yup.string().required().trim(),
@@ -73,6 +104,10 @@ async function createGreenery(req, res) {
     recorded_by: req.user.user_id,
   });
 
+  if (ALERT_STATUSES.includes(record.health_status)) {
+    sendHealthAlert(record);
+  }
+
   return res.status(201).json(record);
 }
 
@@ -91,10 +126,21 @@ async function updateGreenery(req, res) {
     return res.status(404).json({ error: 'Greenery record not found' });
   }
 
+  const previousStatus = record.health_status;
+
   Object.keys(data).forEach((key) => {
     record[key] = data[key];
   });
   await record.save();
+
+  // Alert only on a fresh transition into at_risk/critical, not when it was
+  // already at an alerting status and stays there.
+  if (
+    ALERT_STATUSES.includes(record.health_status) &&
+    record.health_status !== previousStatus
+  ) {
+    sendHealthAlert(record);
+  }
 
   return res.status(200).json(record);
 }

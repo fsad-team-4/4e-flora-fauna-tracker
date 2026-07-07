@@ -3,9 +3,22 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 
+// Mock the mailer so the health-alert email never makes a real SMTP/network
+// call. jest.mock is hoisted above the requires below, so floraController
+// receives this stub when it loads.
+jest.mock('../../src/config/mailer', () => ({
+  sendMail: jest.fn(),
+  getTransporter: jest.fn(),
+}));
+
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize } = require('../../src/models');
+const { sendMail } = require('../../src/config/mailer');
+
+// sendHealthAlert is fire-and-forget: the response returns before its DB query
+// and sendMail call settle, so give pending microtasks a moment to flush.
+const flush = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 const tokens = {};
 let floraId;
@@ -176,5 +189,69 @@ describe('POST /api/flora/:id/care-recommendation', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('AI service not configured');
+  });
+});
+
+describe('Health-alert email', () => {
+  beforeEach(() => {
+    sendMail.mockClear();
+  });
+
+  test('create with health_status critical -> sendMail called', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Sick Palm', health_status: 'critical' });
+    await flush();
+
+    expect(res.status).toBe(201);
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  test('create with health_status healthy -> sendMail NOT called', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Happy Fern', health_status: 'healthy' });
+    await flush();
+
+    expect(res.status).toBe(201);
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  test('update healthy -> at_risk (fresh transition) -> sendMail called', async () => {
+    const created = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Fig', health_status: 'healthy' });
+    await flush();
+    sendMail.mockClear();
+
+    const res = await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ health_status: 'at_risk' });
+    await flush();
+
+    expect(res.status).toBe(200);
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  test('update at_risk -> at_risk (no change) -> sendMail NOT called', async () => {
+    const created = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Shrub', health_status: 'at_risk' });
+    await flush();
+    sendMail.mockClear();
+
+    const res = await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ health_status: 'at_risk' });
+    await flush();
+
+    expect(res.status).toBe(200);
+    expect(sendMail).not.toHaveBeenCalled();
   });
 });
