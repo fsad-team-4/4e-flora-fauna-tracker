@@ -46,8 +46,10 @@ Alternate / edge flows:
 - A resident attempting to submit -> `403`; the Add Plant control leads to a
   staff/admin-only action.
 
-Postcondition: a new greenery record exists, owned by the staff member who
-created it, and is visible in the plant directory.
+Postcondition: 
+A new greenery record exists, owned by the staff member who created it, and is visible in the plant directory. 
+
+If the record is created directly with health_status of at_risk or critical, an alert email is also dispatched to all staff/admin users. 
 
 ---
 
@@ -111,7 +113,10 @@ Alternate / edge flows:
 - Invalid `health_status` -> `400`.
 - A resident attempting the update -> `403`.
 
-Postcondition: the record reflects the latest inspection; `updatedAt` advances.
+Postcondition: 
+The record reflects the latest inspection; updatedAt advances. 
+
+If this update causes a fresh transition into at_risk or critical (the status actually changed from something else), an alert email is also dispatched to all staff/admin users; no duplicate alert is sent if the record was already at that status.
 
 ---
 
@@ -133,7 +138,7 @@ Main flow:
 2. The frontend calls `POST /api/flora/:id/care-recommendation`.
 3. The backend loads the record, builds a prompt from the plant's species,
    common name, location zone, health status, and notes, and calls Gemini
-   (`gemini-2.5-flash`).
+   (`gemini-3.5-flash`).
 4. Gemini returns 3-5 short, emoji-prefixed actionable bullets (💧 watering,
    🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plain text
    only.

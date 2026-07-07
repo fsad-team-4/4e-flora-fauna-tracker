@@ -80,6 +80,8 @@ Example response (`200`):
 
 Create a single greenery record.
 
+If the record is created with health_status of at_risk or critical, an alert email is sent to all staff/admin users (fire-and-forget; does not affect the response).
+
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Request body:
 
@@ -140,8 +142,9 @@ Example response (`201`):
 
 ## PATCH /api/flora/:id
 
-Update an existing (non-deleted) greenery record. Only the fields supplied in
-the body are changed.
+Update an existing (non-deleted) greenery record. Only the fields supplied in the body are changed.
+
+If this update causes a fresh transition to at_risk or critical (the status changed from something else), an alert email is sent to all staff/admin users (fire-and-forget; does not affect the response). No email is sent if the record was already at that status.
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Path params: `id` - the record id
@@ -283,7 +286,7 @@ record. The recommendation is 3-5 short, emoji-prefixed actionable bullets.
 - Path params: `id` - the record id
 - Request body: none
 - Behavior: the record is loaded first (404 if missing/deleted), then the
-  `GEMINI_API_KEY` is checked (503 if unset), then `gemini-2.5-flash` is called.
+  `GEMINI_API_KEY` is checked (503 if unset), then `gemini-3.5-flash` is called.
   On success the text is saved to the record's `care_recommendation` field.
 - Success: `200` - the updated record object, with `care_recommendation`
   populated
