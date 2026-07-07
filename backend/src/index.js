@@ -4,6 +4,8 @@ const express = require('express');
 const cors = require('cors');
 const { sequelize } = require('./models');
 
+const { startCronJobs } = require('./cron');
+
 if (!process.env.JWT_SECRET) {
   console.error('JWT_SECRET is not set. Add it to backend/.env before starting.');
   process.exit(1);
@@ -23,6 +25,11 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/flora', require('./routes/floraRoutes'));
 
+app.use('/api/alert-rules', require('./routes/alertRules'));
+app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/rodent-assessments', require('./routes/rodentAssessments'));
+
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {
   console.error(err);
@@ -36,6 +43,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
   });
+  startCronJobs();
 }
 
 if (require.main === module) {
