@@ -24,6 +24,21 @@ plant records the later tests act on.
 | 10 | POST /api/flora/bulk | CSV bulk import (mixed validity) | Multipart `file` = CSV buffer with 2 valid rows + 1 invalid (`health_status: dying`) | 201; `created: 2`, `errors` length 1 (with row number) |
 | 11 | POST /api/flora/:id/care-recommendation | AI key not configured | `GEMINI_API_KEY` deleted from env; staff requests recommendation for a real record | 503 "AI service not configured" (no live API call) |
 
+## Health-alert Email (`flora.test.js`)
+
+The mailer (`config/mailer.js`) is mocked with `jest.mock` so no real SMTP /
+network call happens; the stubbed `sendMail` is asserted on. The alert email
+notifies all staff/admin when a plant's health becomes `at_risk` or `critical`,
+and is fire-and-forget (the request does not await it), so each test flushes
+pending microtasks (~50ms) before asserting.
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 16 | POST /api/flora | Create at alerting status | staff creates a plant with `health_status: critical` | 201; `sendMail` called once |
+| 17 | POST /api/flora | Create at healthy status | staff creates a plant with `health_status: healthy` | 201; `sendMail` not called |
+| 18 | PATCH /api/flora/:id | Fresh transition into alerting status | staff patches a healthy record to `health_status: at_risk` | 200; `sendMail` called once (status just transitioned) |
+| 19 | PATCH /api/flora/:id | No real status change | staff patches an `at_risk` record to `health_status: at_risk` | 200; `sendMail` not called (already at that status) |
+
 ## AI Care Recommendation - live Gemini (manual testing via Postman/browser)
 
 The `POST /api/flora/:id/care-recommendation` endpoint calls Google Gemini, an
