@@ -45,7 +45,7 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
 
 // create - runs AI assessment + saves
 router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
-  const { block, floor_level, observations } = req.body;
+  const { block_number, floor_level, observations } = req.body;
 
   if (!observations || !observations.trim()) {
     return res.status(400).json({ error: 'observations are required' });
@@ -55,7 +55,7 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
   let stubbed = false;
   try {
     if (hasApiKey()) {
-      assessment = await assessRodentRisk({ block, floorLevel: floor_level, observations });
+      assessment = await assessRodentRisk({ block: block_number, floorLevel: floor_level, observations });
     } else {
       assessment = stubAssessment(observations);
       stubbed = true;
@@ -67,7 +67,7 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
 
   try {
     const row = await RodentAssessment.create({
-      block: block || null,
+      block_number: block_number || null,
       floor_level: floor_level || null,
       observations: observations.trim(),
       risk_level: assessment.risk_level,
