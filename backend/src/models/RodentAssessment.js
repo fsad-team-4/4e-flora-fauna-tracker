@@ -8,7 +8,7 @@ const RodentAssessment = sequelize.define('RodentAssessment', {
     primaryKey: true,
     autoIncrement: true,
   },
-  block: {
+  block_number: {
     type: DataTypes.STRING,
     allowNull: true,
   },
