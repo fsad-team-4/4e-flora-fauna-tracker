@@ -17,7 +17,7 @@ const validationSchema = yup.object({
   color: yup.string(),
   max_height_at_maturity: yup
     .number()
-    .transform((value) => (isNaN(value) ? undefined : value))
+    .transform((value) => (isNaN(value) ? null : value))
     .positive('Max height must be a positive number')
     .nullable(),
 });

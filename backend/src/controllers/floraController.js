@@ -47,7 +47,7 @@ const createSchema = yup.object({
   color: yup.string().trim(),
   max_height_at_maturity: yup
     .number()
-    .transform((value) => (isNaN(value) ? undefined : value))
+    .transform((value) => (isNaN(value) ? null : value))
     .positive('Max height must be a positive number')
     .nullable(),
 });
@@ -64,7 +64,7 @@ const updateSchema = yup.object({
   color: yup.string().trim(),
   max_height_at_maturity: yup
   .number()
-  .transform((value) => (isNaN(value) ? undefined : value))
+  .transform((value) => (isNaN(value) ? null : value))
   .positive('Max height must be a positive number')
   .nullable(),
 });
