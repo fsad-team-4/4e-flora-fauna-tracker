@@ -32,6 +32,22 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  plant_family: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  site_suitability: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  color: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  max_height_at_maturity: {
+    type: DataTypes.FLOAT, // metres
+    allowNull: true,
+  },
   care_recommendation: {
     type: DataTypes.TEXT,
     allowNull: true,
