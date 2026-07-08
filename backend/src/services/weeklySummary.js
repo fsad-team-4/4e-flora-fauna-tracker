@@ -6,6 +6,7 @@ const { AlertRule, NotificationLog } = require('../models');
 const mock = require('./mockDataService');
 const gemini = require('./geminiService');
 const email = require('./emailService');
+const { computeHotspots } = require('./estateStats');
 
 async function sendWeeklySummary(triggeredByUserId) {
   const stats = gatherStats();
@@ -83,20 +84,14 @@ function gatherStats() {
 
   const criticalPlants = flora
     .filter(f => f.health_status === 'critical')
-    .map(f => `${f.species} at ${f.block_number}`);
+    .map(f => `${f.species} at ${f.block}`);
 
 
   const atRiskPlants = flora
-    .filter(f => f.health_status === 'at-risk')
-    .map(f => `${f.species} at ${f.block_number}`);
+    .filter(f => f.health_status === 'at_risk')
+    .map(f => `${f.species} at ${f.block}`);
 
-  const blockCounts = {};
-  sightings.forEach(s => {
-    blockCounts[s.block_number] = (blockCounts[s.block_number] || 0) + 1;
-  });
-  const hotspots = Object.entries(blockCounts)
-    .filter(([_, n]) => n >= 3)
-    .map(([block, count]) => ({ block, count }));
+  const hotspots = computeHotspots(sightings);
 
   const openCases = cases.filter(c => c.status === 'open');
   const resolvedCases = cases.filter(c => c.status === 'resolved');
@@ -119,7 +114,7 @@ function generateStubSummary(stats) {
 
 Plant health requires attention: ${critical} plant${critical === 1 ? ' is' : 's are'} in critical condition and ${atRisk} ${atRisk === 1 ? 'is' : 'are'} at risk. ${stats.criticalPlants.length ? `Prioritise ${stats.criticalPlants[0]} this week before it reaches a point of no return.` : ''}
 
-Animal activity: ${stats.totalSightings} sightings logged across the estate. ${stats.hotspots.length} active hotspot${stats.hotspots.length === 1 ? '' : 's'} detected${stats.hotspots.length ? ` at ${stats.hotspots.map(h => h.block).join(', ')}` : ''}.
+Animal activity: ${stats.totalSightings} sightings logged across the estate. ${stats.hotspots.length} active hotspot${stats.hotspots.length === 1 ? '' : 's'} detected${stats.hotspots.length ? ` at ${stats.hotspots.map(h => h.block_number).join(', ')}` : ''}.
 
 Case load: ${stats.openCaseCount} case${stats.openCaseCount === 1 ? '' : 's'} remain open and ${stats.resolvedCount} ${stats.resolvedCount === 1 ? 'was' : 'were'} resolved this week.
 

@@ -5,40 +5,54 @@
 //
 // note: cases use createdAt (not reported_at) to match klemens' ResidentReport model
 // so the field name lines up when we swap mock data for the real query later
+//
+// dates are generated relative to "now" on every call so the estate always looks
+// live in a demo (recent sightings, cases opened this week, "last seen" in hours).
+
+function hoursAgo(n) {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - Math.round(n * 60));
+  return d.toISOString();
+}
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString();
+}
 
 function getFloraRecords() {
   return [
-    { id: 1, species: 'Bougainvillea', location: 'Block 123', block: 'Block 123', health_status: 'critical', last_inspected: '2026-05-15' },
-    { id: 2, species: 'Frangipani', location: 'Block 456', block: 'Block 456', health_status: 'at-risk', last_inspected: '2026-05-18' },
-    { id: 3, species: 'Hibiscus', location: 'Block 789', block: 'Block 789', health_status: 'healthy', last_inspected: '2026-05-19' },
-    { id: 4, species: 'Ixora', location: 'Block 234', block: 'Block 234', health_status: 'at-risk', last_inspected: '2026-05-17' },
-    { id: 5, species: 'Lantana', location: 'Block 567', block: 'Block 567', health_status: 'healthy', last_inspected: '2026-05-20' },
-    { id: 6, species: 'Heliconia', location: 'Block 890', block: 'Block 890', health_status: 'critical', last_inspected: '2026-05-14' },
-    { id: 7, species: 'Bird of Paradise', location: 'Block 345', block: 'Block 345', health_status: 'healthy', last_inspected: '2026-05-21' }
+    { id: 1, species: 'Bougainvillea', location: 'Block 123', block: 'Block 123', health_status: 'critical', last_inspected: daysAgo(3) },
+    { id: 2, species: 'Frangipani', location: 'Block 456', block: 'Block 456', health_status: 'at_risk', last_inspected: daysAgo(5) },
+    { id: 3, species: 'Hibiscus', location: 'Block 789', block: 'Block 789', health_status: 'healthy', last_inspected: daysAgo(6) },
+    { id: 4, species: 'Ixora', location: 'Block 234', block: 'Block 234', health_status: 'at_risk', last_inspected: daysAgo(4) },
+    { id: 5, species: 'Lantana', location: 'Block 567', block: 'Block 567', health_status: 'healthy', last_inspected: daysAgo(8) },
+    { id: 6, species: 'Heliconia', location: 'Block 890', block: 'Block 890', health_status: 'critical', last_inspected: daysAgo(2) },
+    { id: 7, species: 'Bird of Paradise', location: 'Block 345', block: 'Block 345', health_status: 'healthy', last_inspected: daysAgo(9) }
   ];
 }
 
 function getFaunaSightings() {
   return [
-    { id: 1, animal_type: 'cat', block: 'Block 123', floor: 'L5', behaviour: 'defecating', date: '2026-05-20' },
-    { id: 2, animal_type: 'cat', block: 'Block 123', floor: 'L3', behaviour: 'roaming', date: '2026-05-19' },
-    { id: 3, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'roosting', date: '2026-05-20' },
-    { id: 4, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'feeding', date: '2026-05-19' },
-    { id: 5, animal_type: 'pigeon', block: 'Block 456', floor: 'L8', behaviour: 'roosting', date: '2026-05-18' },
-    { id: 6, animal_type: 'cat', block: 'Block 123', floor: 'L1', behaviour: 'urinating', date: '2026-05-17' },
-    { id: 7, animal_type: 'cat', block: 'Block 789', floor: 'Ground', behaviour: 'feeding', date: '2026-05-20' }
+    { id: 1, animal_type: 'cat', block: 'Block 123', floor: 'L5', behaviour: 'defecating', date: hoursAgo(2) },
+    { id: 2, animal_type: 'cat', block: 'Block 123', floor: 'L3', behaviour: 'roaming', date: hoursAgo(20) },
+    { id: 3, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'roosting', date: hoursAgo(5) },
+    { id: 4, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'feeding', date: daysAgo(1) },
+    { id: 5, animal_type: 'pigeon', block: 'Block 456', floor: 'L8', behaviour: 'roosting', date: daysAgo(2) },
+    { id: 6, animal_type: 'cat', block: 'Block 123', floor: 'L1', behaviour: 'urinating', date: daysAgo(1) },
+    { id: 7, animal_type: 'cat', block: 'Block 789', floor: 'Ground', behaviour: 'feeding', date: daysAgo(1) }
   ];
 }
 
 function getCases() {
   return [
-    { id: 1, category: 'community_cat', block_number: 'Block 123', title: 'Cat keeps coming up to L5', status: 'open', createdAt: '2026-05-20' },
-    { id: 2, category: 'pigeon', block_number: 'Block 456', title: 'Pigeon feeding at void deck', status: 'in_progress', createdAt: '2026-05-19' },
-    { id: 3, category: 'flora_health', block_number: 'Block 123', title: 'Bougainvillea looking sick', status: 'open', createdAt: '2026-05-18' },
-    { id: 4, category: 'pest', block_number: 'Block 234', title: 'Rodent sighting near garden', status: 'resolved', createdAt: '2026-05-15' },
-    { id: 5, category: 'community_cat', block_number: 'Block 123', title: 'Cat litter at staircase', status: 'open', createdAt: '2026-05-17' },
-    { id: 6, category: 'flora_health', block_number: 'Block 567', title: 'Dry patch on grass', status: 'in_progress', createdAt: '2026-05-16' },
-    { id: 7, category: 'pigeon', block_number: 'Block 456', title: 'Bird droppings on Block 456 corridor', status: 'open', createdAt: '2026-05-19' }
+    { id: 1, category: 'community_cat', block_number: 'Block 123', title: 'Cat keeps coming up to L5', status: 'open', createdAt: hoursAgo(0.3) },
+    { id: 2, category: 'pigeon', block_number: 'Block 456', title: 'Pigeon feeding at void deck', status: 'in_progress', createdAt: hoursAgo(2) },
+    { id: 3, category: 'flora_health', block_number: 'Block 123', title: 'Bougainvillea looking sick', status: 'open', createdAt: hoursAgo(20) },
+    { id: 4, category: 'pest', block_number: 'Block 234', title: 'Rodent sighting near garden', status: 'resolved', createdAt: daysAgo(4) },
+    { id: 5, category: 'community_cat', block_number: 'Block 123', title: 'Cat litter at staircase', status: 'open', createdAt: daysAgo(1) },
+    { id: 6, category: 'flora_health', block_number: 'Block 567', title: 'Dry patch on grass', status: 'in_progress', createdAt: daysAgo(2) },
+    { id: 7, category: 'pigeon', block_number: 'Block 456', title: 'Bird droppings on Block 456 corridor', status: 'open', createdAt: hoursAgo(6) }
   ];
 }
 

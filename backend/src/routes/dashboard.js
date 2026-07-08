@@ -1,9 +1,12 @@
 // angelyn
 const express = require('express');
+const { Op } = require('sequelize');
 const { NotificationLog } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const mock = require('../services/mockDataService');
 const { sendWeeklySummary } = require('../services/weeklySummary');
+const { computeEstateMetrics } = require('../services/estateStats');
+const { getTrends, getHistory, dayKey } = require('../services/metricsSnapshot');
 
 const router = express.Router();
 
@@ -16,39 +19,50 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
     const sightings = mock.getFaunaSightings();
     const cases = mock.getCases();
 
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const notifCount = await NotificationLog.count({
-      where: { createdAt: { [require('sequelize').Op.gte]: since } },
+    const m = computeEstateMetrics({ flora, sightings, cases });
+
+    const week = 7 * 24 * 60 * 60 * 1000;
+    const since = new Date(Date.now() - week);
+    const prevSince = new Date(Date.now() - 2 * week);
+    const notifCount = await NotificationLog.count({ where: { createdAt: { [Op.gte]: since } } });
+    // previous 7-day window, so the frontend can show a real week-over-week delta
+    const notifPrevCount = await NotificationLog.count({
+      where: { createdAt: { [Op.gte]: prevSince, [Op.lt]: since } },
     });
 
-    const criticalFlora = flora.filter(f => f.health_status === 'critical').length;
-    const atRiskFlora = flora.filter(f => f.health_status === 'at-risk').length;
-    const openCases = cases.filter(c => c.status === 'open').length;
+    // real trend deltas from the stored daily snapshots (null until history exists)
+    const trends = await getTrends(m);
 
-    const byCategory = {};
-    cases.forEach(c => {
-      byCategory[c.category] = (byCategory[c.category] || 0) + 1;
-    });
-    const casesByCategory = Object.entries(byCategory).map(([category, count]) => ({ category, count }));
+    // time series for the activity chart: stored history + today's live point
+    const history = await getHistory(11);
+    history.push({ date: dayKey(), openCases: m.openCases, sightings: m.totalSightings, hotspots: m.activeHotspots, riskScore: m.riskScore });
 
-    const blockCounts = {};
-    sightings.forEach(s => {
-      blockCounts[s.block_number] = (blockCounts[s.block_number] || 0) + 1;
-    });
-    const hotspots = Object.entries(blockCounts)
-      .filter(([_, n]) => n >= 3)
-      .map(([block, count]) => ({ block, count }));
+    const recentCases = [...cases]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 6);
+
+    // hero-card summary: overall status, explainable risk index, its direction,
+    // the block that most needs attention, and the latest incident.
+    const topHotspot = m.hotspots[0] || null;
+    const estateHealth = {
+      status: m.riskStatus,
+      score: m.riskScore,
+      scoreTrend: trends.risk_score?.sinceYesterday ?? null,
+      highestRiskBlock: topHotspot ? topHotspot.block_number : null,
+      lastIncident: recentCases[0]
+        ? { title: recentCases[0].title, block_number: recentCases[0].block_number, at: recentCases[0].createdAt }
+        : null,
+    };
 
     res.json({
-      openCases,
-      criticalFlora,
-      atRiskFlora,
-      activeHotspots: hotspots.length,
-      hotspots,
+      ...m,
+      estateHealth,
+      trends,
+      history,
+      criticalFloraSpecies: flora.filter(f => f.health_status === 'critical').map(f => f.species),
       notificationsLast7Days: notifCount,
-      casesByCategory,
-      recentCases: cases.slice(0, 5),
-      totalSightings: sightings.length,
+      notificationsPrev7Days: notifPrevCount,
+      recentCases,
     });
   } catch (err) {
     console.error(err);
