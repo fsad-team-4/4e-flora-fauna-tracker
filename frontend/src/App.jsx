@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link as RouterLink, NavLink, useLocation } from 'react-router-dom'
-import { AppBar, Toolbar, Typography, Button, Container, Box } from '@mui/material'
+import { AppBar, Toolbar, Typography, Button, Container, Box, Divider } from '@mui/material'
 import { UserProvider, useUser } from './contexts/UserContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -18,11 +18,7 @@ import NotificationLog from './pages/NotificationLog'
 import RodentAssessment from './pages/RodentAssessment'
 
 function Home() {
-  const { user, setUser } = useUser()
-  const logout = () => {
-    localStorage.removeItem('accessToken')
-    setUser(null)
-  }
+  const { user } = useUser()
   if (!user) {
     return (
       <Box sx={{ mt: 4 }}>
@@ -34,8 +30,12 @@ function Home() {
   }
   return (
     <Box sx={{ mt: 4 }}>
-      <Typography>Logged in as {user.name} ({user.role})</Typography>
-      <Button onClick={logout} sx={{ mt: 1 }}>Logout</Button>
+      <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
+        Welcome back, {user.name}
+      </Typography>
+      <Typography color="text.secondary">
+        Use the navigation above to submit or manage reports.
+      </Typography>
     </Box>
   )
 }
@@ -63,14 +63,18 @@ function NavLinkButton({ to, children }) {
 }
 
 function NavBar() {
-  const { user } = useUser()
+  const { user, setUser } = useUser()
+  const logout = () => {
+    localStorage.removeItem('accessToken')
+    setUser(null)
+  }
   return (
     <AppBar position="sticky">
       <Toolbar sx={{ gap: 1, py: 0.5 }}>
         <Box
           component={RouterLink}
           to="/"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1.25, textDecoration: 'none', flexGrow: 1 }}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1.25, textDecoration: 'none' }}
         >
           <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>
             EM
@@ -79,8 +83,10 @@ function NavBar() {
             4E Biodiversity Tracker
           </Typography>
         </Box>
+
+        {/* nav links */}
         {user && (
-          <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
             <NavLinkButton to="/submit-report">Submit Report</NavLinkButton>
             <NavLinkButton to="/reports">My Reports</NavLinkButton>
             {(user.role === 'staff' || user.role === 'admin') && (
@@ -94,7 +100,35 @@ function NavBar() {
                 <NavLinkButton to="/rodent">Rodent</NavLinkButton>
               </>
             )}
-          </>
+          </Box>
+        )}
+
+        {/* spacer pushes the user block to the far right */}
+        <Box sx={{ flexGrow: 1 }} />
+
+        {/* user identity + logout, hard right */}
+        {user && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Divider orientation="vertical" flexItem sx={{ my: 1 }} />
+            <Box sx={{ textAlign: 'right', lineHeight: 1.2 }}>
+              <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'text.primary' }}>
+                {user.name}
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>
+                {user.role}
+              </Typography>
+            </Box>
+            <Button
+              onClick={logout}
+              variant="outlined"
+              size="small"
+              color="primary"
+              disableRipple
+              sx={{ borderRadius: 2 }}
+            >
+              Logout
+            </Button>
+          </Box>
         )}
       </Toolbar>
     </AppBar>
