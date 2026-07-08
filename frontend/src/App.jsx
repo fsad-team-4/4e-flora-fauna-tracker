@@ -11,6 +11,7 @@ import AllReports from './pages/AllReports'
 import FloraList from './pages/FloraList'
 import AddFlora from './pages/AddFlora'
 import FloraDetail from './pages/FloraDetail'
+import HorticultureHandbook from './pages/HorticultureHandbook'
 import Dashboard from './pages/Dashboard'
 import AlertRules from './pages/AlertRules'
 import NotificationLog from './pages/NotificationLog'
@@ -86,6 +87,7 @@ function NavBar() {
               <>
                 <NavLinkButton to="/all-reports">All Reports</NavLinkButton>
                 <NavLinkButton to="/flora">Flora</NavLinkButton>
+                <NavLinkButton to="/handbook">Handbook</NavLinkButton>
                 <NavLinkButton to="/dashboard">Dashboard</NavLinkButton>
                 <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
                 <NavLinkButton to="/notif-log">Log</NavLinkButton>
@@ -115,6 +117,7 @@ function App() {
             <Route path="/flora" element={<ProtectedRoute><FloraList /></ProtectedRoute>} />
             <Route path="/flora/add" element={<ProtectedRoute><AddFlora /></ProtectedRoute>} />
             <Route path="/flora/:id" element={<ProtectedRoute><FloraDetail /></ProtectedRoute>} />
+            <Route path="/handbook" element={<ProtectedRoute><HorticultureHandbook /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/alert-rules" element={<ProtectedRoute><AlertRules /></ProtectedRoute>} />
