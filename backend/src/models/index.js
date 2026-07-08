@@ -6,6 +6,7 @@ const GreeneryRecord = require('./GreeneryRecord');
 const AlertRule = require('./AlertRule');
 const NotificationLog = require('./NotificationLog');
 const RodentAssessment = require('./RodentAssessment');
+const MetricSnapshot = require('./MetricSnapshot');
 
 User.hasMany(ResidentReport, { foreignKey: 'reported_by' });
 ResidentReport.belongsTo(User, { as: 'reporter', foreignKey: 'reported_by' });
@@ -29,4 +30,5 @@ module.exports = {
   AlertRule,
   NotificationLog,
   RodentAssessment,
+  MetricSnapshot,
 };

@@ -58,6 +58,10 @@ router.post('/', restrictTo('admin'), async (req, res) => {
     });
     res.status(201).json(rule);
   } catch (err) {
+    if (err.name === 'SequelizeForeignKeyConstraintError') {
+      // created_by references a user that no longer exists (stale JWT after a DB reset)
+      return res.status(401).json({ error: 'your session is stale - please log out and log in again' });
+    }
     console.error(err);
     res.status(500).json({ error: err.message });
   }

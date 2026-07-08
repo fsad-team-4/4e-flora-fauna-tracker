@@ -9,7 +9,7 @@ router.use(protect);
 
 // list with optional status filter + pagination
 router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const limit = Math.min(parseInt(req.query.limit) || 50, 2000);
   const offset = parseInt(req.query.offset) || 0;
   const { status } = req.query;
 
