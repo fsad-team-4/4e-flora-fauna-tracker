@@ -35,7 +35,7 @@ export default function RodentAssessment() {
 
   async function loadHistory() {
     try {
-      const { data } = await http.get('/rodent-assessments?limit=10');
+      const { data } = await http.get('/api/rodent-assessments?limit=10');
       setHistory(data);
     } catch (e) {
       console.error('failed to load history', e);
@@ -53,7 +53,7 @@ export default function RodentAssessment() {
     setResult(null);
 
     try {
-      const { data } = await http.post('/rodent-assessments', {
+      const { data } = await http.post('/api/rodent-assessments', {
         block_number: block.trim() || null,
         floor_level: floorLevel.trim() || null,
         observations: observations.trim(),
@@ -135,12 +135,13 @@ export default function RodentAssessment() {
       {result && (
         <Card sx={{ mb: 3, borderLeft: `4px solid ${BRAND.primary}`, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
           <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ color: BRAND.heading }}>Assessment Result</Typography>
               <Chip
                 label={`${result.risk_level} risk`}
                 color={riskChipColor[result.risk_level] || 'default'}
                 variant={result.risk_level === 'critical' ? 'filled' : 'outlined'}
+                sx={{ flexShrink: 0 }}
               />
             </Box>
 

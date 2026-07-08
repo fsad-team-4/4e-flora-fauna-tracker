@@ -38,7 +38,7 @@ export default function AlertRules() {
 
   async function load() {
     try {
-      const { data } = await http.get('/alert-rules');
+      const { data } = await http.get('/api/alert-rules');
       setRules(data);
       setError(null);
     } catch (e) {
@@ -52,9 +52,9 @@ export default function AlertRules() {
     setSaveError(null);
     try {
       if (editingRule) {
-        await http.patch(`/alert-rules/${editingRule.id}`, rule);
+        await http.patch(`/api/alert-rules/${editingRule.id}`, rule);
       } else {
-        await http.post('/alert-rules', rule);
+        await http.post('/api/alert-rules', rule);
       }
       setShowForm(false);
       setEditingRule(null);
@@ -67,7 +67,7 @@ export default function AlertRules() {
   async function handleDelete(id) {
     if (!window.confirm('Delete this rule? (soft delete)')) return;
     try {
-      await http.delete(`/alert-rules/${id}`);
+      await http.delete(`/api/alert-rules/${id}`);
       load();
     } catch (e) {
       alert(e.response?.data?.error || 'delete failed');
@@ -76,7 +76,7 @@ export default function AlertRules() {
 
   async function handleToggle(rule) {
     try {
-      await http.patch(`/alert-rules/${rule.id}`, { is_active: !rule.is_active });
+      await http.patch(`/api/alert-rules/${rule.id}`, { is_active: !rule.is_active });
       load();
     } catch (e) {
       alert('toggle failed');
@@ -87,7 +87,7 @@ export default function AlertRules() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 3 }}>
         <div>
           <Typography variant="h5" fontWeight={700} sx={{ color: BRAND.heading }}>Alert Rules</Typography>
           <Typography variant="body2" sx={{ color: BRAND.textLight }}>
@@ -99,7 +99,7 @@ export default function AlertRules() {
           <Button
             variant="contained"
             onClick={() => { setEditingRule(null); setShowForm(true); }}
-            sx={{ bgcolor: BRAND.primary, '&:hover': { bgcolor: BRAND.primaryHover }, borderRadius: '4px' }}
+            sx={{ flexShrink: 0, whiteSpace: 'nowrap', bgcolor: BRAND.primary, '&:hover': { bgcolor: BRAND.primaryHover }, borderRadius: '4px' }}
           >
             + New Rule
           </Button>
@@ -123,8 +123,8 @@ export default function AlertRules() {
 
       {rules.map(rule => (
         <Card key={rule.id} sx={{ mb: 1.5, opacity: rule.is_active ? 1 : 0.55, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
-          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <Box>
+          <CardContent sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, py: 1.5, '&:last-child': { pb: 1.5 } }}>
+            <Box sx={{ minWidth: 0 }}>
               <Typography fontWeight={600} sx={{ color: BRAND.heading }}>{rule.name}</Typography>
               <Typography variant="body2" sx={{ color: BRAND.textLight }}>
                 Trigger: <code>{rule.trigger_type}</code>

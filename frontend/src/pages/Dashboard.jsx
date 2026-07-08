@@ -1,60 +1,96 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Typography, Grid, Card, CardContent, Button,
-  Table, TableHead, TableRow, TableCell, TableBody,
-  Chip, Alert, CircularProgress, Collapse
+  Box, Typography, Grid, Button, Alert, Collapse, Stack, IconButton, Skeleton, Card, CardContent,
 } from '@mui/material';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
+import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
+import MarkEmailReadOutlinedIcon from '@mui/icons-material/MarkEmailReadOutlined';
+import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useUser } from '../contexts/UserContext';
+import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
+import { BRAND, HEALTH_META } from '../theme';
 import http from '../http';
+import KpiCard from '../components/dashboard/KpiCard';
+import ActivityChart from '../components/dashboard/ActivityChart';
+import CategoryDonut from '../components/dashboard/CategoryDonut';
+import BlocksRanked from '../components/dashboard/BlocksRanked';
 
-// EM Services brand palette
-const BRAND = {
-  primary: '#C1272D',
-  primaryHover: '#A61D22',
-  heading: '#222222',
-  text: '#444444',
-  textLight: '#777777',
-  border: '#E5E5E5',
-  section: '#F7F7F7',
-  success: '#2E7D32',
-  warning: '#F4B400',
-};
+function buildKpis(m) {
+  const t = m?.trends || {};
+  return [
+    {
+      label: 'Open Cases', value: m?.openCases ?? 0, color: '#8A5200', tint: '#FFF4E5',
+      icon: <FolderOpenOutlinedIcon />,
+      trend: m ? { delta: t.open_cases?.sinceLastWeek ?? null, improve: 'down' } : null,
+    },
+    {
+      label: 'Critical Flora', value: m?.criticalFlora ?? 0, color: BRAND.primary, tint: '#FDECEA',
+      icon: <LocalFloristOutlinedIcon />,
+      trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down' } : null,
+    },
+    {
+      label: 'Active Hotspots', value: m?.activeHotspots ?? 0, color: '#1565C0', tint: '#E8F1FB',
+      icon: <PlaceOutlinedIcon />,
+      trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down' } : null,
+    },
+    {
+      label: 'Alerts Sent (7d)', value: m?.notificationsLast7Days ?? 0, color: '#2E7D32', tint: '#E7F4E8',
+      icon: <MarkEmailReadOutlinedIcon />,
+      // neutral: more alerts is not inherently good or bad
+      trend: m ? { delta: (m.notificationsLast7Days ?? 0) - (m.notificationsPrev7Days ?? 0), improve: null } : null,
+      trendLabel: 'vs prev 7 days',
+    },
+  ];
+}
+
+// "12s ago" style relative label that ticks so the live indicator feels current.
+// The clock read happens inside the effect (not during render) so it stays pure.
+function useSyncedAgo(updatedAt) {
+  const [label, setLabel] = useState(null);
+  useEffect(() => {
+    if (!updatedAt) return undefined;
+    const tick = () => {
+      const secs = Math.max(0, Math.round((Date.now() - updatedAt.getTime()) / 1000));
+      setLabel(secs < 60 ? `${secs}s ago` : secs < 3600 ? `${Math.floor(secs / 60)}m ago` : `${Math.floor(secs / 3600)}h ago`);
+    };
+    const first = setTimeout(tick, 0); // async so we don't setState in the effect body
+    const id = setInterval(tick, 5000);
+    return () => { clearTimeout(first); clearInterval(id); };
+  }, [updatedAt]);
+  return label;
+}
+
+function HealthChip({ status }) {
+  const meta = HEALTH_META[status];
+  if (!meta) return null;
+  return (
+    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: meta.bg, color: meta.color, borderRadius: '999px', px: 1.25, py: 0.4 }}>
+      <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: meta.dot, flexShrink: 0 }} />
+      <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>{meta.label}</Typography>
+    </Stack>
+  );
+}
 
 export default function Dashboard() {
   const { user } = useUser();
-  const [metrics, setMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { metrics, loading, error, updatedAt, reload } = useDashboardMetrics();
+  const syncedAgo = useSyncedAgo(updatedAt);
+
   const [summaryResult, setSummaryResult] = useState(null);
   const [sending, setSending] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
-  useEffect(() => {
-    loadMetrics();
-    const interval = setInterval(loadMetrics, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function loadMetrics() {
-    try {
-      const { data } = await http.get('/dashboard/metrics');
-      setMetrics(data);
-      setError(null);
-    } catch (e) {
-      setError(e.response?.data?.error || 'failed to load metrics');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const kpis = useMemo(() => buildKpis(metrics), [metrics]);
 
   async function triggerSummary() {
     setSending(true);
     setSummaryResult(null);
     try {
-      const { data } = await http.post('/dashboard/trigger-summary');
+      const { data } = await http.post('/api/dashboard/trigger-summary');
       setSummaryResult({ ok: true, ...data });
-      loadMetrics();
+      reload();
     } catch (e) {
       setSummaryResult({ ok: false, error: e.response?.data?.error || e.message });
     } finally {
@@ -62,139 +98,133 @@ export default function Dashboard() {
     }
   }
 
-  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress sx={{ color: BRAND.primary }} /></Box>;
-  if (error) return <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>;
-
-  const statusColor = { open: 'warning', in_progress: 'info', resolved: 'success' };
+  // Hard error only when we have nothing to show; background poll failures keep stale data.
+  if (error && !metrics) {
+    return (
+      <Box sx={{ maxWidth: 640, mx: 'auto', px: 3, py: 8, textAlign: 'center' }}>
+        <Alert
+          severity="error"
+          action={<Button color="inherit" size="small" onClick={reload}>Retry</Button>}
+          sx={{ justifyContent: 'center' }}
+        >
+          {error}
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <div>
-          <Typography variant="h5" fontWeight={700} sx={{ color: BRAND.heading }}>Command Centre</Typography>
-          <Typography variant="body2" sx={{ color: BRAND.textLight }}>Real-time estate biodiversity overview</Typography>
-        </div>
+    <Box component="main" sx={{ width: '100%', px: { xs: 0, md: 1 }, py: 4 }} aria-busy={loading}>
+      {/* header */}
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={2}
+        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 4 }}
+      >
+        <Box>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+            <Typography variant="h4" component="h1" sx={{ color: BRAND.heading }}>
+              Command Centre
+            </Typography>
+            {metrics?.estateHealth?.status && <HealthChip status={metrics.estateHealth.status} />}
+          </Stack>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.75 }}>
+            <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0ca30c', boxShadow: '0 0 0 3px rgba(12,163,12,.18)', flexShrink: 0 }} />
+            <Typography variant="body2" sx={{ color: BRAND.textLight }} aria-live="polite">
+              Live estate feed{syncedAgo && ` · synced ${syncedAgo}`}
+            </Typography>
+            <IconButton
+              onClick={reload}
+              disabled={loading}
+              size="small"
+              aria-label="Refresh metrics"
+              sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}
+            >
+              <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Stack>
+        </Box>
         {user?.role === 'admin' && (
           <Button
             variant="contained"
             onClick={triggerSummary}
             disabled={sending}
-            sx={{ bgcolor: BRAND.primary, '&:hover': { bgcolor: BRAND.primaryHover }, borderRadius: '4px', px: 3, py: 1.5 }}
+            startIcon={<EmailOutlinedIcon />}
+            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            {sending ? 'Sending...' : '📧 Send Weekly Summary Now'}
+            {sending ? 'Sending…' : 'Send Weekly Summary'}
           </Button>
+        )}
+      </Stack>
+
+      {/* result of the manual weekly-summary trigger */}
+      <Box role="status" aria-live="polite">
+        {summaryResult && (
+          <Alert severity={summaryResult.ok ? 'success' : 'error'} sx={{ mb: 3, borderRadius: '10px' }}>
+            {summaryResult.ok ? (
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  Summary sent to {summaryResult.recipientCount} recipient(s) · generated by {summaryResult.generatedBy}
+                </Typography>
+                <Button size="small" onClick={() => setShowPreview(p => !p)} sx={{ mt: 0.5, p: 0, color: BRAND.primary }}>
+                  {showPreview ? 'Hide preview' : 'Show preview'}
+                </Button>
+                <Collapse in={showPreview}>
+                  <Box component="pre" sx={{ mt: 1.5, p: 2, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', bgcolor: 'rgba(255,255,255,0.6)', borderRadius: '8px', fontFamily: 'inherit', color: BRAND.text }}>
+                    {summaryResult.preview}
+                  </Box>
+                </Collapse>
+              </Box>
+            ) : summaryResult.error}
+          </Alert>
         )}
       </Box>
 
-      {summaryResult && (
-        <Alert severity={summaryResult.ok ? 'success' : 'error'} sx={{ mb: 2 }}>
-          {summaryResult.ok ? (
-            <Box>
-              <Typography variant="body2" fontWeight={500}>
-                Summary sent to {summaryResult.recipientCount} recipient(s). Generated by: {summaryResult.generatedBy}
-              </Typography>
-              <Button size="small" onClick={() => setShowPreview(p => !p)} sx={{ mt: 0.5, p: 0, color: BRAND.primary }}>
-                {showPreview ? 'Hide preview' : 'Show preview'}
-              </Button>
-              <Collapse in={showPreview}>
-                <Box component="pre" sx={{ mt: 1, fontSize: 12, whiteSpace: 'pre-wrap', bgcolor: 'rgba(255,255,255,0.5)', p: 1.5, borderRadius: 1 }}>
-                  {summaryResult.preview}
-                </Box>
-              </Collapse>
-            </Box>
-          ) : summaryResult.error}
-        </Alert>
-      )}
-
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {[
-          { label: 'Open Cases', value: metrics.openCases, color: BRAND.warning },
-          { label: 'Critical Flora', value: metrics.criticalFlora, sub: `${metrics.atRiskFlora} at risk`, color: BRAND.primary },
-          { label: 'Active Hotspots', value: metrics.activeHotspots, color: BRAND.heading },
-          { label: 'Alerts Sent (7d)', value: metrics.notificationsLast7Days, color: BRAND.success },
-        ].map(kpi => (
-          <Grid item xs={12} sm={6} md={3} key={kpi.label}>
-            <Card sx={{ borderLeft: `4px solid ${kpi.color}`, border: `1px solid ${BRAND.border}`, boxShadow: '0 6px 20px rgba(0,0,0,.06)', borderRadius: '10px' }}>
-              <CardContent>
-                <Typography variant="caption" sx={{ color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  {kpi.label}
-                </Typography>
-                <Typography variant="h4" fontWeight={700} sx={{ color: BRAND.heading }}>{kpi.value}</Typography>
-                {kpi.sub && <Typography variant="caption" sx={{ color: BRAND.textLight }}>{kpi.sub}</Typography>}
-              </CardContent>
-            </Card>
+      {/* KPI cards */}
+      <Grid container spacing={2.5} sx={{ mb: 2.5 }}>
+        {kpis.map(kpi => (
+          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={kpi.label}>
+            <KpiCard {...kpi} loading={loading} />
           </Grid>
         ))}
       </Grid>
 
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={7}>
-          <Card sx={{ border: `1px solid ${BRAND.border}`, boxShadow: '0 6px 20px rgba(0,0,0,.06)', borderRadius: '10px' }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={600} mb={2} sx={{ color: BRAND.heading }}>Cases by Category</Typography>
-              {metrics.casesByCategory.length === 0 ? (
-                <Typography variant="body2" sx={{ color: BRAND.textLight }}>No cases yet.</Typography>
-              ) : (
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={metrics.casesByCategory}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis dataKey="category" tick={{ fontSize: 12 }} />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill={BRAND.primary} radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+      {loading ? (
+        <>
+          <Card sx={{ mb: 2.5 }}>
+            <CardContent sx={{ p: 3 }}>
+              <Skeleton variant="text" width={180} height={28} />
+              <Skeleton variant="text" width={260} sx={{ mb: 2 }} />
+              <Skeleton variant="rounded" height={320} />
             </CardContent>
           </Card>
-        </Grid>
-
-        <Grid item xs={12} md={5}>
-          <Card sx={{ border: `1px solid ${BRAND.border}`, boxShadow: '0 6px 20px rgba(0,0,0,.06)', borderRadius: '10px' }}>
-            <CardContent>
-              <Typography variant="subtitle1" fontWeight={600} mb={2} sx={{ color: BRAND.heading }}>Recent Cases</Typography>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Title</TableCell>
-                    <TableCell>Status</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {metrics.recentCases.map(c => (
-                    <TableRow key={c.id}>
-                      <TableCell sx={{ fontSize: 13 }}>{c.title}</TableCell>
-                      <TableCell>
-                        <Chip label={c.status.replace('_', ' ')} size="small" color={statusColor[c.status] || 'default'} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {metrics.hotspots.length > 0 && (
-          <Grid item xs={12}>
-            <Card sx={{ bgcolor: '#FDECEA', border: `1px solid ${BRAND.primary}`, borderRadius: '10px' }}>
-              <CardContent>
-                <Typography variant="subtitle1" fontWeight={600} mb={1} sx={{ color: BRAND.heading }}>⚠️ Active Hotspots</Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                  {metrics.hotspots.map(h => (
-                    <Chip
-                      key={h.block}
-                      label={`${h.block} — ${h.count} sightings`}
-                      variant="outlined"
-                      sx={{ borderColor: BRAND.primary, color: BRAND.primary }}
-                    />
-                  ))}
-                </Box>
-              </CardContent>
-            </Card>
+          <Grid container spacing={2.5}>
+            {[7, 5].map(cols => (
+              <Grid size={{ xs: 12, md: cols }} key={cols}>
+                <Card sx={{ height: '100%' }}>
+                  <CardContent sx={{ p: 3 }}>
+                    <Skeleton variant="text" width={160} height={28} />
+                    <Skeleton variant="text" width={220} sx={{ mb: 2 }} />
+                    <Skeleton variant="rounded" height={200} />
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
           </Grid>
-        )}
-      </Grid>
+        </>
+      ) : (
+        <>
+          <ActivityChart history={metrics.history} />
+          <Grid container spacing={2.5}>
+            <Grid size={{ xs: 12, md: 7 }}>
+              <CategoryDonut casesByCategory={metrics.casesByCategory} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 5 }}>
+              <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
+            </Grid>
+          </Grid>
+        </>
+      )}
     </Box>
   );
 }
