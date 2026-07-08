@@ -34,6 +34,10 @@ health status, inspection notes, and an optional AI care recommendation.
 | location_zone | STRING | nullable |
 | health_status | ENUM('healthy', 'at_risk', 'critical') | NOT NULL, default `'healthy'`, `isIn` validator |
 | health_notes | TEXT | nullable |
+| plant_family | STRING | nullable |
+| site_suitability | STRING | nullable |
+| color | STRING | nullable |
+| max_height_at_maturity | FLOAT | nullable (metres) |
 | care_recommendation | TEXT | nullable (populated by the AI care-recommendation endpoint) |
 | last_inspected_at | DATE | nullable |
 | recorded_by | INTEGER | NOT NULL, FK -> `Users.id` |
@@ -58,6 +62,11 @@ Field notes:
   `true`, and every read query filters on `is_deleted = false`, so deleted
   records disappear from the API while remaining in the table (supporting the
   client's 3-5 year data retention preference).
+- `plant_family`, `site_suitability`, `color`, and `max_height_at_maturity` are
+  botanical catalog fields added for the Horticulture Handbook feature. They are
+  optional on both create and CSV bulk upload, and support partial-match filtering
+  (`plant_family`, `site_suitability`) and exact-match filtering (`color`) via
+  query parameters on `GET /api/flora`, powering the Handbook browse view.
 
 ---
 

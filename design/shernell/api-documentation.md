@@ -40,6 +40,9 @@ List active greenery records (the plant directory). Soft-deleted records
 - Request body: none
 - Query filters (optional):
   - `?health_status=` - one of `healthy`, `at_risk`, `critical`
+  - `?plant_family=` - partial match (case-sensitivity depends on DB)
+  - `?site_suitability=` - partial match (case-sensitivity depends on DB)
+  - `?color=` - exact match
 - Success: `200` - array of records, each including the `recorder` association
   (`{ id, name }`), ordered by `createdAt` DESC
 - Errors:
@@ -92,6 +95,10 @@ If the record is created with health_status of at_risk or critical, an alert ema
   | location_zone | string | no | trimmed |
   | health_status | string | no | one of `healthy`, `at_risk`, `critical`; defaults to `healthy` |
   | health_notes | string | no | trimmed |
+  | plant_family | string | no | trimmed |
+  | site_suitability | string | no | trimmed |
+  | color | string | no | trimmed |
+  | max_height_at_maturity | number | no | must be positive; omit or leave blank for none |
   | last_inspected_at | date | no | ISO date |
 
   `recorded_by` is taken from the JWT (`req.user.user_id`); any value sent in the
@@ -157,6 +164,10 @@ If this update causes a fresh transition to at_risk or critical (the status chan
   | location_zone | string | trimmed |
   | health_status | string | one of `healthy`, `at_risk`, `critical` |
   | health_notes | string | trimmed |
+  | plant_family | string | trimmed |
+  | site_suitability | string | trimmed |
+  | color | string | trimmed |
+  | max_height_at_maturity | number | must be positive; send `null` or omit to clear |
   | last_inspected_at | date | ISO date |
 
 - Success: `200` - the updated record object
@@ -236,6 +247,7 @@ others fail.
 - Request: `multipart/form-data` with a single CSV file in the field named
   `file`. The first row is the header; recognised columns are `species`,
   `common_name`, `location_zone`, `health_status`, `health_notes`,
+  `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
   `last_inspected_at`. Each row is validated with the same schema as create
   (species required, valid `health_status`); `recorded_by` is set from the JWT.
 - Success: `201` - `{ "created": <count>, "errors": [ { "row", "error" } ] }`,
