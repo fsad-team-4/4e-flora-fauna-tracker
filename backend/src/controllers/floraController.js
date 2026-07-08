@@ -45,7 +45,11 @@ const createSchema = yup.object({
   plant_family: yup.string().trim(),
   site_suitability: yup.string().trim(),
   color: yup.string().trim(),
-  max_height_at_maturity: yup.number().positive().nullable(),
+  max_height_at_maturity: yup
+    .number()
+    .transform((value) => (isNaN(value) ? undefined : value))
+    .positive('Max height must be a positive number')
+    .nullable(),
 });
 
 const updateSchema = yup.object({
@@ -58,7 +62,11 @@ const updateSchema = yup.object({
   plant_family: yup.string().trim(),
   site_suitability: yup.string().trim(),
   color: yup.string().trim(),
-  max_height_at_maturity: yup.number().positive().nullable(),
+  max_height_at_maturity: yup
+  .number()
+  .transform((value) => (isNaN(value) ? undefined : value))
+  .positive('Max height must be a positive number')
+  .nullable(),
 });
 
 // Splits a CSV buffer into row objects keyed by the header row.

@@ -12,6 +12,14 @@ const validationSchema = yup.object({
   location_zone: yup.string(),
   health_status: yup.string().required('Health status is required'),
   health_notes: yup.string(),
+  plant_family: yup.string(),
+  site_suitability: yup.string(),
+  color: yup.string(),
+  max_height_at_maturity: yup
+    .number()
+    .transform((value) => (isNaN(value) ? undefined : value))
+    .positive('Max height must be a positive number')
+    .nullable(),
 });
 
 export default function AddFlora() {
@@ -25,6 +33,10 @@ export default function AddFlora() {
       location_zone: '',
       health_status: 'healthy',
       health_notes: '',
+      plant_family: '',
+      site_suitability: '',
+      color: '',
+      max_height_at_maturity: '',
     },
     validationSchema,
     onSubmit: async (values) => {
@@ -98,6 +110,45 @@ export default function AddFlora() {
         value={formik.values.health_notes}
         onChange={formik.handleChange}
         onBlur={formik.handleBlur}
+      />
+      <TextField
+        fullWidth
+        margin="normal"
+        label="Plant Family"
+        name="plant_family"
+        value={formik.values.plant_family}
+        onChange={formik.handleChange}
+        onBlur={formik.handleBlur}
+      />
+      <TextField
+        fullWidth
+        margin="normal"
+        label="Site Suitability"
+        name="site_suitability"
+        value={formik.values.site_suitability}
+        onChange={formik.handleChange}
+        onBlur={formik.handleBlur}
+      />
+      <TextField
+        fullWidth
+        margin="normal"
+        label="Color"
+        name="color"
+        value={formik.values.color}
+        onChange={formik.handleChange}
+        onBlur={formik.handleBlur}
+      />
+      <TextField
+        fullWidth
+        type="number"
+        margin="normal"
+        label="Max Height at Maturity (metres)"
+        name="max_height_at_maturity"
+        value={formik.values.max_height_at_maturity}
+        onChange={formik.handleChange}
+        onBlur={formik.handleBlur}
+        error={formik.touched.max_height_at_maturity && Boolean(formik.errors.max_height_at_maturity)}
+        helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
       />
 
       <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
