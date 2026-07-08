@@ -4,10 +4,24 @@
 
 const cron = require('node-cron');
 const { sendWeeklySummary } = require('./services/weeklySummary');
+const { captureSnapshot } = require('./services/metricsSnapshot');
 
 let job = null;
+let snapshotJob = null;
 
 function startCronJobs() {
+  // capture a metric snapshot on boot so there's always a "today" row to diff
+  // against, then daily just after midnight to build the trend history.
+  captureSnapshot().catch(e => console.error('[cron] snapshot on boot failed:', e.message));
+  snapshotJob = cron.schedule('5 0 * * *', async () => {
+    try {
+      await captureSnapshot();
+      console.log('[cron] daily metric snapshot captured');
+    } catch (e) {
+      console.error('[cron] metric snapshot failed:', e.message);
+    }
+  });
+
   // 0 0 * * 1 = monday midnight UTC = 8am SGT
   // override with CRON_SCHEDULE env var for local testing (e.g. */2 * * * *)
   const schedule = process.env.CRON_SCHEDULE || '0 0 * * 1';
@@ -34,6 +48,10 @@ function stopCronJobs() {
   if (job) {
     job.stop();
     job = null;
+  }
+  if (snapshotJob) {
+    snapshotJob.stop();
+    snapshotJob = null;
   }
 }
 

@@ -44,7 +44,7 @@ const AlertRule = sequelize.define('AlertRule', {
     defaultValue: false,
   },
   created_by: {
-    // FK to User.id - not enforced at DB level to keep things simple for PoC
+    // FK to User.id - enforced at DB level via the belongsTo association in models/index.js
     type: DataTypes.INTEGER,
     allowNull: true,
   },

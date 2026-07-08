@@ -50,7 +50,7 @@ function buildPrompt(stats) {
     ? stats.atRiskPlants.join('; ')
     : 'none';
   const hotspotList = stats.hotspots.length
-    ? stats.hotspots.map(h => `${h.block} (${h.count} sightings)`).join('; ')
+    ? stats.hotspots.map(h => `${h.block_number} (${h.count} sightings)`).join('; ')
     : 'none';
   const openTitles = stats.openCaseTitles.length
     ? stats.openCaseTitles.join('; ')
