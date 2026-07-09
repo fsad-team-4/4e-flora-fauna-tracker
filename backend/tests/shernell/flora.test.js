@@ -120,6 +120,77 @@ describe('GET /api/flora', () => {
   });
 });
 
+describe('Horticulture Handbook - botanical catalog fields', () => {
+  let handbookId;
+  let bougainvilleaId;
+
+  test('create with botanical fields -> 201, fields saved as sent', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({
+        species: 'Ixora chinensis',
+        plant_family: 'Rubiaceae',
+        site_suitability: 'Full sun, well-drained soil',
+        color: 'red',
+        max_height_at_maturity: 2.5,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.plant_family).toBe('Rubiaceae');
+    expect(res.body.site_suitability).toBe('Full sun, well-drained soil');
+    expect(res.body.color).toBe('red');
+    expect(res.body.max_height_at_maturity).toBe(2.5);
+    handbookId = res.body.id;
+  });
+
+  test('negative max_height_at_maturity -> 400', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Bad Height Plant', max_height_at_maturity: -5 });
+
+    expect(res.status).toBe(400);
+  });
+
+  test('clearing max_height_at_maturity on update -> null, not left unchanged', async () => {
+    const res = await request(app)
+      .patch(`/api/flora/${handbookId}`)
+      .set('Authorization', tokens.staff)
+      .send({ max_height_at_maturity: '' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.max_height_at_maturity).toBeNull();
+  });
+
+  test('?plant_family= partial match returns only matching records', async () => {
+    const other = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Bougainvillea glabra', plant_family: 'Nyctaginaceae', color: 'purple' });
+    bougainvilleaId = other.body.id;
+
+    const res = await request(app)
+      .get('/api/flora?plant_family=Rubi')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((r) => (r.plant_family || '').includes('Rubi'))).toBe(true);
+  });
+
+  test('?color= exact match returns only matching records', async () => {
+    const res = await request(app)
+      .get('/api/flora?color=red')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((r) => r.color === 'red')).toBe(true);
+    expect(res.body.some((r) => r.id === bougainvilleaId)).toBe(false);
+  });
+});
+
 describe('PATCH /api/flora/:id', () => {
   test('staff updates health_status -> 200 with updated value', async () => {
     const res = await request(app)

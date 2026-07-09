@@ -11,11 +11,12 @@ import AllReports from './pages/AllReports'
 import FloraList from './pages/FloraList'
 import AddFlora from './pages/AddFlora'
 import FloraDetail from './pages/FloraDetail'
+import HorticultureHandbook from './pages/HorticultureHandbook'
 import Dashboard from './pages/Dashboard'
 import AlertRules from './pages/AlertRules'
 import NotificationLog from './pages/NotificationLog'
 import RodentAssessment from './pages/RodentAssessment'
-
+ 
 function Home() {
   const { user } = useUser()
   if (!user) {
@@ -38,7 +39,7 @@ function Home() {
     </Box>
   )
 }
-
+ 
 function NavLinkButton({ to, children }) {
   const location = useLocation()
   const active = location.pathname === to
@@ -60,7 +61,7 @@ function NavLinkButton({ to, children }) {
     </Button>
   )
 }
-
+ 
 function NavBar() {
   const { user, setUser } = useUser()
   const logout = () => {
@@ -82,7 +83,7 @@ function NavBar() {
             4E Biodiversity Tracker
           </Typography>
         </Box>
-
+ 
         {/* nav links */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
@@ -92,6 +93,7 @@ function NavBar() {
               <>
                 <NavLinkButton to="/all-reports">All Reports</NavLinkButton>
                 <NavLinkButton to="/flora">Flora</NavLinkButton>
+                <NavLinkButton to="/handbook">Handbook</NavLinkButton>
                 <NavLinkButton to="/dashboard">Dashboard</NavLinkButton>
                 <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
                 <NavLinkButton to="/notif-log">Log</NavLinkButton>
@@ -100,10 +102,10 @@ function NavBar() {
             )}
           </Box>
         )}
-
+ 
         {/* spacer pushes the user block to the far right */}
         <Box sx={{ flexGrow: 1 }} />
-
+ 
         {/* user identity + logout, hard right */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -132,7 +134,7 @@ function NavBar() {
     </AppBar>
   )
 }
-
+ 
 function App() {
   return (
     <UserProvider>
@@ -149,6 +151,7 @@ function App() {
             <Route path="/flora" element={<ProtectedRoute><FloraList /></ProtectedRoute>} />
             <Route path="/flora/add" element={<ProtectedRoute><AddFlora /></ProtectedRoute>} />
             <Route path="/flora/:id" element={<ProtectedRoute><FloraDetail /></ProtectedRoute>} />
+            <Route path="/handbook" element={<ProtectedRoute><HorticultureHandbook /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/alert-rules" element={<ProtectedRoute><AlertRules /></ProtectedRoute>} />
@@ -160,5 +163,5 @@ function App() {
     </UserProvider>
   )
 }
-
+ 
 export default App

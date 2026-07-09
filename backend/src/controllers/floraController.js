@@ -42,6 +42,14 @@ const createSchema = yup.object({
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
+  plant_family: yup.string().trim(),
+  site_suitability: yup.string().trim(),
+  color: yup.string().trim(),
+  max_height_at_maturity: yup
+    .number()
+    .transform((value) => (isNaN(value) ? null : value))
+    .positive('Max height must be a positive number')
+    .nullable(),
 });
 
 const updateSchema = yup.object({
@@ -51,6 +59,14 @@ const updateSchema = yup.object({
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
+  plant_family: yup.string().trim(),
+  site_suitability: yup.string().trim(),
+  color: yup.string().trim(),
+  max_height_at_maturity: yup
+  .number()
+  .transform((value) => (isNaN(value) ? null : value))
+  .positive('Max height must be a positive number')
+  .nullable(),
 });
 
 // Splits a CSV buffer into row objects keyed by the header row.
@@ -74,6 +90,15 @@ async function getAllGreenery(req, res) {
   const where = { is_deleted: false };
   if (req.query.health_status) {
     where.health_status = req.query.health_status;
+  }
+  if (req.query.plant_family) {
+    where.plant_family = { [Op.substring]: req.query.plant_family };
+  }
+  if (req.query.site_suitability) {
+    where.site_suitability = { [Op.substring]: req.query.site_suitability };
+  }
+  if (req.query.color) {
+    where.color = req.query.color;
   }
 
   const records = await GreeneryRecord.findAll({
@@ -100,6 +125,10 @@ async function createGreenery(req, res) {
     location_zone: data.location_zone,
     health_status: data.health_status,
     health_notes: data.health_notes,
+    plant_family: data.plant_family,
+    site_suitability: data.site_suitability,
+    color: data.color,
+    max_height_at_maturity: data.max_height_at_maturity,
     last_inspected_at: data.last_inspected_at,
     recorded_by: req.user.user_id,
   });
@@ -178,6 +207,10 @@ async function bulkUploadCSV(req, res) {
         location_zone: data.location_zone,
         health_status: data.health_status,
         health_notes: data.health_notes,
+        plant_family: data.plant_family,
+        site_suitability: data.site_suitability,
+        color: data.color,
+        max_height_at_maturity: data.max_height_at_maturity,
         last_inspected_at: data.last_inspected_at,
         recorded_by: req.user.user_id,
       });

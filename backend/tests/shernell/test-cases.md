@@ -39,6 +39,16 @@ pending microtasks (~50ms) before asserting.
 | 18 | PATCH /api/flora/:id | Fresh transition into alerting status | staff patches a healthy record to `health_status: at_risk` | 200; `sendMail` called once (status just transitioned) |
 | 19 | PATCH /api/flora/:id | No real status change | staff patches an `at_risk` record to `health_status: at_risk` | 200; `sendMail` not called (already at that status) |
 
+## Horticulture Handbook - Botanical Catalog Fields (`flora.test.js`)
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 20 | POST /api/flora | Create with botanical fields | Valid species + `plant_family`, `site_suitability`, `color`, `max_height_at_maturity` | 201; all 4 fields saved and returned as sent |
+| 21 | POST /api/flora | Reject non-positive height | `max_height_at_maturity: -5` | 400; "Max height must be a positive number" |
+| 22 | PATCH /api/flora/:id | Clear an existing height | Patch a record that has `max_height_at_maturity` set, with the field sent as an empty value | 200; `max_height_at_maturity` becomes `null`, not left unchanged |
+| 23 | GET /api/flora | Filter by plant_family (partial match) | `?plant_family=Rubi` against seeded records including one `Rubiaceae` and one `Nyctaginaceae` | 200; only the `Rubiaceae` record is returned |
+| 24 | GET /api/flora | Filter by color (exact match) | `?color=red` against seeded records of different colors | 200; only the exact-match record is returned |
+
 ## AI Care Recommendation - live Gemini (manual testing via Postman/browser)
 
 The `POST /api/flora/:id/care-recommendation` endpoint calls Google Gemini, an

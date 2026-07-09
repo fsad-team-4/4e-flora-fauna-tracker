@@ -64,6 +64,7 @@ Main flow:
 1. The staff member opens the Flora list and, in the CSV Upload card, selects a
    `.csv` file. The first row is treated as the header; recognised columns are
    `species`, `common_name`, `location_zone`, `health_status`, `health_notes`,
+   `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
    `last_inspected_at`.
 2. The frontend submits the file as `multipart/form-data` (field `file`) to
    `POST /api/flora/bulk`.
@@ -185,3 +186,42 @@ Alternate / edge flows:
 Postcondition: the record is hidden from all list and detail responses (every
 read query filters on `is_deleted = false`) but is retained in the database,
 supporting the client's 3-5 year data retention preference.
+
+---
+
+## UC-6: Staff browses the Horticulture Handbook before planting
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in.
+
+Client priority served: giving horticulture officers a quick, searchable
+botanical reference distinct from day-to-day health monitoring, so planting
+decisions (family, site suitability, colour, expected mature height) can be
+made without cross-referencing external sources.
+
+Main flow:
+
+1. The staff member opens the Horticulture Handbook page and optionally
+   enters a plant family, site suitability, or colour to narrow the results.
+2. The frontend debounces the input and calls `GET /api/flora` with the
+   corresponding query parameters (`plant_family`, `site_suitability`, `color`).
+3. The backend filters active (non-deleted) records - partial match on
+   `plant_family`/`site_suitability`, exact match on `color` - and returns
+   the matching records.
+4. The frontend renders each match as a card showing species, common name,
+   family, site suitability, colour, max height at maturity, and a small
+   health-status badge for context.
+5. Clicking a card navigates to that plant's detail page (`/flora/:id`),
+   where the same botanical fields can be viewed in full or edited.
+
+Alternate / edge flows:
+
+- No filters entered -> all active records are shown.
+- No records match the given filters -> the page shows "No plants match
+  these filters" instead of an empty list with no explanation.
+- A plant with no botanical fields recorded (e.g. added before this feature,
+  or left blank) -> only its known fields are shown; blank fields are omitted
+  rather than displayed as empty labels.
+
+Postcondition: the staff member has identified a plant matching their
+criteria and can navigate to its full detail page for further action.
