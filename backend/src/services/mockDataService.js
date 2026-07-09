@@ -22,25 +22,25 @@ function daysAgo(n) {
 
 function getFloraRecords() {
   return [
-    { id: 1, species: 'Bougainvillea', location: 'Block 123', block: 'Block 123', health_status: 'critical', last_inspected: daysAgo(3) },
-    { id: 2, species: 'Frangipani', location: 'Block 456', block: 'Block 456', health_status: 'at_risk', last_inspected: daysAgo(5) },
-    { id: 3, species: 'Hibiscus', location: 'Block 789', block: 'Block 789', health_status: 'healthy', last_inspected: daysAgo(6) },
-    { id: 4, species: 'Ixora', location: 'Block 234', block: 'Block 234', health_status: 'at_risk', last_inspected: daysAgo(4) },
-    { id: 5, species: 'Lantana', location: 'Block 567', block: 'Block 567', health_status: 'healthy', last_inspected: daysAgo(8) },
-    { id: 6, species: 'Heliconia', location: 'Block 890', block: 'Block 890', health_status: 'critical', last_inspected: daysAgo(2) },
-    { id: 7, species: 'Bird of Paradise', location: 'Block 345', block: 'Block 345', health_status: 'healthy', last_inspected: daysAgo(9) }
+    { id: 1, species: 'Bougainvillea', location: 'Block 123', block_number: 'Block 123', health_status: 'critical', last_inspected: daysAgo(3) },
+    { id: 2, species: 'Frangipani', location: 'Block 456', block_number: 'Block 456', health_status: 'at_risk', last_inspected: daysAgo(5) },
+    { id: 3, species: 'Hibiscus', location: 'Block 789', block_number: 'Block 789', health_status: 'healthy', last_inspected: daysAgo(6) },
+    { id: 4, species: 'Ixora', location: 'Block 234', block_number: 'Block 234', health_status: 'at_risk', last_inspected: daysAgo(4) },
+    { id: 5, species: 'Lantana', location: 'Block 567', block_number: 'Block 567', health_status: 'healthy', last_inspected: daysAgo(8) },
+    { id: 6, species: 'Heliconia', location: 'Block 890', block_number: 'Block 890', health_status: 'critical', last_inspected: daysAgo(2) },
+    { id: 7, species: 'Bird of Paradise', location: 'Block 345', block_number: 'Block 345', health_status: 'healthy', last_inspected: daysAgo(9) }
   ];
 }
 
 function getFaunaSightings() {
   return [
-    { id: 1, animal_type: 'cat', block: 'Block 123', floor: 'L5', behaviour: 'defecating', date: hoursAgo(2) },
-    { id: 2, animal_type: 'cat', block: 'Block 123', floor: 'L3', behaviour: 'roaming', date: hoursAgo(20) },
-    { id: 3, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'roosting', date: hoursAgo(5) },
-    { id: 4, animal_type: 'pigeon', block: 'Block 456', floor: 'L12', behaviour: 'feeding', date: daysAgo(1) },
-    { id: 5, animal_type: 'pigeon', block: 'Block 456', floor: 'L8', behaviour: 'roosting', date: daysAgo(2) },
-    { id: 6, animal_type: 'cat', block: 'Block 123', floor: 'L1', behaviour: 'urinating', date: daysAgo(1) },
-    { id: 7, animal_type: 'cat', block: 'Block 789', floor: 'Ground', behaviour: 'feeding', date: daysAgo(1) }
+    { id: 1, animal_type: 'cat', block_number: 'Block 123', floor: 'L5', behaviour: 'defecating', date: hoursAgo(2) },
+    { id: 2, animal_type: 'cat', block_number: 'Block 123', floor: 'L3', behaviour: 'roaming', date: hoursAgo(20) },
+    { id: 3, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'roosting', date: hoursAgo(5) },
+    { id: 4, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'feeding', date: daysAgo(1) },
+    { id: 5, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L8', behaviour: 'roosting', date: daysAgo(2) },
+    { id: 6, animal_type: 'cat', block_number: 'Block 123', floor: 'L1', behaviour: 'urinating', date: daysAgo(1) },
+    { id: 7, animal_type: 'cat', block_number: 'Block 789', floor: 'Ground', behaviour: 'feeding', date: daysAgo(1) }
   ];
 }
 
