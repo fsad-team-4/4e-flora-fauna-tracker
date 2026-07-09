@@ -30,12 +30,12 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspotThreshold =
               const pct = Math.round((b.count / total) * 100);
               const isHotspot = b.count >= hotspotThreshold;
               return (
-                <Box key={b.block}>
+                <Box key={b.block_number}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
                       <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: isHotspot ? BRAND.primary : CHART.series.primary, flexShrink: 0 }} />
                       <Typography sx={{ fontSize: 14, fontWeight: 600, color: BRAND.heading, whiteSpace: 'nowrap' }}>
-                        {b.block}
+                        {b.block_number}
                       </Typography>
                       {isHotspot && (
                         <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: BRAND.primary, bgcolor: '#FDECEA', borderRadius: '4px', px: 0.5, py: 0.1, textTransform: 'uppercase', letterSpacing: '0.4px' }}>

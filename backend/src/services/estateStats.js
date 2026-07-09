@@ -10,7 +10,8 @@
 function computeHotspots(sightings, minCount = 3) {
   const blocks = {};
   sightings.forEach(s => {
-    const b = (blocks[s.block] ||= { count: 0, animals: new Set(), lastSeen: null });
+    const b = (blocks[s.block_number] ||= { count: 0, animals: new Set(), lastSeen: null });
+
     b.count += 1;
     if (s.animal_type) b.animals.add(s.animal_type);
     const t = s.date ? new Date(s.date) : null;
@@ -69,9 +70,9 @@ function computeEstateMetrics({ flora, sightings, cases }) {
 
   // every block ranked by sighting volume (for the "activity by block" list)
   const byBlock = {};
-  sightings.forEach(s => { byBlock[s.block] = (byBlock[s.block] || 0) + 1; });
+  sightings.forEach(s => { byBlock[s.block_number] = (byBlock[s.block_number] || 0) + 1; });
   const sightingsByBlock = Object.entries(byBlock)
-    .map(([block, count]) => ({ block, count }))
+    .map(([block_number, count]) => ({ block_number, count }))
     .sort((a, b) => b.count - a.count);
 
   const riskScore = computeRiskScore({ criticalFlora, activeHotspots: hotspots.length, openCases, atRiskFlora });
