@@ -19,3 +19,21 @@ export const CATEGORIES = Object.entries(CATEGORY_LABELS).map(([value, label]) =
   value,
   label,
 }));
+
+export const HEALTH_STATUS_LABELS = {
+  healthy: 'Healthy',
+  at_risk: 'At Risk',
+  critical: 'Critical',
+};
+
+export const HEALTH_STATUS_COLORS = {
+  healthy: 'success',
+  at_risk: 'warning',
+  critical: 'error',
+};
+
+// Derived from HEALTH_STATUS_LABELS for use in dropdowns.
+export const HEALTH_STATUS_OPTIONS = Object.entries(HEALTH_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));

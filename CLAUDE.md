@@ -11,6 +11,21 @@ My module (Member 3 / Klemens): Resident Reports & Authentication
 - This auth layer is the keystone - consumed by ALL other modules (M1 flora, M2 fauna, M4 alerts)
 - Rule-based auto-email to resident when their case is resolved
 
+Member 1 / Shernell - Flora Management:
+- GreeneryRecord CRUD with RBAC (read: any logged-in user; mutations: staff/admin)
+- CSV bulk upload (partial-failure: valid rows import, invalid rows reported by row number)
+- Health status tracking (healthy / at_risk / critical)
+- Soft delete (is_deleted flag; hidden from lists, retained for data retention)
+- Gemini AI care recommendations (emoji-prefixed actionable bullets)
+- Key files:
+  - backend/src/models/GreeneryRecord.js
+  - backend/src/controllers/floraController.js
+  - backend/src/routes/floraRoutes.js
+  - frontend/src/pages/FloraList.jsx
+  - frontend/src/pages/AddFlora.jsx
+  - frontend/src/pages/FloraDetail.jsx
+  - backend/tests/shernell/flora.test.js
+
 Tech Stack:
 - Frontend: React + Vite, MUI/ui, Formik, Yup, Axios
 - Backend: Node.js + Express, Sequelize ORM, Yup validation

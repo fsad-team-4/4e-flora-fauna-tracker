@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "seed": "node src/seed.js",
     "test": "jest"
   },
   "keywords": [],
@@ -24,7 +25,8 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.2.0",
-    "nodemailer": "^9.0.1",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.3",
     "sequelize": "^6.37.8",
     "sqlite3": "^6.0.1",
     "yup": "^1.7.1"

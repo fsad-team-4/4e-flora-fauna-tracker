@@ -1,0 +1,68 @@
+# Database Schema - Member 1 (Shernell)
+
+The table owned by the Flora Management module. Defined with Sequelize
+(`backend/src/models/GreeneryRecord.js`) and backed by SQLite in local dev,
+PostgreSQL (Neon) in production.
+
+Notes:
+
+- The table name is the Sequelize-pluralized model name (`GreeneryRecord` ->
+  `GreeneryRecords`).
+- `timestamps: true` (Sequelize default) adds `createdAt` and `updatedAt`
+  (`DATETIME`, NOT NULL).
+- The `health_status` ENUM also carries an `isIn` validator. SQLite stores ENUM
+  as plain TEXT with no value check, so the validator enforces the allowed
+  values for SQLite/PostgreSQL parity.
+- Dual validation: the controller (`floraController.js`) validates incoming
+  request bodies with yup (`species` required, `health_status` restricted to the
+  three values) before writing, and the model re-enforces `allowNull` and the
+  `isIn` check at the ORM layer - so bad data is rejected whether it arrives via
+  the API or another code path.
+
+---
+
+## GreeneryRecords
+
+An estate greenery asset (tree, shrub, or planting-bed stock) with its location,
+health status, inspection notes, and an optional AI care recommendation.
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | INTEGER | PK, auto-increment |
+| species | STRING | NOT NULL |
+| common_name | STRING | nullable |
+| location_zone | STRING | nullable |
+| health_status | ENUM('healthy', 'at_risk', 'critical') | NOT NULL, default `'healthy'`, `isIn` validator |
+| health_notes | TEXT | nullable |
+| care_recommendation | TEXT | nullable (populated by the AI care-recommendation endpoint) |
+| last_inspected_at | DATE | nullable |
+| recorded_by | INTEGER | NOT NULL, FK -> `Users.id` |
+| is_deleted | BOOLEAN | NOT NULL, default `false` (soft-delete flag) |
+| createdAt | DATETIME | NOT NULL |
+| updatedAt | DATETIME | NOT NULL |
+
+Relationships:
+
+- `GreeneryRecords.recorded_by` -> `Users.id` (a user records many greenery
+  records; association alias `recorder`, exposing `{ id, name }` on read).
+  Defined in `backend/src/models/index.js`:
+  `User.hasMany(GreeneryRecord, { foreignKey: 'recorded_by' })` and
+  `GreeneryRecord.belongsTo(User, { as: 'recorder', foreignKey: 'recorded_by' })`.
+
+Field notes:
+
+- `care_recommendation` is not set on create or update; it is written only by
+  `POST /api/flora/:id/care-recommendation`, which stores the Gemini-generated
+  text there.
+- `is_deleted` drives the soft delete: `DELETE /api/flora/:id` sets it to
+  `true`, and every read query filters on `is_deleted = false`, so deleted
+  records disappear from the API while remaining in the table (supporting the
+  client's 3-5 year data retention preference).
+
+---
+
+## Foreign key summary
+
+| Foreign key | References |
+|-------------|------------|
+| GreeneryRecords.recorded_by | Users.id |
