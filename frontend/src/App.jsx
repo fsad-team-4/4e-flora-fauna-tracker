@@ -16,7 +16,7 @@ import Dashboard from './pages/Dashboard'
 import AlertRules from './pages/AlertRules'
 import NotificationLog from './pages/NotificationLog'
 import RodentAssessment from './pages/RodentAssessment'
-
+ 
 function Home() {
   const { user } = useUser()
   if (!user) {
@@ -39,7 +39,7 @@ function Home() {
     </Box>
   )
 }
-
+ 
 function NavLinkButton({ to, children }) {
   const location = useLocation()
   const active = location.pathname === to
@@ -61,7 +61,7 @@ function NavLinkButton({ to, children }) {
     </Button>
   )
 }
-
+ 
 function NavBar() {
   const { user, setUser } = useUser()
   const logout = () => {
@@ -83,7 +83,7 @@ function NavBar() {
             4E Biodiversity Tracker
           </Typography>
         </Box>
-
+ 
         {/* nav links */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
@@ -102,10 +102,10 @@ function NavBar() {
             )}
           </Box>
         )}
-
+ 
         {/* spacer pushes the user block to the far right */}
         <Box sx={{ flexGrow: 1 }} />
-
+ 
         {/* user identity + logout, hard right */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -134,7 +134,7 @@ function NavBar() {
     </AppBar>
   )
 }
-
+ 
 function App() {
   return (
     <UserProvider>
@@ -163,5 +163,5 @@ function App() {
     </UserProvider>
   )
 }
-
+ 
 export default App
