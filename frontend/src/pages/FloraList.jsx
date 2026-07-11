@@ -2,8 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Card, CardActionArea, CardContent, Chip, Alert,
-  Stack, TextField, MenuItem, Button,
+  Stack, TextField, MenuItem, Button, CircularProgress,
 } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
 
@@ -55,18 +59,47 @@ export default function FloraList() {
   };
 
   return (
-    <Box sx={{ maxWidth: 700, mx: 'auto', mt: 4 }}>
-      <Typography variant="h5" sx={{ mb: 2 }}>Flora</Typography>
+    <Box sx={{ maxWidth: 760, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
+      {/* Page header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 3, gap: 2, flexWrap: 'wrap' }}>
+        <Box>
+          <Typography variant="h4">Flora Management</Typography>
+          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+            Track estate greenery health and log new inspections.
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => navigate('/flora/add')}
+        >
+          Add Plant
+        </Button>
+      </Box>
 
+      {/* CSV upload */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" sx={{ mb: 1 }}>CSV Upload</Typography>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => setCsvFile(e.target.files[0] || null)}
-            />
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <UploadFileOutlinedIcon fontSize="small" color="action" />
+            <Typography variant="h6">Bulk Import</Typography>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Upload a CSV export (e.g. from NParks) to add multiple records at once.
+          </Typography>
+          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+            <Button variant="outlined" component="label" size="small">
+              Choose File
+              <input
+                type="file"
+                accept=".csv"
+                hidden
+                onChange={(e) => setCsvFile(e.target.files[0] || null)}
+              />
+            </Button>
+            {csvFile && (
+              <Typography variant="body2" color="text.secondary">{csvFile.name}</Typography>
+            )}
             <Button
               variant="contained"
               onClick={handleUpload}
@@ -96,6 +129,7 @@ export default function FloraList() {
         </CardContent>
       </Card>
 
+      {/* Filter toolbar */}
       <Stack direction="row" spacing={2} sx={{ mb: 2 }} alignItems="center">
         <TextField
           select
@@ -103,47 +137,105 @@ export default function FloraList() {
           size="small"
           value={healthFilter}
           onChange={(e) => setHealthFilter(e.target.value)}
-          sx={{ minWidth: 160 }}
+          sx={{ minWidth: 180 }}
         >
-          <MenuItem value="">All</MenuItem>
+          <MenuItem value="">All statuses</MenuItem>
           {HEALTH_STATUS_OPTIONS.map((s) => (
             <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
           ))}
         </TextField>
-        <Button variant="contained" onClick={() => navigate('/flora/add')}>
-          Add Plant
-        </Button>
+        {!loading && !error && (
+          <Typography variant="body2" color="text.secondary">
+            {plants.length} plant{plants.length === 1 ? '' : 's'}
+          </Typography>
+        )}
       </Stack>
 
-      {loading && <Typography>Loading...</Typography>}
-      {!loading && error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-      {!loading && !error && plants.length === 0 && (
-        <Typography>No flora found</Typography>
+      {/* Loading state */}
+      {loading && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5, py: 8 }}>
+          <CircularProgress size={28} />
+          <Typography variant="body2" color="text.secondary">Loading flora records...</Typography>
+        </Box>
       )}
 
-      {!loading && !error && plants.map((plant) => (
-        <Card key={plant.id} sx={{ mb: 2 }}>
-          <CardActionArea onClick={() => navigate(`/flora/${plant.id}`)}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6">{plant.species}</Typography>
-                <Chip
-                  label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                  color={HEALTH_STATUS_COLORS[plant.health_status] || 'default'}
-                  size="small"
-                />
-              </Box>
-              {plant.common_name && (
-                <Typography color="text.secondary">{plant.common_name}</Typography>
-              )}
-              {plant.location_zone && (
-                <Typography variant="body2">Zone: {plant.location_zone}</Typography>
-              )}
-            </CardContent>
-          </CardActionArea>
-        </Card>
-      ))}
+      {!loading && error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      {/* Empty state */}
+      {!loading && !error && plants.length === 0 && (
+        <Box
+          sx={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            gap: 1.5, py: 8, textAlign: 'center',
+          }}
+        >
+          <ParkOutlinedIcon sx={{ fontSize: 40, color: 'text.disabled' }} />
+          <Typography variant="h6" color="text.secondary">
+            {healthFilter ? 'No plants match this filter' : 'No plants recorded yet'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 340 }}>
+            {healthFilter
+              ? 'Try a different health status, or clear the filter to see everything.'
+              : 'Add your first plant record, or bulk-import a CSV to get started.'}
+          </Typography>
+          {!healthFilter && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => navigate('/flora/add')}
+              sx={{ mt: 1 }}
+            >
+              Add Plant
+            </Button>
+          )}
+        </Box>
+      )}
+
+      {/* Plant cards */}
+      {!loading && !error && plants.map((plant) => {
+        const statusColor = HEALTH_STATUS_COLORS[plant.health_status] || 'default';
+        return (
+          <Card
+            key={plant.id}
+            sx={{
+              mb: 2,
+              borderLeft: 4,
+              borderLeftColor: `${statusColor}.main`,
+              transition: 'box-shadow .15s, transform .15s',
+            }}
+          >
+            <CardActionArea
+              onClick={() => navigate(`/flora/${plant.id}`)}
+              sx={{
+                '&:hover': { bgcolor: 'action.hover' },
+              }}
+            >
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ lineHeight: 1.3 }}>{plant.species}</Typography>
+                    {plant.common_name && (
+                      <Typography color="text.secondary" variant="body2">{plant.common_name}</Typography>
+                    )}
+                  </Box>
+                  <Chip
+                    label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+                    color={statusColor}
+                    size="small"
+                  />
+                </Box>
+
+                {plant.location_zone && (
+                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+                    <LocationOnOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                    <Typography variant="body2" color="text.secondary">{plant.location_zone}</Typography>
+                  </Stack>
+                )}
+              </CardContent>
+            </CardActionArea>
+          </Card>
+        );
+      })}
     </Box>
   );
 }
