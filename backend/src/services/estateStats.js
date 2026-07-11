@@ -13,8 +13,8 @@ function computeHotspots(sightings, minCount = 3) {
     const b = (blocks[s.block_number] ||= { count: 0, animals: new Set(), lastSeen: null });
 
     b.count += 1;
-    if (s.animal_type) b.animals.add(s.animal_type);
-    const t = s.date ? new Date(s.date) : null;
+    if (s.species) b.animals.add(s.species);
+    const t = s.createdAt ? new Date(s.createdAt) : null;
     if (t && (!b.lastSeen || t > b.lastSeen)) b.lastSeen = t;
   });
   return Object.entries(blocks)
