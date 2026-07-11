@@ -30,11 +30,15 @@ The JSON must match this exact structure:
   "risk_level": "low" | "medium" | "high" | "critical",
   "likely_cause": "string - one sentence explaining the most probable cause",
   "signs_identified": ["array", "of", "specific", "signs", "mentioned"],
-  "immediate_actions": ["array", "of", "concrete", "actions", "for", "the", "field", "officer"],
+  "immediate_actions": [
+    { "title": "2-3 word action summary", "detail": "one sentence describing the concrete action for the field officer" }
+  ],
   "escalate_to_contractor": true | false,
   "escalation_reason": "string if escalate is true, null if false",
   "estimated_timeline": "string - how urgently this needs to be addressed"
 }
+
+Each immediate_actions item MUST have a short "title" (2-3 words, e.g. "Inspect Vicinity", "Locate Entry Points", "Educate Residents") that front-loads the action, plus a "detail" sentence. The title lets an officer scan the steps at a glance.
 
 Risk level guide:
 - low: minor droppings only, no active nesting, isolated to one area
@@ -76,7 +80,22 @@ Escalate to contractor when the situation is beyond self-treatment scope.`;
     throw new Error(`unexpected risk_level value: ${parsed.risk_level}`);
   }
 
+  // normalise actions: accept the new {title, detail} shape, but if the model
+  // ever returns plain strings, wrap them so downstream always gets objects.
+  parsed.immediate_actions = normalizeActions(parsed.immediate_actions);
+
   return parsed;
+}
+
+// keep action shape consistent regardless of what the model returns
+function normalizeActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  return actions.map(a => {
+    if (a && typeof a === 'object') {
+      return { title: a.title || '', detail: a.detail || a.text || '' };
+    }
+    return { title: '', detail: String(a) };
+  });
 }
 
 function buildPrompt({ block, floorLevel, observations }) {
@@ -104,10 +123,10 @@ function stubAssessment(observations) {
     likely_cause: 'Assessment based on stub logic (no API key). Set GEMINI_API_KEY for real AI assessment.',
     signs_identified: hasDroppings ? ['rodent droppings observed'] : ['general signs noted'],
     immediate_actions: [
-      'Document the exact location with photos',
-      'Check for additional signs within 10m radius',
-      'Clear any accessible food sources or debris',
-      'Re-inspect in 48 hours',
+      { title: 'Document Location', detail: 'Record the exact location with photos for the case file.' },
+      { title: 'Inspect Vicinity', detail: 'Check for additional signs within a 10m radius of the observation.' },
+      { title: 'Clear Attractants', detail: 'Remove any accessible food sources or debris that draw rodents.' },
+      { title: 'Re-inspect', detail: 'Return to re-inspect the area within 48 hours.' },
     ],
     escalate_to_contractor: level === 'high',
     escalation_reason: level === 'high' ? 'Multiple risk factors present — beyond self-treatment scope' : null,

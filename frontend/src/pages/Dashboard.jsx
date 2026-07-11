@@ -17,7 +17,6 @@ import KpiCard from '../components/dashboard/KpiCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
 import CategoryDonut from '../components/dashboard/CategoryDonut';
 import BlocksRanked from '../components/dashboard/BlocksRanked';
-import BlockHeatMap from '../components/dashboard/BlockHeatMap';
 
 function buildKpis(m) {
   const t = m?.trends || {};
@@ -134,11 +133,12 @@ export default function Dashboard() {
         </Box>
         {user?.role === 'admin' && (
           <Button
-            variant="contained"
+            variant="outlined"
+            color="secondary"
             onClick={triggerSummary}
             disabled={sending}
             startIcon={<EmailOutlinedIcon />}
-            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0 }}
+            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0, borderColor: '#37474F', color: '#37474F', '&:hover': { borderColor: '#263238', bgcolor: 'rgba(55,71,79,.04)' } }}
           >
             {sending ? 'Sending…' : 'Send Weekly Summary'}
           </Button>
@@ -208,15 +208,9 @@ export default function Dashboard() {
           {/* Row 2: Estate Activity chart - full width, because the 12-day dual-series bars need the room */}
           <ActivityChart history={metrics.history} />
 
-          {/* Row 3: Heat map + Blocks ranked side by side */}
-          <Grid container spacing={2.5}>
-            <Grid size={{ xs: 12, md: 7 }}>
-              <BlockHeatMap sightingsByBlock={metrics.sightingsByBlock} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 5 }}>
-              <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
-            </Grid>
-          </Grid>
+          {/* Row 3: Activity by Block - now the single consolidated location widget
+              (colour intensity absorbed from the retired heat map) */}
+          <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
         </Stack>
       )}
     </Box>

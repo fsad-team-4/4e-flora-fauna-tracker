@@ -1,10 +1,19 @@
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import { BRAND, CHART } from '../../theme';
 
+function rampColor(count, max) {
+  if (!count || !max) return CHART.ramp[0];
+  const t = count / max;
+  const idx = Math.min(CHART.ramp.length - 1, Math.floor(t * CHART.ramp.length));
+  return CHART.ramp[idx];
+}
+
 /**
- * Blocks ranked by fauna sighting volume - the "where are the problems" view.
- * Each row shows the block, a magnitude bar (sequential single hue) and its share
- * of total sightings. A hotspot (3+ sightings) is flagged so the worst stand out.
+ * Blocks ranked by fauna sighting volume, as an inline horizontal bar chart:
+ * the block label sits on the left, the bar grows immediately to its right, and
+ * the count sits at the end of the bar - so each block and its metric form one
+ * tight visual cluster (proximity) instead of being pushed to opposite edges.
+ * Hotspots (3+ sightings) stay brand-red; others take a ramp step by intensity.
  */
 export default function BlocksRanked({ sightingsByBlock = [], hotspotThreshold = 3 }) {
   const total = sightingsByBlock.reduce((s, b) => s + b.count, 0);
@@ -17,40 +26,54 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspotThreshold =
           Activity by Block
         </Typography>
         <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2 }}>
-          Fauna sightings by location
+          Fauna sightings by location — colour shows intensity
         </Typography>
-
         {total === 0 ? (
           <Typography variant="body2" sx={{ color: BRAND.textLight, py: 8, textAlign: 'center' }}>
             No sightings logged yet.
           </Typography>
         ) : (
-          <Stack spacing={1.75}>
+          <Stack spacing={1.25}>
             {sightingsByBlock.map(b => {
               const pct = Math.round((b.count / total) * 100);
               const isHotspot = b.count >= hotspotThreshold;
+              const barColor = isHotspot ? BRAND.primary : rampColor(b.count, max);
+              const widthPct = max ? (b.count / max) * 100 : 0;
               return (
-                <Box key={b.block_number}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-                      <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: isHotspot ? BRAND.primary : CHART.series.primary, flexShrink: 0 }} />
-                      <Typography sx={{ fontSize: 14, fontWeight: 600, color: BRAND.heading, whiteSpace: 'nowrap' }}>
-                        {b.block_number}
-                      </Typography>
-                      {isHotspot && (
-                        <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: BRAND.primary, bgcolor: '#FDECEA', borderRadius: '4px', px: 0.5, py: 0.1, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                          Hotspot
-                        </Box>
-                      )}
-                    </Stack>
-                    <Typography sx={{ fontSize: 13, color: BRAND.textLight, flexShrink: 0 }}>
-                      <Box component="span" sx={{ fontWeight: 700, color: BRAND.heading }}>{b.count}</Box> · {pct}%
+                <Stack key={b.block_number} direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                  {/* label - fixed width so all bars start from the same x (aligned) */}
+                  <Box sx={{ width: 96, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.5, minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {b.block_number}
                     </Typography>
-                  </Stack>
-                  <Box sx={{ height: 6, borderRadius: '3px', bgcolor: BRAND.section, overflow: 'hidden' }}>
-                    <Box sx={{ height: '100%', width: `${max ? (b.count / max) * 100 : 0}%`, bgcolor: isHotspot ? BRAND.primary : CHART.series.primary, borderRadius: '3px', transition: 'width .4s ease' }} />
                   </Box>
-                </Box>
+
+                  {/* bar grows immediately to the right of the label; count sits at its end */}
+                  <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                    <Box sx={{ flexGrow: 1, height: 20, borderRadius: '4px', bgcolor: BRAND.section, overflow: 'hidden', position: 'relative' }}>
+                      <Box
+                        sx={{
+                          height: '100%',
+                          width: `${widthPct}%`,
+                          minWidth: 4,
+                          bgcolor: barColor,
+                          borderRadius: '4px',
+                          transition: 'width .4s ease',
+                        }}
+                      />
+                    </Box>
+                    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'baseline', flexShrink: 0, width: 58, justifyContent: 'flex-end' }}>
+                      <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: BRAND.heading }}>{b.count}</Typography>
+                      <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>·{pct}%</Typography>
+                    </Stack>
+                  </Box>
+
+                  {isHotspot && (
+                    <Box component="span" sx={{ fontSize: 10, fontWeight: 700, color: BRAND.primary, bgcolor: '#FDECEA', borderRadius: '4px', px: 0.5, py: 0.1, textTransform: 'uppercase', letterSpacing: '0.4px', flexShrink: 0 }}>
+                      Hot
+                    </Box>
+                  )}
+                </Stack>
               );
             })}
           </Stack>
