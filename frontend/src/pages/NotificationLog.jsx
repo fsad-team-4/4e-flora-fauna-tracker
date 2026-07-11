@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Box, Typography, Table, TableHead, TableRow, TableCell,
   TableBody, Chip, Alert, CircularProgress, ToggleButtonGroup,
-  ToggleButton, Button, Paper
+  ToggleButton, Button, Paper, Tooltip,
 } from '@mui/material';
 import http from '../http';
 import NotificationTimeline from '../components/NotificationTimeline';
@@ -10,13 +10,12 @@ import NotificationTimeline from '../components/NotificationTimeline';
 const BRAND = {
   primary: '#C1272D',
   heading: '#222222',
+  text: '#444444',
   textLight: '#777777',
   border: '#E5E5E5',
   section: '#F7F7F7',
 };
-
 const PAGE_SIZE = 25;
-const TICK_COLOR = { sent: '#2a78d6', failed: '#d03b3b' };
 
 export default function NotificationLog() {
   const [logs, setLogs] = useState([]);
@@ -29,7 +28,6 @@ export default function NotificationLog() {
 
   useEffect(() => { load(0, true); }, [statusFilter]);
 
-  // the timeline shows the full window regardless of the table's status filter
   useEffect(() => {
     let active = true;
     http.get('/api/notifications?limit=1000')
@@ -64,6 +62,24 @@ export default function NotificationLog() {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     return `${Math.floor(seconds / 86400)}d ago`;
   }
+  function formatExact(iso) {
+    return new Date(iso).toLocaleString('en-SG', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+  // primary "When" label: absolute time for audit cross-referencing
+  function formatStamp(iso) {
+    return new Date(iso).toLocaleString('en-SG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  }
+  // derive a human-readable name from an email's local part
+  // duty.officer@... -> "Duty Officer";  pest_control@... -> "Pest Control"
+  function humanizeRecipient(email) {
+    if (!email) return '';
+    const local = String(email).split('@')[0];
+    return local
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
 
   return (
     <Box sx={{ p: 3 }}>
@@ -77,7 +93,12 @@ export default function NotificationLog() {
           exclusive
           onChange={(_, v) => v && setStatusFilter(v)}
           size="small"
-          sx={{ flexShrink: 0, '& .Mui-selected': { bgcolor: `${BRAND.primary} !important`, color: 'white !important' } }}
+          sx={{
+            flexShrink: 0,
+            // neutral slate for the safe states; red is earned only by the Failed filter
+            '& .Mui-selected': { bgcolor: '#37474F !important', color: 'white !important' },
+            '& .Mui-selected[value="failed"]': { bgcolor: `${BRAND.primary} !important` },
+          }}
         >
           <ToggleButton value="all">All</ToggleButton>
           <ToggleButton value="sent">Sent</ToggleButton>
@@ -93,39 +114,59 @@ export default function NotificationLog() {
         <Table size="small">
           <TableHead>
             <TableRow sx={{ bgcolor: BRAND.section }}>
-              <TableCell>When</TableCell>
-              <TableCell>Rule</TableCell>
-              <TableCell>Recipient</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Preview</TableCell>
+              <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>When</TableCell>
+              <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Rule</TableCell>
+              <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Recipient</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 600, color: BRAND.textLight }}>Status</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {logs.length === 0 && !loading && (
               <TableRow>
-                <TableCell colSpan={5} align="center" sx={{ py: 5, color: BRAND.textLight }}>
+                <TableCell colSpan={4} align="center" sx={{ py: 5, color: BRAND.textLight }}>
                   {statusFilter === 'failed' ? 'No failed dispatches — good!' : 'No notifications yet. Trigger the weekly summary from the dashboard.'}
                 </TableCell>
               </TableRow>
             )}
             {logs.map(log => (
-              <TableRow key={log.id} sx={{ bgcolor: log.status === 'failed' ? '#FDECEA' : 'inherit' }}>
-                <TableCell sx={{ whiteSpace: 'nowrap', borderLeft: `3px solid ${TICK_COLOR[log.status] || 'transparent'}` }}>
-                  <Typography variant="body2">{formatRelative(log.createdAt)}</Typography>
-                  <Typography variant="caption" sx={{ color: BRAND.textLight }}>
-                    {new Date(log.createdAt).toLocaleString('en-SG', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              <TableRow
+                key={log.id}
+                hover
+                sx={{ bgcolor: log.status === 'failed' ? '#FDECEA' : 'inherit' }}
+              >
+                {/* When: one value, exact time on hover */}
+                <TableCell sx={{ whiteSpace: 'nowrap', borderLeft: log.status === 'failed' ? `3px solid ${BRAND.primary}` : '3px solid transparent' }}>
+                  <Tooltip title={formatExact(log.createdAt)} arrow placement="top">
+                    <Box sx={{ cursor: 'default' }}>
+                      {/* absolute time primary (maps to server logs), relative secondary */}
+                      <Typography variant="body2" sx={{ color: BRAND.heading, fontWeight: 600, lineHeight: 1.3 }}>
+                        {formatStamp(log.createdAt)}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: BRAND.textLight }}>
+                        {formatRelative(log.createdAt)}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
+                </TableCell>
+
+                {/* Rule: single line */}
+                <TableCell sx={{ color: BRAND.text }}>
+                  {log.rule_name || <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic' }}>rule deleted</Box>}
+                </TableCell>
+
+                {/* Recipient */}
+                <TableCell>
+                  <Typography variant="body2" sx={{ color: BRAND.heading, fontWeight: 600, lineHeight: 1.3 }}>
+                    {humanizeRecipient(log.recipient)}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: BRAND.textLight, fontFamily: 'monospace', fontSize: 11.5 }}>
+                    {log.recipient}
                   </Typography>
                 </TableCell>
-                <TableCell>
-                  <Typography variant="body2">{log.rule_name || '(rule deleted)'}</Typography>
-                  {log.trigger_type && <Typography variant="caption" sx={{ color: BRAND.textLight, textTransform: 'capitalize', display: 'block' }}>{log.trigger_type.replace(/_/g, ' ')}</Typography>}
-                </TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{log.recipient}</TableCell>
-                <TableCell>
+
+                {/* Status */}
+                <TableCell align="right">
                   <Chip label={log.status} size="small" color={statusColor[log.status] || 'default'} sx={{ textTransform: 'capitalize' }} />
-                </TableCell>
-                <TableCell sx={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, color: BRAND.textLight }}>
-                  {log.message_preview}
                 </TableCell>
               </TableRow>
             ))}

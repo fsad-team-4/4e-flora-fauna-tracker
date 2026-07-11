@@ -10,8 +10,9 @@ import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { useUser } from '../contexts/UserContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import { BRAND, HEALTH_META } from '../theme';
+import { BRAND } from '../theme';
 import http from '../http';
+import EstateHealthHero from '../components/dashboard/EstateHealthHero';
 import KpiCard from '../components/dashboard/KpiCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
 import CategoryDonut from '../components/dashboard/CategoryDonut';
@@ -38,15 +39,12 @@ function buildKpis(m) {
     {
       label: 'Alerts Sent (7d)', value: m?.notificationsLast7Days ?? 0, color: '#2E7D32', tint: '#E7F4E8',
       icon: <MarkEmailReadOutlinedIcon />,
-      // neutral: more alerts is not inherently good or bad
       trend: m ? { delta: (m.notificationsLast7Days ?? 0) - (m.notificationsPrev7Days ?? 0), improve: null } : null,
       trendLabel: 'vs prev 7 days',
     },
   ];
 }
 
-// "12s ago" style relative label that ticks so the live indicator feels current.
-// The clock read happens inside the effect (not during render) so it stays pure.
 function useSyncedAgo(updatedAt) {
   const [label, setLabel] = useState(null);
   useEffect(() => {
@@ -55,22 +53,11 @@ function useSyncedAgo(updatedAt) {
       const secs = Math.max(0, Math.round((Date.now() - updatedAt.getTime()) / 1000));
       setLabel(secs < 60 ? `${secs}s ago` : secs < 3600 ? `${Math.floor(secs / 60)}m ago` : `${Math.floor(secs / 3600)}h ago`);
     };
-    const first = setTimeout(tick, 0); // async so we don't setState in the effect body
+    const first = setTimeout(tick, 0);
     const id = setInterval(tick, 5000);
     return () => { clearTimeout(first); clearInterval(id); };
   }, [updatedAt]);
   return label;
-}
-
-function HealthChip({ status }) {
-  const meta = HEALTH_META[status];
-  if (!meta) return null;
-  return (
-    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', bgcolor: meta.bg, color: meta.color, borderRadius: '999px', px: 1.25, py: 0.4 }}>
-      <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: meta.dot, flexShrink: 0 }} />
-      <Typography sx={{ fontSize: 12.5, fontWeight: 700 }}>{meta.label}</Typography>
-    </Stack>
-  );
 }
 
 export default function Dashboard() {
@@ -98,7 +85,6 @@ export default function Dashboard() {
     }
   }
 
-  // Hard error only when we have nothing to show; background poll failures keep stale data.
   if (error && !metrics) {
     return (
       <Box sx={{ maxWidth: 640, mx: 'auto', px: 3, py: 8, textAlign: 'center' }}>
@@ -113,51 +99,66 @@ export default function Dashboard() {
     );
   }
 
+  const kpiGrid = (
+    <Grid container spacing={2}>
+      {kpis.map(kpi => (
+        <Grid size={{ xs: 12, sm: 6 }} key={kpi.label}>
+          <KpiCard {...kpi} loading={loading} />
+        </Grid>
+      ))}
+    </Grid>
+  );
+
   return (
     <Box component="main" sx={{ width: '100%', px: { xs: 0, md: 1 }, py: 4 }} aria-busy={loading}>
       {/* header */}
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
         spacing={2}
-        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 4 }}
+        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 3 }}
       >
         <Box>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <Typography variant="h4" component="h1" sx={{ color: BRAND.heading }}>
-              Command Centre
-            </Typography>
-            {metrics?.estateHealth?.status && <HealthChip status={metrics.estateHealth.status} />}
-          </Stack>
+          <Typography variant="h4" component="h1" sx={{ color: BRAND.heading }}>
+            Command Centre
+          </Typography>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.75 }}>
             <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0ca30c', boxShadow: '0 0 0 3px rgba(12,163,12,.18)', flexShrink: 0 }} />
             <Typography variant="body2" sx={{ color: BRAND.textLight }} aria-live="polite">
               Live estate feed{syncedAgo && ` · synced ${syncedAgo}`}
             </Typography>
-            <IconButton
-              onClick={reload}
-              disabled={loading}
-              size="small"
-              aria-label="Refresh metrics"
-              sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}
-            >
+            <IconButton onClick={reload} disabled={loading} size="small" aria-label="Refresh metrics" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}>
               <RefreshRoundedIcon sx={{ fontSize: 18 }} />
             </IconButton>
           </Stack>
         </Box>
         {user?.role === 'admin' && (
           <Button
-            variant="contained"
+            variant="outlined"
+            color="secondary"
             onClick={triggerSummary}
             disabled={sending}
             startIcon={<EmailOutlinedIcon />}
-            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0 }}
+            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0, borderColor: '#37474F', color: '#37474F', '&:hover': { borderColor: '#263238', bgcolor: 'rgba(55,71,79,.04)' } }}
           >
             {sending ? 'Sending…' : 'Send Weekly Summary'}
           </Button>
         )}
       </Stack>
 
-      {/* result of the manual weekly-summary trigger */}
+      {/* hero */}
+      {loading && !metrics ? (
+        <Card sx={{ mb: 2.5, borderRadius: '16px' }}>
+          <CardContent sx={{ p: 4 }}>
+            <Skeleton variant="text" width={160} height={24} />
+            <Skeleton variant="text" width={120} height={72} />
+            <Skeleton variant="rounded" width={200} height={32} sx={{ mt: 1 }} />
+          </CardContent>
+        </Card>
+      ) : (
+        <EstateHealthHero estateHealth={metrics?.estateHealth} loading={loading} />
+      )}
+
+      {/* weekly-summary result */}
       <Box role="status" aria-live="polite">
         {summaryResult && (
           <Alert severity={summaryResult.ok ? 'success' : 'error'} sx={{ mb: 3, borderRadius: '10px' }}>
@@ -180,50 +181,37 @@ export default function Dashboard() {
         )}
       </Box>
 
-      {/* KPI cards */}
-      <Grid container spacing={2.5} sx={{ mb: 2.5 }}>
-        {kpis.map(kpi => (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={kpi.label}>
-            <KpiCard {...kpi} loading={loading} />
-          </Grid>
-        ))}
-      </Grid>
-
       {loading ? (
-        <>
-          <Card sx={{ mb: 2.5 }}>
-            <CardContent sx={{ p: 3 }}>
-              <Skeleton variant="text" width={180} height={28} />
-              <Skeleton variant="text" width={260} sx={{ mb: 2 }} />
-              <Skeleton variant="rounded" height={320} />
-            </CardContent>
-          </Card>
-          <Grid container spacing={2.5}>
-            {[7, 5].map(cols => (
-              <Grid size={{ xs: 12, md: cols }} key={cols}>
-                <Card sx={{ height: '100%' }}>
-                  <CardContent sx={{ p: 3 }}>
-                    <Skeleton variant="text" width={160} height={28} />
-                    <Skeleton variant="text" width={220} sx={{ mb: 2 }} />
-                    <Skeleton variant="rounded" height={200} />
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
+        <Grid container spacing={2.5}>
+          <Grid size={{ xs: 12, md: 5 }}>
+            <Card sx={{ height: '100%' }}><CardContent sx={{ p: 3 }}><Skeleton variant="rounded" height={240} /></CardContent></Card>
           </Grid>
-        </>
+          <Grid size={{ xs: 12, md: 7 }}>
+            <Card sx={{ height: '100%' }}><CardContent sx={{ p: 3 }}><Skeleton variant="text" width={160} height={28} /><Skeleton variant="rounded" height={200} sx={{ mt: 2 }} /></CardContent></Card>
+          </Grid>
+          <Grid size={{ xs: 12 }}>
+            <Card><CardContent sx={{ p: 3 }}><Skeleton variant="text" width={180} height={28} /><Skeleton variant="rounded" height={320} sx={{ mt: 2 }} /></CardContent></Card>
+          </Grid>
+        </Grid>
       ) : (
-        <>
-          <ActivityChart history={metrics.history} />
+        <Stack spacing={2.5}>
+          {/* Row 1: KPI 2x2 grid (left) + Category donut (right) - the Corelytics "cards beside a viz" signature */}
           <Grid container spacing={2.5}>
+            <Grid size={{ xs: 12, md: 5 }}>
+              {kpiGrid}
+            </Grid>
             <Grid size={{ xs: 12, md: 7 }}>
               <CategoryDonut casesByCategory={metrics.casesByCategory} />
             </Grid>
-            <Grid size={{ xs: 12, md: 5 }}>
-              <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
-            </Grid>
           </Grid>
-        </>
+
+          {/* Row 2: Estate Activity chart - full width, because the 12-day dual-series bars need the room */}
+          <ActivityChart history={metrics.history} />
+
+          {/* Row 3: Activity by Block - now the single consolidated location widget
+              (colour intensity absorbed from the retired heat map) */}
+          <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
+        </Stack>
       )}
     </Box>
   );

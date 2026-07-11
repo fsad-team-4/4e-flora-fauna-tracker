@@ -21,11 +21,11 @@ const flora = [
 ];
 
 const sightings = [
-  { animal_type: 'cat', block_number: 'Block 123', date: '2026-07-01T10:00:00Z' },
-  { animal_type: 'cat', block_number: 'Block 123', date: '2026-07-02T10:00:00Z' },
-  { animal_type: 'cat', block_number: 'Block 123', date: '2026-07-03T10:00:00Z' },
-  { animal_type: 'pigeon', block_number: 'Block 456', date: '2026-07-01T10:00:00Z' },
-  { animal_type: 'pigeon', block_number: 'Block 456', date: '2026-07-02T10:00:00Z' },
+  { species: 'cat', block_number: 'Block 123', createdAt: '2026-07-01T10:00:00Z' },
+  { species: 'cat', block_number: 'Block 123', createdAt: '2026-07-02T10:00:00Z' },
+  { species: 'cat', block_number: 'Block 123', createdAt: '2026-07-03T10:00:00Z' },
+  { species: 'pigeon', block_number: 'Block 456', createdAt: '2026-07-01T10:00:00Z' },
+  { species: 'pigeon', block_number: 'Block 456', createdAt: '2026-07-02T10:00:00Z' },
 ];
 
 const cases = [
@@ -72,14 +72,14 @@ describe('computeHotspots', () => {
 
   test('sorts hotspots worst-first (highest count first)', () => {
     const s = [
-      { animal_type: 'cat', block_number: 'Block A' },
-      { animal_type: 'cat', block_number: 'Block A' },
-      { animal_type: 'cat', block_number: 'Block A' },
-      { animal_type: 'rat', block_number: 'Block B' },
-      { animal_type: 'rat', block_number: 'Block B' },
-      { animal_type: 'rat', block_number: 'Block B' },
-      { animal_type: 'rat', block_number: 'Block B' },
-      { animal_type: 'rat', block_number: 'Block B' },
+      { species: 'cat', block_number: 'Block A' },
+      { species: 'cat', block_number: 'Block A' },
+      { species: 'cat', block_number: 'Block A' },
+      { species: 'rat', block_number: 'Block B' },
+      { species: 'rat', block_number: 'Block B' },
+      { species: 'rat', block_number: 'Block B' },
+      { species: 'rat', block_number: 'Block B' },
+      { species: 'rat', block_number: 'Block B' },
     ];
     const hotspots = computeHotspots(s);
     expect(hotspots[0].block_number).toBe('Block B');

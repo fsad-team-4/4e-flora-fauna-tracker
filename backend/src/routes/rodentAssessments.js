@@ -53,16 +53,20 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
 
   let assessment;
   let stubbed = false;
-  try {
-    if (hasApiKey()) {
+  if (hasApiKey()) {
+    try {
       assessment = await assessRodentRisk({ block: block_number, floorLevel: floor_level, observations });
-    } else {
+    } catch (err) {
+      // AI call failed (bad key, timeout, service down) - fall back to the
+      // deterministic stub so the officer still gets an assessment rather than
+      // an error. graceful degradation instead of a hard failure.
+      console.error('rodent AI failed, falling back to stub:', err.message);
       assessment = stubAssessment(observations);
       stubbed = true;
     }
-  } catch (err) {
-    console.error('rodent assessment ai failed:', err.message);
-    return res.status(500).json({ error: err.message });
+  } else {
+    assessment = stubAssessment(observations);
+    stubbed = true;
   }
 
   try {

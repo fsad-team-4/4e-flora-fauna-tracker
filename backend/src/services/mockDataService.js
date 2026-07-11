@@ -34,13 +34,13 @@ function getFloraRecords() {
 
 function getFaunaSightings() {
   return [
-    { id: 1, animal_type: 'cat', block_number: 'Block 123', floor: 'L5', behaviour: 'defecating', date: hoursAgo(2) },
-    { id: 2, animal_type: 'cat', block_number: 'Block 123', floor: 'L3', behaviour: 'roaming', date: hoursAgo(20) },
-    { id: 3, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'roosting', date: hoursAgo(5) },
-    { id: 4, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'feeding', date: daysAgo(1) },
-    { id: 5, animal_type: 'pigeon', block_number: 'Block 456', floor: 'L8', behaviour: 'roosting', date: daysAgo(2) },
-    { id: 6, animal_type: 'cat', block_number: 'Block 123', floor: 'L1', behaviour: 'urinating', date: daysAgo(1) },
-    { id: 7, animal_type: 'cat', block_number: 'Block 789', floor: 'Ground', behaviour: 'feeding', date: daysAgo(1) }
+    { id: 1, species: 'cat', block_number: 'Block 123', floor: 'L5', behaviour: 'defecating', createdAt: hoursAgo(2) },
+    { id: 2, species: 'cat', block_number: 'Block 123', floor: 'L3', behaviour: 'roaming', createdAt: hoursAgo(20) },
+    { id: 3, species: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'roosting', createdAt: hoursAgo(5) },
+    { id: 4, species: 'pigeon', block_number: 'Block 456', floor: 'L12', behaviour: 'feeding', createdAt: daysAgo(1) },
+    { id: 5, species: 'pigeon', block_number: 'Block 456', floor: 'L8', behaviour: 'roosting', createdAt: daysAgo(2) },
+    { id: 6, species: 'cat', block_number: 'Block 123', floor: 'L1', behaviour: 'urinating', createdAt: daysAgo(1) },
+    { id: 7, species: 'cat', block_number: 'Block 789', floor: 'Ground', behaviour: 'feeding', createdAt: daysAgo(1) }
   ];
 }
 
