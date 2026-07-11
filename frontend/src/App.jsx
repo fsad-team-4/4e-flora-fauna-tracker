@@ -16,6 +16,9 @@ import Dashboard from './pages/Dashboard'
 import AlertRules from './pages/AlertRules'
 import NotificationLog from './pages/NotificationLog'
 import RodentAssessment from './pages/RodentAssessment'
+import FaunaSightings from './pages/FaunaSightings'
+import FaunaSightingDetail from './pages/FaunaSightingDetail'
+import FaunaHotspots from './pages/FaunaHotspots'
  
 function Home() {
   const { user } = useUser()
@@ -98,6 +101,8 @@ function NavBar() {
                 <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
                 <NavLinkButton to="/notif-log">Log</NavLinkButton>
                 <NavLinkButton to="/rodent">Rodent</NavLinkButton>
+                <NavLinkButton to="/fauna">Fauna Sightings</NavLinkButton>
+                <NavLinkButton to="/fauna/hotspots">Fauna Hotspots</NavLinkButton>
               </>
             )}
           </Box>
@@ -157,6 +162,9 @@ function App() {
             <Route path="/alert-rules" element={<ProtectedRoute><AlertRules /></ProtectedRoute>} />
             <Route path="/notif-log" element={<ProtectedRoute><NotificationLog /></ProtectedRoute>} />
             <Route path="/rodent" element={<ProtectedRoute><RodentAssessment /></ProtectedRoute>} />
+            <Route path="/fauna" element={<ProtectedRoute><FaunaSightings /></ProtectedRoute>} />
+            <Route path="/fauna/hotspots" element={<ProtectedRoute><FaunaHotspots /></ProtectedRoute>} />
+            <Route path="/fauna/:id" element={<ProtectedRoute><FaunaSightingDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
       </BrowserRouter>
