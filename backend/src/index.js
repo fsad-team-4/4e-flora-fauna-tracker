@@ -24,6 +24,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/uploads', require('./routes/uploads'));
 app.use('/api/flora', require('./routes/floraRoutes'));
+app.use('/api/fauna', require('./routes/faunaRoutes'));
 
 app.use('/api/alert-rules', require('./routes/alertRules'));
 app.use('/api/notifications', require('./routes/notifications'));

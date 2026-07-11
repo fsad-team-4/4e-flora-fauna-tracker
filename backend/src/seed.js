@@ -16,7 +16,7 @@ const { computeEstateMetrics, computeRiskScore } = require('./services/estateSta
 // Demo login accounts. Alert Rules, Notification Log and the dashboard all need a
 // staff/admin JWT, so the demo needs real users to sign in with. Same password for
 // both to keep the demo simple - change before any non-demo use.
-const DEMO_PASSWORD = 'demo1234';
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'local-demo-only';
 const DEMO_USERS = [
   { name: 'Estate Admin', email: 'admin@emservices.com.sg', role: 'admin' },
   { name: 'Estate Officer', email: 'staff@emservices.com.sg', role: 'staff' },
@@ -169,7 +169,8 @@ async function seed() {
   console.log(`Seeded ${DEMO_USERS.length} demo users, ${createdRules.length} alert rules, ${allLogs.length} notification log entries and ${snapshots.length} days of metric history.`);
   console.log(`Dashboard "Alerts Sent (7d)": ${last7} (prev 7d: ${prev7}, trend ${last7 - prev7 >= 0 ? '+' : ''}${last7 - prev7}).`);
   console.log(`Estate risk index today: ${today.riskScore}/100 (${today.riskStatus}).`);
-  console.log(`Login: ${DEMO_USERS.map(u => u.email).join(', ')}  (password: ${DEMO_PASSWORD})`);
+  console.log(`Login: ${DEMO_USERS.map(u => u.email).join(', ')}  (password: set via DEMO_PASSWORD env var)`);
+
 
   await sequelize.close();
 }

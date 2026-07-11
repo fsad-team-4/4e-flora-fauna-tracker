@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
 } from 'recharts';
 import { BRAND, CHART } from '../../theme';
 
@@ -42,9 +42,9 @@ function ChartTooltip({ active, payload, label }) {
 }
 
 /**
- * Estate activity over time: open cases and fauna sightings per day, from the
- * stored metric snapshots. A single shared y-axis (both are simple counts) - no
- * dual axis. Accessible via a role="img" summary; the tooltip carries exact values.
+ * Estate activity over time: open cases and fauna sightings per day. Direct data
+ * labels sit above each bar (data-ink ratio), so the Y-axis and gridlines are
+ * removed - the reader gets absolute values without tracing back to an axis.
  */
 export default function ActivityChart({ history = [] }) {
   const data = useMemo(() => history.map(h => ({ ...h, label: h.date })), [history]);
@@ -75,14 +75,28 @@ export default function ActivityChart({ history = [] }) {
           </Typography>
         ) : (
           <Box role="img" aria-label={summary}>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 4 }} barGap={4} barCategoryGap="24%">
-                <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
-                <XAxis dataKey="label" tickFormatter={fmtDay} tick={{ fontSize: 12, fill: CHART.axis }} axisLine={{ stroke: BRAND.border }} tickLine={false} interval="preserveStartEnd" minTickGap={12} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART.axis }} axisLine={false} tickLine={false} width={40} />
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={data} margin={{ top: 20, right: 8, left: 8, bottom: 4 }} barGap={4} barCategoryGap="24%">
+                {/* no CartesianGrid, no YAxis - direct labels carry the values */}
+                <XAxis
+                  dataKey="label"
+                  tickFormatter={fmtDay}
+                  tick={{ fontSize: 12, fill: CHART.axis }}
+                  axisLine={{ stroke: BRAND.border }}
+                  tickLine={false}
+                  interval="preserveStartEnd"
+                  minTickGap={12}
+                />
                 <Tooltip cursor={{ fill: 'rgba(42,120,214,.06)' }} content={<ChartTooltip />} />
                 {SERIES.map(s => (
-                  <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                  <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={22}>
+                    <LabelList
+                      dataKey={s.key}
+                      position="top"
+                      style={{ fontSize: 10, fontWeight: 700, fill: s.color }}
+                      formatter={v => (v > 0 ? v : '')}
+                    />
+                  </Bar>
                 ))}
               </BarChart>
             </ResponsiveContainer>

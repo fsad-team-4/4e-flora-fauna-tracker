@@ -1,9 +1,36 @@
 const yup = require('yup');
-const { ResidentReport, CaseStatusLog } = require('../models');
+const { ResidentReport, CaseStatusLog, FaunaSighting } = require('../models');
 const { sendMail } = require('../config/mailer');
 
 const CATEGORIES = ['flora_health', 'community_cat', 'pigeon', 'pest', 'other'];
 const STATUSES = ['open', 'in_progress', 'resolved'];
+
+// Maps the fauna-relevant report categories to a FaunaSighting species.
+const CATEGORY_TO_SPECIES = { community_cat: 'cat', pigeon: 'pigeon' };
+
+// Auto-create a FaunaSighting from a fauna-category ResidentReport so Renee's
+// fauna module (hotspots, AI summaries) is fed from resident complaints without
+// a separate submission form. Fire-and-forget: failures are logged but never
+// affect the ResidentReport response.
+async function createFaunaSightingFromReport(report, reportedBy) {
+  try {
+    const species = CATEGORY_TO_SPECIES[report.category];
+    if (!species) return;
+
+    await FaunaSighting.create({
+      species,
+      block_number: report.block_number,
+      floor_level: report.floor_level,
+      gps_lat: report.gps_lat,
+      gps_lng: report.gps_lng,
+      photo_url: report.photo_urls && report.photo_urls[0] ? report.photo_urls[0] : null,
+      notes: report.description,
+      reported_by: reportedBy,
+    });
+  } catch (err) {
+    console.error('Failed to auto-create FaunaSighting from report:', err.message);
+  }
+}
 
 const createSchema = yup.object({
   category: yup.string().required().oneOf(CATEGORIES),
@@ -39,6 +66,12 @@ async function createReport(req, res) {
     floor_level: data.floor_level,
     reported_by: req.user.user_id,
   });
+
+  // Fire-and-forget: if this is a fauna complaint, mirror it into a
+  // FaunaSighting. Not awaited - it must not delay or affect this response.
+  if (data.category === 'community_cat' || data.category === 'pigeon') {
+    createFaunaSightingFromReport(report, req.user.user_id);
+  }
 
   return res.status(201).json(report);
 }
