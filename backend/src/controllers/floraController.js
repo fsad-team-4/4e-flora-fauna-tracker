@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { GoogleGenAI } = require('@google/genai');
 const { GreeneryRecord, User } = require('../models');
 const { sendMail } = require('../config/mailer');
+const floraQueryService = require('../services/floraQueryService');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
@@ -270,6 +271,28 @@ Respond with only the recommendation itself, as 3-5 short bullet points. Plain t
   return res.status(200).json(record);
 }
 
+// Answer a natural-language question grounded in the greenery catalog
+async function queryHandbook(req, res) {
+  const { question } = req.body || {};
+  if (typeof question !== 'string' || question.trim() === '') {
+    return res.status(400).json({ error: 'question is required' });
+  }
+  if (question.length > 500) {
+    return res.status(400).json({ error: 'question must be 500 characters or fewer' });
+  }
+
+  if (!floraQueryService.hasApiKey()) {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  try {
+    const { answer, plantCount } = await floraQueryService.queryCatalog(question.trim());
+    return res.status(200).json({ question: question.trim(), answer, plantCount });
+  } catch (err) {
+    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+  }
+}
+
 module.exports = {
   getAllGreenery,
   createGreenery,
@@ -277,4 +300,5 @@ module.exports = {
   softDeleteGreenery,
   bulkUploadCSV,
   careRecommendation,
+  queryHandbook,
 };

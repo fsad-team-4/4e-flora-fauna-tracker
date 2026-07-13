@@ -3,6 +3,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, TextField, Card, CardActionArea, CardContent,
   Chip, Stack, InputAdornment, Skeleton, Alert, Divider, MenuItem,
+  Button, CircularProgress,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
@@ -46,6 +47,14 @@ function PlantCardSkeleton() {
   );
 }
 
+// klemens - example questions for the "Ask the Handbook" AI query box
+const EXAMPLE_QUESTIONS = [
+  'Which trees should not be planted near carparks?',
+  'What is safe to plant near a playground?',
+  'Which plants are currently critical and why?',
+  'What is the lowest-maintenance shade tree?',
+];
+
 export default function HorticultureHandbook() {
   const [plantFamily, setPlantFamily] = useState('');
   const [siteSuitability, setSiteSuitability] = useState('');
@@ -54,6 +63,12 @@ export default function HorticultureHandbook() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [jumpTarget, setJumpTarget] = useState('');
+
+  // klemens - state for the AI query box
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState('');
 
   const debouncedFamily = useDebouncedValue(plantFamily, 400);
   const debouncedSuitability = useDebouncedValue(siteSuitability, 400);
@@ -79,6 +94,24 @@ export default function HorticultureHandbook() {
   useEffect(() => {
     loadPlants();
   }, [loadPlants]);
+
+  // klemens - submit a natural-language question to the AI catalog query endpoint
+  const handleAsk = () => {
+    setAsking(true);
+    setAskError('');
+    setAnswer('');
+    http
+      .post('/api/flora/query', { question: question.trim() })
+      .then((res) => setAnswer(res.data.answer))
+      .catch((err) => {
+        if (err.response?.status === 503) {
+          setAskError('AI querying is not configured (no API key set)');
+        } else {
+          setAskError(err.response?.data?.error || 'Failed to get an answer.');
+        }
+      })
+      .finally(() => setAsking(false));
+  };
 
   const filtersActive = Boolean(plantFamily || siteSuitability || color);
 
@@ -164,6 +197,51 @@ export default function HorticultureHandbook() {
               }}
             />
           </Stack>
+        </CardContent>
+      </Card>
+
+      {/* klemens - "Ask the Handbook" AI query section */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+            Ask the Handbook
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Ask a question in plain English about the estate plant catalog.
+          </Typography>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            label="Your question"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            sx={{ mb: 1.5 }}
+          />
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+            {EXAMPLE_QUESTIONS.map((example) => (
+              <Chip
+                key={example}
+                label={example}
+                size="small"
+                variant="outlined"
+                onClick={() => setQuestion(example)}
+              />
+            ))}
+          </Box>
+          <Button
+            variant="contained"
+            onClick={handleAsk}
+            disabled={asking || question.trim() === ''}
+          >
+            {asking ? <CircularProgress size={24} color="inherit" /> : 'Ask'}
+          </Button>
+          {askError && <Alert severity="error" sx={{ mt: 2 }}>{askError}</Alert>}
+          {answer && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
+              <Typography variant="body2">{answer}</Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
 

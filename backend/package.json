@@ -10,6 +10,7 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "seed": "node src/seed.js",
+    "seed:flora": "node src/seedFlora.js",
     "test": "jest"
   },
   "keywords": [],
