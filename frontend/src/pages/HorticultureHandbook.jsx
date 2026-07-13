@@ -319,14 +319,13 @@ export default function HorticultureHandbook() {
         <Stack spacing={4}>
           {familyGroups.map(([family, familyPlants]) => (
             <Box key={family} id={familyId(family)}>
-              <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                  {family}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                <Box component="span" sx={{ fontWeight: 700 }}>{family}</Box>
+                {' '}
+                <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary', fontSize: '0.875rem' }}>
                   ({familyPlants.length} plant{familyPlants.length === 1 ? '' : 's'})
-                </Typography>
-              </Stack>
+                </Box>
+              </Typography>
               <Divider sx={{ mb: 2 }} />
               <Box sx={CARD_GRID_SX}>
                 {familyPlants.map((plant) => {
