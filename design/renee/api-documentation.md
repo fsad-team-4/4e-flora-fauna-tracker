@@ -4,9 +4,9 @@ Endpoints owned by the Fauna Sightings module. Base URL is the backend server
 (e.g. `http://localhost:3000`).
 
 FaunaSighting records are created automatically by the system when a resident
-submits a ResidentReport with category `community_cat` or `pigeon`. There is
-no resident-facing POST endpoint. All fauna endpoints are staff/admin facing
-except the RBAC-protected GET endpoints.
+submits a ResidentReport with category `community_cat` or `pigeon`. Staff and
+field officers can also log a sighting directly via `POST /api/fauna`. There is
+no resident-facing POST endpoint. All fauna endpoints are staff/admin facing.
 
 ## Authentication
 
@@ -86,6 +86,68 @@ List fauna sightings. Soft-deleted sightings are always excluded.
   ```
 
 - Errors:
+  - `401` — missing/invalid token
+  - `403` — role not staff/admin
+
+---
+
+### POST /api/fauna
+
+Log a fauna sighting directly. Intended for staff and field officers recording
+sightings in the field, in addition to the auto-mirror from resident reports.
+`reported_by` is taken from the JWT and cannot be set in the body.
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | species | string | yes | one of `cat`, `pigeon`, `crow`, `mynah`, `other` |
+  | block_number | string | yes | e.g. `Block 203` |
+  | floor_level | string | no | e.g. `2nd` |
+  | behaviour_tags | string[] | no | each one of `urinating`, `feeding`, `nesting`, `droppings`, `aggressive`; defaults to `[]` |
+  | gps_lat | number | no | latitude |
+  | gps_lng | number | no | longitude |
+  | photo_url | string (url) | no | must be a valid URL |
+  | notes | string | no | max 500 characters |
+
+  ```json
+  {
+    "species": "crow",
+    "block_number": "Block 203",
+    "floor_level": "roof",
+    "behaviour_tags": ["nesting", "aggressive"],
+    "gps_lat": 1.3521,
+    "gps_lng": 103.8198,
+    "photo_url": "https://res.cloudinary.com/demo/image/upload/crow.jpg",
+    "notes": "Crows nesting on rooftop, swooping at residents"
+  }
+  ```
+
+- Success: `201` — the created sighting object
+
+  ```json
+  {
+    "id": 7,
+    "species": "crow",
+    "block_number": "Block 203",
+    "floor_level": "roof",
+    "behaviour_tags": ["nesting", "aggressive"],
+    "gps_lat": 1.3521,
+    "gps_lng": 103.8198,
+    "photo_url": "https://res.cloudinary.com/demo/image/upload/crow.jpg",
+    "notes": "Crows nesting on rooftop, swooping at residents",
+    "status": "open",
+    "reported_by": 5,
+    "is_deleted": false,
+    "createdAt": "2026-07-13T09:00:00.000Z",
+    "updatedAt": "2026-07-13T09:00:00.000Z"
+  }
+  ```
+
+- Errors:
+  - `400` — validation failure (e.g. missing species/block_number, invalid
+    behaviour tag, notes over 500 chars): `{ "error": [...messages] }`
   - `401` — missing/invalid token
   - `403` — role not staff/admin
 

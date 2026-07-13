@@ -4,6 +4,8 @@ const { FaunaSighting } = require('../models');
 const { getGeminiClient } = require('../config/gemini');
 
 const STATUSES = ['open', 'in_progress', 'resolved'];
+const SPECIES = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
+const BEHAVIOUR_TAGS = ['urinating', 'feeding', 'nesting', 'droppings', 'aggressive'];
 
 // Which agency handles each species. Derived at the API layer (not stored).
 const AGENCY_MAP = {
@@ -16,6 +18,17 @@ const AGENCY_MAP = {
 
 const statusSchema = yup.object({
   status: yup.string().required().oneOf(STATUSES),
+});
+
+const createSchema = yup.object({
+  species: yup.string().required().oneOf(SPECIES),
+  block_number: yup.string().required(),
+  floor_level: yup.string().optional(),
+  behaviour_tags: yup.array().of(yup.string().oneOf(BEHAVIOUR_TAGS)).optional(),
+  gps_lat: yup.number().optional(),
+  gps_lng: yup.number().optional(),
+  photo_url: yup.string().url().optional(),
+  notes: yup.string().max(500).optional(),
 });
 
 // RBAC: residents must not see the exact location of community cats. For a
@@ -69,6 +82,23 @@ async function getSighting(req, res) {
   }
 
   return res.status(200).json(stripCatGps(sighting, req.user.role));
+}
+
+async function createSighting(req, res) {
+  let data;
+  try {
+    data = await createSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.errors });
+  }
+
+  const sighting = await FaunaSighting.create({
+    ...data,
+    behaviour_tags: data.behaviour_tags || [],
+    reported_by: req.user.user_id,
+  });
+
+  return res.status(201).json(sighting);
 }
 
 async function updateStatus(req, res) {
@@ -216,6 +246,7 @@ async function getBlockSummary(req, res) {
 module.exports = {
   listSightings,
   getSighting,
+  createSighting,
   updateStatus,
   softDeleteSighting,
   getHotspots,
