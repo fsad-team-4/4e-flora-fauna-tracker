@@ -102,7 +102,7 @@ describe('GET /api/flora', () => {
   });
 
   test('returns created records', async () => {
-    const res = await request(app).get('/api/flora').set('Authorization', tokens.res1);
+    const res = await request(app).get('/api/flora').set('Authorization', tokens.staff);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);
@@ -112,11 +112,17 @@ describe('GET /api/flora', () => {
   test('?health_status=critical returns only critical ones', async () => {
     const res = await request(app)
       .get('/api/flora?health_status=critical')
-      .set('Authorization', tokens.res1);
+      .set('Authorization', tokens.staff);
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
     expect(res.body.every((r) => r.health_status === 'critical')).toBe(true);
+  });
+
+  test('resident attempts list -> 403', async () => {
+    const res = await request(app).get('/api/flora').set('Authorization', tokens.res1);
+
+    expect(res.status).toBe(403);
   });
 });
 

@@ -30,7 +30,13 @@ export default function FloraList() {
         setPlants(res.data);
         setError('');
       })
-      .catch(() => setError('Failed to load flora'))
+      .catch((err) => {
+        if (err.response?.status === 403) {
+          setError('You do not have permission to view flora records.');
+        } else {
+          setError('Failed to load flora. Please try again.');
+        }
+      })
       .finally(() => setLoading(false));
   }, [healthFilter, refreshKey]);
 

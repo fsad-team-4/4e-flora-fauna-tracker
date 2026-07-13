@@ -57,7 +57,13 @@ export default function HorticultureHandbook() {
         setPlants(res.data);
         setError('');
       })
-      .catch(() => setError('Failed to load the handbook.'))
+      .catch((err) => {
+        if (err.response?.status === 403) {
+          setError('You do not have permission to view the Horticulture Handbook.');
+        } else {
+          setError('Failed to load the handbook. Please try again.');
+        }
+      })
       .finally(() => setLoading(false));
   }, [debouncedFamily, debouncedSuitability, debouncedColor]);
 
