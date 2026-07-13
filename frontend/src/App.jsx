@@ -20,7 +20,7 @@ import FaunaSightings from './pages/FaunaSightings'
 import FaunaLogSighting from './pages/FaunaLogSighting'
 import FaunaSightingDetail from './pages/FaunaSightingDetail'
 import FaunaHotspots from './pages/FaunaHotspots'
- 
+
 function Home() {
   const { user } = useUser()
   if (!user) {
@@ -43,7 +43,7 @@ function Home() {
     </Box>
   )
 }
- 
+
 function NavLinkButton({ to, children }) {
   const location = useLocation()
   const active = location.pathname === to
@@ -65,7 +65,7 @@ function NavLinkButton({ to, children }) {
     </Button>
   )
 }
- 
+
 function NavBar() {
   const { user, setUser } = useUser()
   const logout = () => {
@@ -87,7 +87,7 @@ function NavBar() {
             4E Biodiversity Tracker
           </Typography>
         </Box>
- 
+
         {/* nav links */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
@@ -109,10 +109,10 @@ function NavBar() {
             )}
           </Box>
         )}
- 
+
         {/* spacer pushes the user block to the far right */}
         <Box sx={{ flexGrow: 1 }} />
- 
+
         {/* user identity + logout, hard right */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -141,7 +141,7 @@ function NavBar() {
     </AppBar>
   )
 }
- 
+
 function App() {
   return (
     <UserProvider>
@@ -149,30 +149,35 @@ function App() {
         <NavBar />
         <Container maxWidth="xl">
           <Routes>
+            {/* public */}
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+
+            {/* any logged-in user (residents included) */}
             <Route path="/submit-report" element={<ProtectedRoute><SubmitReport /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
-            <Route path="/all-reports" element={<ProtectedRoute><AllReports /></ProtectedRoute>} />
-            <Route path="/flora" element={<ProtectedRoute><FloraList /></ProtectedRoute>} />
-            <Route path="/flora/add" element={<ProtectedRoute><AddFlora /></ProtectedRoute>} />
-            <Route path="/flora/:id" element={<ProtectedRoute><FloraDetail /></ProtectedRoute>} />
-            <Route path="/handbook" element={<ProtectedRoute><HorticultureHandbook /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/alert-rules" element={<ProtectedRoute><AlertRules /></ProtectedRoute>} />
-            <Route path="/notif-log" element={<ProtectedRoute><NotificationLog /></ProtectedRoute>} />
-            <Route path="/rodent" element={<ProtectedRoute><RodentAssessment /></ProtectedRoute>} />
-            <Route path="/fauna" element={<ProtectedRoute><FaunaSightings /></ProtectedRoute>} />
-            <Route path="/fauna/log" element={<ProtectedRoute><FaunaLogSighting /></ProtectedRoute>} />
-            <Route path="/fauna/hotspots" element={<ProtectedRoute><FaunaHotspots /></ProtectedRoute>} />
-            <Route path="/fauna/:id" element={<ProtectedRoute><FaunaSightingDetail /></ProtectedRoute>} />
+
+            {/* staff + admin only */}
+            <Route path="/all-reports" element={<ProtectedRoute roles={['staff', 'admin']}><AllReports /></ProtectedRoute>} />
+            <Route path="/flora" element={<ProtectedRoute roles={['staff', 'admin']}><FloraList /></ProtectedRoute>} />
+            <Route path="/flora/add" element={<ProtectedRoute roles={['staff', 'admin']}><AddFlora /></ProtectedRoute>} />
+            <Route path="/flora/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FloraDetail /></ProtectedRoute>} />
+            <Route path="/handbook" element={<ProtectedRoute roles={['staff', 'admin']}><HorticultureHandbook /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute roles={['staff', 'admin']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
+            <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
+            <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
+            <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
+            <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
+            <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
+            <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
       </BrowserRouter>
     </UserProvider>
   )
 }
- 
+
 export default App

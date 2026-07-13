@@ -4,6 +4,7 @@ Use cases for the Resident Reports & Authentication module, based on the
 implemented features: JWT auth, role-based access control (resident / staff /
 admin), report CRUD, Cloudinary photo upload, the case status workflow
 (open / in_progress / resolved), and the resolve-notification email.
+AI catalog querying
 
 ---
 
@@ -210,3 +211,69 @@ Alternate / exception flows:
 
 Postcondition: the report is hidden from the API but retained in the database
 for audit; its status history remains intact.
+
+---
+
+## UC-8: Staff queries the plant catalog in natural language (AI)
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin; the greenery
+  catalog has seeded `GreeneryRecord` data; `GEMINI_API_KEY` is configured.
+
+Main flow:
+
+1. The staff member opens the Handbook page (`/handbook`, a nav link visible
+   only to staff/admin) and types a question in plain English, e.g. "Which
+   plants in Zone B are at risk?".
+2. The frontend submits the question to `POST /api/flora/query`.
+3. The backend validates the question (non-empty, max 500 characters), loads
+   all non-deleted greenery records, and sends the question plus the formatted
+   catalog to Gemini. The prompt restricts the model to the catalog data only.
+4. The backend returns `200` with `{ question, answer, plantCount }`; the page
+   shows the plain-text answer and how many plants it was grounded in.
+
+Alternate / exception flows:
+
+- The catalog does not contain the information needed (e.g. a question about a
+  plant that is not in the catalog) -> the model is instructed to say so
+  clearly rather than inventing an answer; the response is still `200` with
+  that "cannot answer from the catalog" text as the answer.
+- Empty/missing question or over 500 characters -> `400`; nothing is sent to
+  the AI.
+- A resident attempting the request -> `403` (route is restricted to
+  staff/admin).
+- `GEMINI_API_KEY` not configured -> `503` "AI service not configured".
+- The Gemini call fails (network, quota) -> `502` "AI request failed: ...".
+
+Postcondition: the staff member has an answer grounded only in the actual
+catalog data; no data is changed.
+
+---
+
+## UC-9: Resident is blocked from staff-only pages (defense in depth)
+
+- Actor: resident
+- Precondition: the user is logged in with role resident.
+
+Main flow:
+
+1. The resident types a staff-only URL directly into the browser, e.g.
+   `/handbook` or `/dashboard` (these nav links are never rendered for
+   residents, so direct URL entry is the only way to reach them).
+2. The route is wrapped in `ProtectedRoute` with `roles={['staff', 'admin']}`;
+   since the resident's role is not in the list, `ProtectedRoute` redirects to
+   the home page (`/`) instead of rendering the page.
+3. Even if the frontend gate were bypassed (e.g. calling the API directly with
+   a resident token), the backend routes are protected by
+   `restrictTo('staff', 'admin')` and respond `403` - the server never trusts
+   the client.
+
+Alternate / exception flows:
+
+- A user who is not logged in at all visits any protected URL ->
+  `ProtectedRoute` redirects to `/login` instead.
+- A logged-out or expired-token API request -> `401` from `protect`.
+
+Postcondition: staff-only pages and data are unreachable for residents at
+three layers - the nav hides the links, `ProtectedRoute` blocks the route by
+role, and `restrictTo` blocks the API; no data is exposed.

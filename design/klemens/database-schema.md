@@ -99,3 +99,12 @@ Relationships:
 | ResidentReports.reported_by | Users.id |
 | CaseStatusLogs.report_id | ResidentReports.id |
 | CaseStatusLogs.changed_by | Users.id |
+
+
+## Tables read but not owned
+
+The AI querying system (`POST /api/flora/query`) and the catalog seed
+(`seedFlora.js`) both read and populate `GreeneryRecords`, which is owned by
+Member 1 (Shernell) and documented in `design/shernell/database-schema.md`.
+No new tables were introduced by the AI querying feature - it queries the
+existing greenery catalog rather than storing its own data.

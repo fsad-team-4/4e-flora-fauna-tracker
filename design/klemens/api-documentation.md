@@ -201,3 +201,49 @@ Upload a single image to Cloudinary and get back its URL.
   - `400` - `{ "error": "Image upload failed" }` (other multer error)
   - `401` - missing/invalid token
   - `500` - Cloudinary upload failure (passed to the global error handler)
+
+---
+
+## AI Query
+
+This endpoint is registered in the flora module's route file (`floraRoutes.js`)
+but is a Member 3 deliverable - the "AI querying system built on Shernell's
+features" per the task allocation. It answers natural-language questions using
+Shernell's `GreeneryRecord` catalog as its only knowledge source.
+
+### POST /api/flora/query
+
+Ask a natural-language question about the greenery catalog and get an
+AI-generated answer grounded only in the stored `GreeneryRecord` data.
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | question | string | yes | non-empty after trimming; max 500 characters |
+
+- Behavior: all non-deleted greenery records are formatted into a compact
+  catalog and sent to Gemini with the question. The prompt instructs the model
+  to answer using only the catalog data (no outside plant knowledge), to say so
+  clearly if the catalog cannot answer, and to reply in plain text under 150
+  words. The question is trimmed before use.
+- Success: `200`
+
+  ```json
+  { "question": "Which plants are at risk?", "answer": "<plain-text answer>", "plantCount": 24 }
+  ```
+
+  `plantCount` is the number of non-deleted catalog records the answer was
+  grounded in.
+
+- Errors:
+  - `400` - `{ "error": "question is required" }` (missing, not a string, or
+    empty/whitespace-only)
+  - `400` - `{ "error": "question must be 500 characters or fewer" }`
+  - `401` - missing/invalid token
+  - `403` - role not staff/admin (residents cannot query the catalog)
+  - `502` - `{ "error": "AI request failed: <message>" }` (the Gemini call
+    threw)
+  - `503` - `{ "error": "AI service not configured" }` (`GEMINI_API_KEY` is not
+    set)
