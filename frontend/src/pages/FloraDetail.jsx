@@ -5,8 +5,23 @@ import * as yup from 'yup';
 import {
   Box, Typography, Button, Chip, Alert, Stack, Divider,
   TextField, MenuItem, Card, CardContent, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions,
+  DialogContent, DialogContentText, DialogActions, Skeleton, Snackbar,
 } from '@mui/material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
+import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
+import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
+import NotesOutlinedIcon from '@mui/icons-material/NotesOutlined';
+import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
+import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
+import TerrainOutlinedIcon from '@mui/icons-material/TerrainOutlined';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import HeightOutlinedIcon from '@mui/icons-material/HeightOutlined';
+import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
+import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
 
@@ -26,6 +41,53 @@ const validationSchema = yup.object({
     .nullable(),
 });
 
+// Same colored-dot convention as FloraList's filter and AddFlora's selector,
+// so the health-status dropdown reads consistently across pages.
+function StatusDot({ color }) {
+  return (
+    <Box
+      component="span"
+      sx={{
+        width: 8, height: 8, borderRadius: '50%',
+        bgcolor: `${color}.main`, display: 'inline-block', mr: 1,
+      }}
+    />
+  );
+}
+
+function SectionHeading({ icon, title, subtitle }) {
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        {icon}
+        <Typography variant="h6">{title}</Typography>
+      </Stack>
+      {subtitle && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+          {subtitle}
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// Icon + caption label + value row for the read-only view.
+function DetailRow({ icon, label, value }) {
+  return (
+    <Stack direction="row" spacing={1.5} alignItems="flex-start">
+      <Box sx={{ color: 'text.disabled', display: 'flex', mt: 0.25 }}>{icon}</Box>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="caption" color="text.secondary" display="block">
+          {label}
+        </Typography>
+        <Typography variant="body1" sx={{ whiteSpace: 'pre-line' }}>
+          {value}
+        </Typography>
+      </Box>
+    </Stack>
+  );
+}
+
 export default function FloraDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,6 +96,7 @@ export default function FloraDetail() {
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [recommending, setRecommending] = useState(false);
@@ -79,6 +142,7 @@ export default function FloraDetail() {
         const res = await http.patch(`/api/flora/${id}`, values);
         setPlant(res.data);
         setEditing(false);
+        setSaveSuccess(true);
       } catch (err) {
         const data = err.response?.data?.error;
         setSaveError(Array.isArray(data) ? data.join(', ') : data || 'Failed to update plant');
@@ -111,207 +175,359 @@ export default function FloraDetail() {
     }
   };
 
+  const statusColor = plant ? (HEALTH_STATUS_COLORS[plant.health_status] || 'default') : 'default';
+
   return (
-    <Box sx={{ maxWidth: 700, mx: 'auto', mt: 4 }}>
-      <Button component={RouterLink} to="/flora" sx={{ mb: 2 }}>
-        &larr; Back
+    <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
+      <Button
+        component={RouterLink}
+        to="/flora"
+        startIcon={<ArrowBackIcon />}
+        sx={{ mb: 2 }}
+      >
+        Back to Flora Management
       </Button>
 
-      {loading && <Typography>Loading...</Typography>}
+      {/* Page header */}
+      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 0.5 }}>
+        <LocalFloristOutlinedIcon sx={{ color: 'primary.main', fontSize: 28 }} />
+        <Typography variant="h4">{editing ? 'Edit Plant' : 'Plant Details'}</Typography>
+      </Stack>
+      <Typography color="text.secondary" sx={{ mb: 3 }}>
+        {editing
+          ? 'Update this greenery record for the estate.'
+          : 'View and manage this greenery record.'}
+      </Typography>
+
+      {/* Loading state - skeleton card matching the list page */}
+      {loading && (
+        <Card sx={{ borderLeft: 4, borderLeftColor: 'divider' }}>
+          <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+            <Skeleton variant="text" width="45%" height={40} />
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="60%" sx={{ mt: 2 }} />
+            <Skeleton variant="text" width="55%" />
+            <Skeleton variant="text" width="50%" />
+          </CardContent>
+        </Card>
+      )}
+
       {!loading && error && <Alert severity="error">{error}</Alert>}
 
       {!loading && !error && plant && (
-        <>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '1fr 340px' },
+            gap: 3,
+            alignItems: 'start',
+          }}
+        >
           {editing ? (
-            <Box component="form" onSubmit={formik.handleSubmit}>
-              <Typography variant="h5" sx={{ mb: 2 }}>Edit Plant</Typography>
-              {saveError && <Alert severity="error" sx={{ mb: 2 }}>{saveError}</Alert>}
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Species"
-                name="species"
-                value={formik.values.species}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.species && Boolean(formik.errors.species)}
-                helperText={formik.touched.species && formik.errors.species}
-              />
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Common Name"
-                name="common_name"
-                value={formik.values.common_name}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Location Zone"
-                name="location_zone"
-                value={formik.values.location_zone}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                select
-                fullWidth
-                margin="normal"
-                label="Health Status"
-                name="health_status"
-                value={formik.values.health_status}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.health_status && Boolean(formik.errors.health_status)}
-                helperText={formik.touched.health_status && formik.errors.health_status}
-              >
-                {HEALTH_STATUS_OPTIONS.map((s) => (
-                  <MenuItem key={s.value} value={s.value}>{s.label}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                fullWidth
-                multiline
-                minRows={3}
-                margin="normal"
-                label="Health Notes"
-                name="health_notes"
-                value={formik.values.health_notes}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Plant Family"
-                name="plant_family"
-                value={formik.values.plant_family}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Site Suitability"
-                name="site_suitability"
-                value={formik.values.site_suitability}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                fullWidth
-                margin="normal"
-                label="Color"
-                name="color"
-                value={formik.values.color}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-              />
-              <TextField
-                fullWidth
-                type="number"
-                margin="normal"
-                label="Max Height at Maturity (metres)"
-                name="max_height_at_maturity"
-                value={formik.values.max_height_at_maturity}
-                onChange={formik.handleChange}
-                onBlur={formik.handleBlur}
-                error={formik.touched.max_height_at_maturity && Boolean(formik.errors.max_height_at_maturity)}
-                helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
-              />
-              <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  color="secondary"
-                  onClick={() => { setEditing(false); setSaveError(''); formik.resetForm(); }}
-                  disabled={formik.isSubmitting}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="contained" disabled={formik.isSubmitting}>
-                  Save
-                </Button>
-              </Stack>
-            </Box>
-          ) : (
-            <>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h5">{plant.species}</Typography>
-                <Chip
-                  label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                  color={HEALTH_STATUS_COLORS[plant.health_status] || 'default'}
+            <Card component="form" onSubmit={formik.handleSubmit}>
+              <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                {saveError && <Alert severity="error" sx={{ mb: 3 }}>{saveError}</Alert>}
+
+                <SectionHeading
+                  icon={<ParkOutlinedIcon color="success" />}
+                  title="Basic Information"
+                  subtitle="Identifies the plant and its current condition"
                 />
-              </Box>
-              {plant.common_name && (
-                <Typography color="text.secondary" sx={{ mb: 2 }}>{plant.common_name}</Typography>
-              )}
 
-              {plant.location_zone && <Typography>Zone: {plant.location_zone}</Typography>}
-              {plant.plant_family && <Typography>Family: {plant.plant_family}</Typography>}
-              {plant.site_suitability && <Typography>Site Suitability: {plant.site_suitability}</Typography>}
-              {plant.color && <Typography>Color: {plant.color}</Typography>}
-              {plant.max_height_at_maturity != null && (
-                <Typography>Max Height at Maturity: {plant.max_height_at_maturity} m</Typography>
-              )}
-              <Typography sx={{ mt: 1 }}>
-                Health Notes: {plant.health_notes || '-'}
-              </Typography>
-              <Typography>
-                Last Inspected: {plant.last_inspected_at
-                  ? new Date(plant.last_inspected_at).toLocaleDateString()
-                  : '-'}
-              </Typography>
-              {plant.recorder?.name && (
-                <Typography>Recorded by: {plant.recorder.name}</Typography>
-              )}
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-                Created: {new Date(plant.createdAt).toLocaleString()}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" display="block">
-                Updated: {new Date(plant.updatedAt).toLocaleString()}
-              </Typography>
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Species"
+                  name="species"
+                  value={formik.values.species}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.species && Boolean(formik.errors.species)}
+                  helperText={formik.touched.species && formik.errors.species}
+                />
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Common Name"
+                  name="common_name"
+                  value={formik.values.common_name}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Location Zone"
+                  name="location_zone"
+                  value={formik.values.location_zone}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
+                <TextField
+                  select
+                  fullWidth
+                  margin="normal"
+                  label="Health Status"
+                  name="health_status"
+                  value={formik.values.health_status}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.health_status && Boolean(formik.errors.health_status)}
+                  helperText={formik.touched.health_status && formik.errors.health_status}
+                >
+                  {HEALTH_STATUS_OPTIONS.map((s) => (
+                    <MenuItem key={s.value} value={s.value}>
+                      <StatusDot color={HEALTH_STATUS_COLORS[s.value]} />
+                      {s.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={3}
+                  margin="normal"
+                  label="Health Notes"
+                  name="health_notes"
+                  value={formik.values.health_notes}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
 
-              <Stack direction="row" spacing={2} sx={{ mt: 3 }}>
-                <Button variant="contained" onClick={() => setEditing(true)}>
-                  Edit
-                </Button>
-                <Button variant="outlined" color="error" onClick={() => setDeleteOpen(true)}>
-                  Delete
-                </Button>
-              </Stack>
-            </>
+                <Divider sx={{ my: 4 }} />
+
+                <SectionHeading
+                  icon={<LocalFloristOutlinedIcon color="primary" />}
+                  title="Botanical Catalog Details"
+                  subtitle="Optional - powers the Horticulture Handbook browse view"
+                />
+
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Plant Family"
+                  name="plant_family"
+                  value={formik.values.plant_family}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Site Suitability"
+                  name="site_suitability"
+                  value={formik.values.site_suitability}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
+                <TextField
+                  fullWidth
+                  margin="normal"
+                  label="Color"
+                  name="color"
+                  value={formik.values.color}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                />
+                <TextField
+                  fullWidth
+                  type="number"
+                  margin="normal"
+                  label="Max Height at Maturity (metres)"
+                  name="max_height_at_maturity"
+                  value={formik.values.max_height_at_maturity}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.max_height_at_maturity && Boolean(formik.errors.max_height_at_maturity)}
+                  helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
+                />
+
+                <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={() => { setEditing(false); setSaveError(''); formik.resetForm(); }}
+                    disabled={formik.isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting}>
+                    {formik.isSubmitting ? 'Saving...' : 'Save Changes'}
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
+              <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                {/* Species + status chip - mirrors the plant card design in FloraList */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
+                      {plant.species}
+                    </Typography>
+                    {plant.common_name && (
+                      <Typography color="text.secondary">{plant.common_name}</Typography>
+                    )}
+                  </Box>
+                  <Chip
+                    label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+                    color={statusColor}
+                  />
+                </Box>
+
+                <Divider sx={{ my: 3 }} />
+
+                <SectionHeading
+                  icon={<ParkOutlinedIcon color="success" />}
+                  title="Basic Information"
+                  subtitle="Current condition and where to find it"
+                />
+
+                <Stack spacing={2}>
+                  {plant.location_zone && (
+                    <DetailRow
+                      icon={<LocationOnOutlinedIcon fontSize="small" />}
+                      label="Location Zone"
+                      value={plant.location_zone}
+                    />
+                  )}
+                  <DetailRow
+                    icon={<NotesOutlinedIcon fontSize="small" />}
+                    label="Health Notes"
+                    value={plant.health_notes || '-'}
+                  />
+                  <DetailRow
+                    icon={<EventOutlinedIcon fontSize="small" />}
+                    label="Last Inspected"
+                    value={plant.last_inspected_at
+                      ? new Date(plant.last_inspected_at).toLocaleDateString()
+                      : '-'}
+                  />
+                </Stack>
+
+                <Divider sx={{ my: 3 }} />
+
+                <SectionHeading
+                  icon={<LocalFloristOutlinedIcon color="primary" />}
+                  title="Botanical Catalog Details"
+                  subtitle="Catalog attributes shown in the Horticulture Handbook"
+                />
+
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                    gap: 2,
+                  }}
+                >
+                  <DetailRow
+                    icon={<CategoryOutlinedIcon fontSize="small" />}
+                    label="Plant Family"
+                    value={plant.plant_family || '-'}
+                  />
+                  <DetailRow
+                    icon={<TerrainOutlinedIcon fontSize="small" />}
+                    label="Site Suitability"
+                    value={plant.site_suitability || '-'}
+                  />
+                  <DetailRow
+                    icon={<PaletteOutlinedIcon fontSize="small" />}
+                    label="Color"
+                    value={plant.color || '-'}
+                  />
+                  <DetailRow
+                    icon={<HeightOutlinedIcon fontSize="small" />}
+                    label="Max Height at Maturity"
+                    value={plant.max_height_at_maturity != null
+                      ? `${plant.max_height_at_maturity} m`
+                      : '-'}
+                  />
+                </Box>
+
+                <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<EditOutlinedIcon />}
+                    onClick={() => setEditing(true)}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    startIcon={<DeleteOutlinedIcon />}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    Delete
+                  </Button>
+                </Stack>
+              </CardContent>
+            </Card>
           )}
 
-          <Box sx={{ mt: 4 }}>
-            <Divider sx={{ mb: 2 }} />
-            <Typography variant="h6" sx={{ mb: 1 }}>AI Care Recommendation</Typography>
-            {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+          {/* Sidebar: AI recommendation + record metadata */}
+          <Box>
+            <Card>
+              <CardContent>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                  <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
+                  <Typography variant="h6">AI Care Recommendation</Typography>
+                </Stack>
+                {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
 
-            {plant.care_recommendation && (
-              <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
-                <CardContent>
-                  <Typography sx={{ whiteSpace: 'pre-line' }}>
-                    {plant.care_recommendation}
-                  </Typography>
-                </CardContent>
-              </Card>
-            )}
+                {plant.care_recommendation && (
+                  <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
+                    <CardContent>
+                      <Typography sx={{ whiteSpace: 'pre-line' }}>
+                        {plant.care_recommendation}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                )}
 
-            <Button
-              variant="outlined"
-              onClick={handleGetRecommendation}
-              disabled={recommending}
-            >
-              {recommending
-                ? 'Getting recommendation...'
-                : plant.care_recommendation
-                  ? 'Regenerate'
-                  : 'Get AI Recommendation'}
-            </Button>
+                <Button
+                  variant="outlined"
+                  onClick={handleGetRecommendation}
+                  disabled={recommending}
+                >
+                  {recommending
+                    ? 'Getting recommendation...'
+                    : plant.care_recommendation
+                      ? 'Regenerate'
+                      : 'Get AI Recommendation'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card variant="outlined" sx={{ mt: 2 }}>
+              <CardContent>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  Record Info
+                </Typography>
+                <Stack spacing={1.5}>
+                  {plant.recorder?.name && (
+                    <DetailRow
+                      icon={<PersonOutlinedIcon fontSize="small" />}
+                      label="Recorded by"
+                      value={plant.recorder.name}
+                    />
+                  )}
+                  <DetailRow
+                    icon={<AccessTimeOutlinedIcon fontSize="small" />}
+                    label="Created"
+                    value={new Date(plant.createdAt).toLocaleString()}
+                  />
+                  <DetailRow
+                    icon={<AccessTimeOutlinedIcon fontSize="small" />}
+                    label="Updated"
+                    value={new Date(plant.updatedAt).toLocaleString()}
+                  />
+                </Stack>
+              </CardContent>
+            </Card>
           </Box>
-        </>
+        </Box>
       )}
 
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
@@ -330,6 +546,17 @@ export default function FloraDetail() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={saveSuccess}
+        autoHideDuration={3000}
+        onClose={() => setSaveSuccess(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert onClose={() => setSaveSuccess(false)} severity="success" variant="filled">
+          Plant updated successfully.
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

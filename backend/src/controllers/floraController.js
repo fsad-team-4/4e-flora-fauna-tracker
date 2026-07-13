@@ -172,7 +172,11 @@ async function updateGreenery(req, res) {
     sendHealthAlert(record);
   }
 
-  return res.status(200).json(record);
+  const updated = await GreeneryRecord.findByPk(record.id, {
+    include: [{ association: 'recorder', attributes: ['id', 'name'] }],
+  });
+
+  return res.status(200).json(updated);
 }
 
 async function softDeleteGreenery(req, res) {
