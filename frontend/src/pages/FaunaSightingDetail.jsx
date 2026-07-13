@@ -8,6 +8,9 @@ import PetsIcon from '@mui/icons-material/Pets';
 import FlutterDashIcon from '@mui/icons-material/FlutterDash';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import http from '../http';
 import { useUser } from '../contexts/UserContext';
 import { STATUS_COLORS, STATUS_OPTIONS } from '../constants';
@@ -28,6 +31,15 @@ const AGENCY_MAP = {
   mynah: 'ACRES',
   other: 'Town Council to assess',
 };
+
+// A single red pin as a Leaflet divIcon (avoids the default marker asset that
+// Vite does not bundle correctly).
+const pinIcon = L.divIcon({
+  className: '',
+  html: '<span style="display:block;width:26px;height:26px;border-radius:50%;background:#C1272D;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.4)"></span>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
 
 export default function FaunaSightingDetail() {
   const { id } = useParams();
@@ -108,7 +120,22 @@ export default function FaunaSightingDetail() {
           )}
           {sighting.floor_level && <Typography>Floor: {sighting.floor_level}</Typography>}
           {sighting.gps_lat != null && sighting.gps_lng != null && (
-            <Typography>GPS: {sighting.gps_lat}, {sighting.gps_lng}</Typography>
+            <>
+              <Typography>GPS: {sighting.gps_lat}, {sighting.gps_lng}</Typography>
+              <Box sx={{ height: 250, mt: 1, borderRadius: 2, overflow: 'hidden', border: '1px solid #EAEAEA' }}>
+                <MapContainer
+                  center={[sighting.gps_lat, sighting.gps_lng]}
+                  zoom={16}
+                  style={{ height: '100%', width: '100%' }}
+                >
+                  <TileLayer
+                    attribution='&copy; OpenStreetMap contributors'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <Marker position={[sighting.gps_lat, sighting.gps_lng]} icon={pinIcon} />
+                </MapContainer>
+              </Box>
+            </>
           )}
           <Typography>Reported by: {sighting.reporter?.name || 'Unknown'}</Typography>
           <Typography variant="caption" color="text.secondary">
