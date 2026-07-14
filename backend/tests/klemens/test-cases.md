@@ -59,6 +59,23 @@ Postman against a running server.
 | 21 | POST /api/uploads | File over size limit | An image larger than 5MB in field `image` | 400 "Image must be 5MB or smaller" |
 | 22 | POST /api/uploads | No file | Auth token, no file attached | 400 "No image file provided" |
 
+## AI Catalog Query (`floraQuery.test.js`)
+
+`services/floraQueryService` is mocked with `jest.fn()` (both `queryCatalog`
+and `hasApiKey`) so no real Gemini API call is made; the tests assert only the
+controller's validation, RBAC, and response shape. Setup registers and logs in
+one resident and one staff user in `beforeAll`.
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 23 | POST /api/flora/query | Staff asks a valid question (happy path) | staff token + question with surrounding whitespace | 200; body `{ question, answer, plantCount }`; `queryCatalog` called once with the trimmed question |
+| 24 | POST /api/flora/query | Missing question | staff token + empty body `{}` | 400 "question is required"; `queryCatalog` not called |
+| 25 | POST /api/flora/query | Whitespace-only question | `question: "   "` | 400 "question is required"; `queryCatalog` not called |
+| 26 | POST /api/flora/query | Question over 500 characters | a 501-character string | 400 "question must be 500 characters or fewer"; `queryCatalog` not called |
+| 27 | POST /api/flora/query | Resident attempts a query | resident token + valid question | 403 (restrictTo staff/admin); `queryCatalog` not called |
+| 28 | POST /api/flora/query | No auth token | valid question, no Authorization header | 401; `queryCatalog` not called |
+| 29 | POST /api/flora/query | API key not configured | `hasApiKey` mocked to return false | 503 "AI service not configured"; `queryCatalog` not called |
+
 ## Notes
 
 - Tests 1, 2, and 4 share state intentionally: test 1 creates the user that
