@@ -15,7 +15,7 @@ import http from '../http';
 import EstateHealthHero from '../components/dashboard/EstateHealthHero';
 import KpiCard from '../components/dashboard/KpiCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
-import CategoryDonut from '../components/dashboard/CategoryDonut';
+import CategoryBar from '../components/dashboard/CategoryBar';
 import BlocksRanked from '../components/dashboard/BlocksRanked';
 
 function buildKpis(m) {
@@ -24,22 +24,22 @@ function buildKpis(m) {
     {
       label: 'Open Cases', value: m?.openCases ?? 0, color: '#8A5200', tint: '#FFF4E5',
       icon: <FolderOpenOutlinedIcon />,
-      trend: m ? { delta: t.open_cases?.sinceLastWeek ?? null, improve: 'down' } : null,
+      trend: m ? { delta: t.open_cases?.sinceLastWeek ?? null, improve: 'down', base: m.openCases } : null,
     },
     {
       label: 'Critical Flora', value: m?.criticalFlora ?? 0, color: BRAND.primary, tint: '#FDECEA',
       icon: <LocalFloristOutlinedIcon />,
-      trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down' } : null,
+      trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down', base: m.criticalFlora } : null,
     },
     {
       label: 'Active Hotspots', value: m?.activeHotspots ?? 0, color: '#1565C0', tint: '#E8F1FB',
       icon: <PlaceOutlinedIcon />,
-      trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down' } : null,
+      trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down', base: m.activeHotspots } : null,
     },
     {
       label: 'Alerts Sent (7d)', value: m?.notificationsLast7Days ?? 0, color: '#2E7D32', tint: '#E7F4E8',
       icon: <MarkEmailReadOutlinedIcon />,
-      trend: m ? { delta: (m.notificationsLast7Days ?? 0) - (m.notificationsPrev7Days ?? 0), improve: null } : null,
+      trend: m ? { delta: (m.notificationsLast7Days ?? 0) - (m.notificationsPrev7Days ?? 0), improve: null, base: m.notificationsLast7Days } : null,
       trendLabel: 'vs prev 7 days',
     },
   ];
@@ -155,7 +155,7 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       ) : (
-        <EstateHealthHero estateHealth={metrics?.estateHealth} loading={loading} />
+        <EstateHealthHero estateHealth={metrics?.estateHealth} history={metrics?.history || []} loading={loading} />
       )}
 
       {/* weekly-summary result */}
@@ -201,7 +201,7 @@ export default function Dashboard() {
               {kpiGrid}
             </Grid>
             <Grid size={{ xs: 12, md: 7 }}>
-              <CategoryDonut casesByCategory={metrics.casesByCategory} />
+              <CategoryBar casesByCategory={metrics.casesByCategory} />
             </Grid>
           </Grid>
 
@@ -210,7 +210,7 @@ export default function Dashboard() {
 
           {/* Row 3: Activity by Block - now the single consolidated location widget
               (colour intensity absorbed from the retired heat map) */}
-          <BlocksRanked sightingsByBlock={metrics.sightingsByBlock} />
+          <BlocksRanked sightingsByBlock={metrics?.sightingsByBlock || []} hotspots={metrics?.hotspots || []} />
         </Stack>
       )}
     </Box>
