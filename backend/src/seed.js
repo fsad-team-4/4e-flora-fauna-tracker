@@ -51,6 +51,7 @@ function genExtraLogs() {
     for (let k = 0; k < n; k++) {
       const r = trickle[(d * 3 + k) % trickle.length];
       const hour = (k * 37) % 24;            // deterministic spread across the clock
+      if (d === 0 && hour > new Date().getHours()) continue;
       const minute = (k * 17 + d * 7) % 60;
       out.push({ rule: r.rule, recipient: r.recipient, status: 'sent', createdAt: daysAgo(d, hour, minute), preview: r.preview });
     }
@@ -70,7 +71,7 @@ const RULES = [
   { name: 'Fauna hotspot warning', trigger_type: 'fauna_hotspot', threshold: 3, recipients: 'pestcontrol@emservices.com.sg, estate.ops@emservices.com.sg', channel: 'email', is_active: true },
   { name: 'Urgent case notification', trigger_type: 'new_case_urgent', threshold: null, recipients: 'duty.officer@emservices.com.sg', channel: 'both', is_active: true },
   { name: 'Weekly estate summary', trigger_type: 'weekly_summary', threshold: null, recipients: 'management@emservices.com.sg, estate.ops@emservices.com.sg', channel: 'email', is_active: true },
-  { name: 'Pigeon roost SMS (paused)', trigger_type: 'fauna_hotspot', threshold: 5, recipients: 'cleaning.supervisor@emservices.com.sg', channel: 'sms', is_active: false },
+  { name: 'Pigeon roost SMS', trigger_type: 'fauna_hotspot', threshold: 5, recipients: 'cleaning.supervisor@emservices.com.sg', channel: 'sms', is_active: false },
 ];
 
 // Notification log rows reference rules by name (resolved to ids after insert).
