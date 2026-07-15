@@ -11,6 +11,7 @@ import TerrainOutlinedIcon from '@mui/icons-material/TerrainOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
+import { getPlantIcon } from '../utils/plantIcons';
 
 // Plain CSS grid instead of MUI's <Grid> component - guarantees equal-width
 // cards regardless of MUI version differences in the Grid API.
@@ -330,15 +331,9 @@ export default function HorticultureHandbook() {
               <Box sx={CARD_GRID_SX}>
                 {familyPlants.map((plant) => {
                   const statusColor = HEALTH_STATUS_COLORS[plant.health_status] || 'default';
+                  const PlantIcon = getPlantIcon(plant.plant_family);
                   return (
-                    <Card
-                      key={plant.id}
-                      sx={{
-                        height: '100%',
-                        borderLeft: 4,
-                        borderLeftColor: `${statusColor}.main`,
-                      }}
-                    >
+                    <Card key={plant.id} sx={{ height: '100%', borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
                       <CardActionArea
                         component={RouterLink}
                         to={`/flora/${plant.id}`}
@@ -347,9 +342,12 @@ export default function HorticultureHandbook() {
                         <CardContent>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                             <Box sx={{ minWidth: 0 }}>
-                              <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
-                                {plant.species}
-                              </Typography>
+                              <Stack direction="row" spacing={0.75} alignItems="center">
+                                <PlantIcon sx={{ fontSize: 20, color: 'text.secondary', flexShrink: 0 }} />
+                                <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
+                                  {plant.species}
+                                </Typography>
+                              </Stack>
                               {plant.common_name && (
                                 <Typography color="text.secondary" variant="body2" noWrap>
                                   {plant.common_name}
