@@ -331,7 +331,7 @@ export default function HorticultureHandbook() {
               <Box sx={CARD_GRID_SX}>
                 {familyPlants.map((plant) => {
                   const statusColor = HEALTH_STATUS_COLORS[plant.health_status] || 'default';
-                  const PlantIcon = getPlantIcon(plant.plant_family);
+                  const { Icon: PlantIcon, color: plantIconColor } = getPlantIcon(plant.plant_family);
                   return (
                     <Card key={plant.id} sx={{ height: '100%', borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
                       <CardActionArea
@@ -343,7 +343,7 @@ export default function HorticultureHandbook() {
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                             <Box sx={{ minWidth: 0 }}>
                               <Stack direction="row" spacing={0.75} alignItems="center">
-                                <PlantIcon sx={{ fontSize: 20, color: 'text.secondary', flexShrink: 0 }} />
+                                <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
                                 <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
                                   {plant.species}
                                 </Typography>

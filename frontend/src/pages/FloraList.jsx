@@ -33,6 +33,8 @@ const CARD_GRID_SX = {
 };
 
 const SORT_OPTIONS = [
+  { value: 'default', label: 'Newest First' },
+  { value: 'oldest', label: 'Oldest First' },
   { value: 'species_asc', label: 'Species (A-Z)' },
   { value: 'species_desc', label: 'Species (Z-A)' },
   { value: 'health_severity', label: 'Health (critical first)' },
@@ -91,7 +93,7 @@ export default function FloraList() {
   const [error, setError] = useState('');
   const [healthFilter, setHealthFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('species_asc');
+  const [sortBy, setSortBy] = useState('default');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [csvFile, setCsvFile] = useState(null);
@@ -168,6 +170,11 @@ export default function FloraList() {
 
     result = [...result].sort((a, b) => {
       switch (sortBy) {
+        case 'default':
+          // No reordering - keep the backend's newest-first fetch order.
+          return 0;
+        case 'oldest':
+          return new Date(a.createdAt) - new Date(b.createdAt);
         case 'species_desc':
           return b.species.localeCompare(a.species);
         case 'health_severity':
@@ -507,7 +514,7 @@ export default function FloraList() {
         <Box sx={CARD_GRID_SX}>
           {visiblePlants.map((plant) => {
             const statusColor = HEALTH_STATUS_COLORS[plant.health_status] || 'default';
-            const PlantIcon = getPlantIcon(plant.plant_family);
+            const { Icon: PlantIcon, color: plantIconColor } = getPlantIcon(plant.plant_family);
             return (
               <Card
                 key={plant.id}
@@ -525,7 +532,7 @@ export default function FloraList() {
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                       <Box sx={{ minWidth: 0 }}>
                         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-                          <PlantIcon sx={{ fontSize: 20, color: 'text.secondary', flexShrink: 0 }} />
+                          <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
                           <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
                             {plant.species}
                           </Typography>
