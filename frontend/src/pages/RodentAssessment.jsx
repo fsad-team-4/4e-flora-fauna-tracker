@@ -23,10 +23,10 @@ const BRAND = {
 // Critical gets a distinctly heavier treatment, not just a redder chip.
 const RISK_SCALE = ['low', 'medium', 'high', 'critical'];
 const RISK_META = {
-  low:      { label: 'Low Risk',      bg: '#E7F4E8', color: '#1E6023', bar: '#2E7D32' },
-  medium:   { label: 'Medium Risk',   bg: '#FFF4E5', color: '#8A5200', bar: '#ED9B00' },
-  high:     { label: 'High Risk',     bg: '#FDECEA', color: '#B3261E', bar: '#D93F3F' },
-  critical: { label: 'CRITICAL',      bg: '#B3261E', color: '#FFFFFF', bar: '#7A1A15', solid: true },
+  low: { label: 'Low Risk', bg: '#E7F4E8', color: '#1E6023', bar: '#2E7D32' },
+  medium: { label: 'Medium Risk', bg: '#FFF4E5', color: '#8A5200', bar: '#ED9B00' },
+  high: { label: 'High Risk', bg: '#FDECEA', color: '#B3261E', bar: '#D93F3F' },
+  critical: { label: 'CRITICAL', bg: '#B3261E', color: '#FFFFFF', bar: '#7A1A15', solid: true },
 };
 function riskChipSx(level) {
   const m = RISK_META[level] || { bg: '#F0F1F3', color: '#444' };
@@ -279,6 +279,9 @@ export default function RodentAssessment() {
                         key={i}
                         sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', py: 1, borderTop: i === 0 ? 'none' : `1px solid ${BRAND.section}` }}
                       >
+                        <Typography sx={{ fontSize: 11, color: BRAND.textLight, mt: 1, fontStyle: 'italic' }}>
+                          Working checklist — ticks aren't saved yet
+                        </Typography>
                         <Checkbox
                           size="small"
                           checked={done}
