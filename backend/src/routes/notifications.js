@@ -11,12 +11,20 @@ router.use(protect);
 router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 2000);
   const offset = parseInt(req.query.offset) || 0;
-  const { status } = req.query;
-
+  const { status, date } = req.query;
   try {
+    const { Op } = require('sequelize');
     const where = {};
     if (status && ['sent', 'failed'].includes(status)) {
       where.status = status;
+    }
+    // filter to a single calendar day (YYYY-MM-DD): createdAt within [day, day+1)
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      const start = new Date(`${date}T00:00:00`);
+      const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+      if (!Number.isNaN(start.getTime())) {
+        where.createdAt = { [Op.gte]: start, [Op.lt]: end };
+      }
     }
 
     const { count, rows } = await NotificationLog.findAndCountAll({
