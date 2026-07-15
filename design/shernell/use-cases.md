@@ -11,10 +11,10 @@ deterioration early enough to remediate it, and retain records over a 3-5 year
 horizon. NParks provides tree data as CSV exports, so bulk import is a core need.
 
 RBAC note (applies to all use cases): every flora route requires a valid JWT
-(`protect`). Read access (`GET /api/flora`) is open to any logged-in user
-(resident, staff, or admin). All mutations - create, update, delete, bulk
-upload, and AI recommendation - are restricted to `staff` or `admin`
-(`restrictTo('staff', 'admin')`); a resident attempting them receives `403`.
+(`protect`). Residents have no access to the flora module at all - GET, POST,
+PATCH, and DELETE on `/api/flora` are all restricted to `staff` or `admin`
+only (`restrictTo('staff', 'admin')`); a resident attempting any of them
+receives `403`.
 
 ---
 
