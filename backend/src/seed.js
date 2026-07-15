@@ -88,7 +88,7 @@ const LOGS = [
   { rule: 'Weekly estate summary', recipient: 'estate.ops@emservices.com.sg', status: 'sent', createdAt: daysAgo(6, 8), preview: 'Estate health update for the week: 2 plants critical, 2 at risk. 3 active fauna hotspots flagged at Block 123, Block 456.' },
   { rule: 'Fauna hotspot warning', recipient: 'pestcontrol@emservices.com.sg', status: 'sent', createdAt: daysAgo(5, 15), preview: 'Fauna hotspot: Block 456 logged 3 pigeon sightings in 24h. Recommend a site inspection.' },
   { rule: 'Urgent case notification', recipient: 'duty.officer@emservices.com.sg', status: 'sent', createdAt: daysAgo(4, 11), preview: "Urgent case opened at Block 123: 'Cat keeps coming up to L5'. Assigned to the duty officer." },
-  { rule: 'Pigeon roost SMS (paused)', recipient: 'cleaning.supervisor@emservices.com.sg', status: 'failed', createdAt: daysAgo(3, 16), preview: 'SMS gateway timeout - message was not delivered. Retry queued.' },
+  { rule: 'Pigeon roost SMS', recipient: 'cleaning.supervisor@emservices.com.sg', status: 'failed', createdAt: daysAgo(3, 16), preview: 'SMS gateway timeout - message was not delivered. Retry queued.' },
   { rule: 'Fauna hotspot warning', recipient: 'estate.ops@emservices.com.sg', status: 'sent', createdAt: daysAgo(2, 13), preview: 'Fauna hotspot: Block 123 logged 5 cat sightings in 24h. Recommend a site inspection.' },
   { rule: 'Critical flora alert', recipient: 'estate.ops@emservices.com.sg', status: 'sent', createdAt: daysAgo(1, 9), preview: 'Flora alert: Heliconia at Block 890 flagged critical during the latest inspection.' },
 ];
@@ -149,10 +149,14 @@ async function seed() {
   await MetricSnapshot.destroy({ where: {} });
   const snapshots = [];
   for (let d = 10; d >= 1; d--) {
-    const open_cases = today.openCases + Math.ceil(d / 3);
-    const critical_flora = today.criticalFlora + (d >= 6 ? 1 : 0);
-    const at_risk_flora = today.atRiskFlora + (d >= 8 ? 1 : 0);
-    const active_hotspots = today.activeHotspots + (d >= 5 ? 1 : 0);
+    // The risk score caps at 100 and today is already 76, so the seeded drift has
+    // to stay inside that ~24pt headroom. Overshoot and computeRiskScore() clamps,
+    // which flatlines the early history at the ceiling and makes the trend line
+    // report the cap rather than the estate.
+    const open_cases = today.openCases + (d >= 7 ? 2 : d >= 4 ? 1 : 0);  // +10 max
+    const critical_flora = today.criticalFlora;                          // hold steady
+    const at_risk_flora = today.atRiskFlora + (d >= 8 ? 1 : 0);          // +3 max
+    const active_hotspots = today.activeHotspots + (d >= 5 ? 1 : 0);     // +10 max
     const total_sightings = today.totalSightings + Math.round(d / 2);
     const risk_score = computeRiskScore({ criticalFlora: critical_flora, activeHotspots: active_hotspots, openCases: open_cases, atRiskFlora: at_risk_flora });
     const dt = new Date();
