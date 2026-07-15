@@ -2,62 +2,96 @@ import { useEffect, useState } from 'react';
 import {
   Box, Typography, TextField, Button, Card, CardContent,
   Alert, CircularProgress, Chip, Table, TableHead,
-  TableRow, TableCell, TableBody, Paper,
+  TableRow, TableCell, TableBody, Paper, Stack, Checkbox, Divider, Tooltip,
 } from '@mui/material';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import http from '../http';
 
 const BRAND = {
   primary: '#C1272D',
-  primaryHover: '#A61D22',
   heading: '#222222',
   text: '#444444',
   textLight: '#777777',
   border: '#E5E5E5',
   section: '#F7F7F7',
-  success: '#2E7D32',
-  warning: '#F4B400',
   slate: '#37474F',
   slateHover: '#263238',
 };
 
-// soft-fill status styling: pale background + dark text (status, not action).
-// outlines are reserved for clickable things; fills mean state.
-const RISK_FILL = {
-  low: { bg: '#E7F4E8', color: '#1E6023' },
-  medium: { bg: '#FFF4E5', color: '#8A5200' },
-  high: { bg: '#FDECEA', color: '#B3261E' },
-  critical: { bg: '#FDECEA', color: '#B3261E' },
+// Risk levels on one scale, so an officer can see where their result sits.
+// Critical gets a distinctly heavier treatment, not just a redder chip.
+const RISK_SCALE = ['low', 'medium', 'high', 'critical'];
+const RISK_META = {
+  low: { label: 'Low Risk', bg: '#E7F4E8', color: '#1E6023', bar: '#2E7D32' },
+  medium: { label: 'Medium Risk', bg: '#FFF4E5', color: '#8A5200', bar: '#ED9B00' },
+  high: { label: 'High Risk', bg: '#FDECEA', color: '#B3261E', bar: '#D93F3F' },
+  critical: { label: 'CRITICAL', bg: '#B3261E', color: '#FFFFFF', bar: '#7A1A15', solid: true },
 };
 function riskChipSx(level) {
-  const m = RISK_FILL[level] || { bg: '#F0F1F3', color: '#444' };
+  const m = RISK_META[level] || { bg: '#F0F1F3', color: '#444' };
   return { bgcolor: m.bg, color: m.color, fontWeight: 700, borderRadius: '6px', textTransform: 'capitalize' };
 }
 
-// Guard against garbage input ("eeeee") producing a confident fake assessment.
-// Require a meaningful phrase: enough characters, a few distinct words, and not
-// just one character repeated.
 const MIN_CHARS = 15;
 function isValidObservation(text) {
   const t = (text || '').trim();
   if (t.length < MIN_CHARS) return false;
   const words = t.split(/\s+/).filter(w => w.length >= 2);
   if (words.length < 3) return false;
-  // reject a single repeated character like "eeeee" or "aaa aaa aaa"
   const distinct = new Set(t.replace(/\s/g, '').toLowerCase()).size;
   if (distinct < 4) return false;
   return true;
 }
 
-// Actions may arrive as new structured { title, detail } objects OR as legacy
-// plain strings (older saved assessments). Normalise to { title, detail } so the
-// UI renders both. For a legacy string with no title, we leave title empty and
-// just show the detail.
 function normalizeAction(a) {
-  if (a && typeof a === 'object') {
-    return { title: a.title || '', detail: a.detail || a.text || '' };
-  }
+  if (a && typeof a === 'object') return { title: a.title || '', detail: a.detail || a.text || '' };
   return { title: '', detail: String(a) };
+}
+
+// The verdict band: the one thing the eye should hit first. Large, colour-filled,
+// with the confidence and the position on the full scale, so the reader knows both
+// what the AI concluded and how much to trust it.
+function VerdictBand({ result }) {
+  const level = result.risk_level;
+  const meta = RISK_META[level] || RISK_META.low;
+  const idx = RISK_SCALE.indexOf(level);
+  return (
+    <Box sx={{ bgcolor: meta.solid ? meta.bg : meta.bg, px: 3, py: 2.5, borderBottom: `1px solid ${BRAND.border}` }}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
+        <Box>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: meta.solid ? 'rgba(255,255,255,.75)' : BRAND.textLight }}>
+            AI Risk Assessment
+          </Typography>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline', mt: 0.25 }}>
+            <Typography sx={{ fontSize: 32, fontWeight: 800, lineHeight: 1.1, color: meta.color, letterSpacing: '-0.5px' }}>
+              {meta.label}
+            </Typography>
+            {result.confidence && (
+              <Tooltip title="How confident the AI is, given the detail provided. This is an inference, not a measurement." arrow>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: meta.solid ? 'rgba(255,255,255,.85)' : BRAND.textLight, cursor: 'default' }}>
+                  · {result.confidence} confidence
+                </Typography>
+              </Tooltip>
+            )}
+          </Stack>
+        </Box>
+
+        {/* position on the full scale */}
+        <Box sx={{ minWidth: 180 }}>
+          <Stack direction="row" spacing={0.5}>
+            {RISK_SCALE.map((lv, i) => (
+              <Box key={lv} sx={{ flex: 1, height: 5, borderRadius: '3px', bgcolor: i <= idx ? RISK_META[lv].bar : (meta.solid ? 'rgba(255,255,255,.25)' : '#E0E0E0') }} />
+            ))}
+          </Stack>
+          <Stack direction="row" sx={{ justifyContent: 'space-between', mt: 0.5 }}>
+            <Typography sx={{ fontSize: 9.5, color: meta.solid ? 'rgba(255,255,255,.7)' : BRAND.textLight }}>LOW</Typography>
+            <Typography sx={{ fontSize: 9.5, color: meta.solid ? 'rgba(255,255,255,.7)' : BRAND.textLight }}>CRITICAL</Typography>
+          </Stack>
+        </Box>
+      </Stack>
+    </Box>
+  );
 }
 
 export default function RodentAssessment() {
@@ -69,6 +103,7 @@ export default function RodentAssessment() {
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [doneActions, setDoneActions] = useState({});
 
   useEffect(() => { loadHistory(); }, []);
 
@@ -85,10 +120,11 @@ export default function RodentAssessment() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!observations.trim()) return;
+    if (!isValidObservation(observations)) return;
     setSubmitting(true);
     setError(null);
     setResult(null);
+    setDoneActions({});
     try {
       const { data } = await http.post('/api/rodent-assessments', {
         block_number: block.trim() || null,
@@ -105,6 +141,7 @@ export default function RodentAssessment() {
   }
 
   const actions = (result?.immediate_actions || []).map(normalizeAction);
+  const labelSx = { fontSize: 11, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.6px', mb: 1 };
 
   return (
     <Box sx={{ p: 3 }}>
@@ -120,8 +157,17 @@ export default function RodentAssessment() {
           <Typography variant="subtitle1" fontWeight={600} mb={2} sx={{ color: BRAND.heading }}>New Field Observation</Typography>
           <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField label="Block (optional)" value={block} onChange={e => setBlock(e.target.value)} size="small" fullWidth placeholder="e.g. Block 234" disabled={submitting} />
-              <TextField label="Floor / Area (optional)" value={floorLevel} onChange={e => setFloorLevel(e.target.value)} size="small" fullWidth placeholder="e.g. L1, Community garden" disabled={submitting} />
+              <TextField
+                label="Block"
+                value={block}
+                onChange={e => setBlock(e.target.value)}
+                size="small"
+                fullWidth
+                placeholder="e.g. Block 234"
+                disabled={submitting}
+                helperText="Adding a block lets the AI check for repeat reports here"
+              />
+              <TextField label="Floor / Area (optional)" value={floorLevel} onChange={e => setFloorLevel(e.target.value)} size="small" fullWidth placeholder="e.g. L1, Community garden" disabled={submitting} helperText=" " />
             </Box>
             <TextField
               label="What did you observe?"
@@ -150,68 +196,110 @@ export default function RodentAssessment() {
         </CardContent>
       </Card>
 
-      {result && (
-        <Card sx={{ mb: 3, borderLeft: `4px solid ${BRAND.primary}`, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ color: BRAND.heading }}>Assessment Result</Typography>
-              <Chip
-                label={`${result.risk_level} risk`}
-                sx={{ flexShrink: 0, ...riskChipSx(result.risk_level) }}
-              />
-            </Box>
+      {/* loading skeleton so the AI wait doesn't read as broken */}
+      {submitting && (
+        <Card sx={{ mb: 3, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
+          <CardContent sx={{ py: 5, textAlign: 'center' }}>
+            <CircularProgress size={28} sx={{ color: BRAND.slate, mb: 1.5 }} />
+            <Typography sx={{ color: BRAND.textLight, fontSize: 14 }}>
+              Assessing the observation{block ? ` and checking prior reports at ${block}` : ''}…
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
 
-            {/* FIX 1: escalation banner leads the results - highest-stakes directive first */}
+      {result && !submitting && (
+        <Card sx={{ mb: 3, border: `1px solid ${BRAND.border}`, borderRadius: '12px', overflow: 'hidden' }}>
+          {/* HERO: the verdict dominates */}
+          <VerdictBand result={result} />
+
+          <CardContent sx={{ p: 3 }}>
+            {/* recurrence context - the judgement a single note can't give */}
+            {result.recurrence_note && (
+              <Box sx={{ display: 'flex', gap: 1.25, p: 1.5, mb: 2.5, bgcolor: '#FFF4E5', border: '1px solid #F0D9B5', borderRadius: '8px' }}>
+                <HistoryRoundedIcon sx={{ color: '#8A5200', fontSize: 20, flexShrink: 0, mt: 0.1 }} />
+                <Box>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#8A5200' }}>
+                    Recurring location{result.prior_count ? ` · ${result.prior_count} prior report${result.prior_count === 1 ? '' : 's'} in 7 days` : ''}
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: '#6B4200' }}>{result.recurrence_note}</Typography>
+                </Box>
+              </Box>
+            )}
+
             {result.escalate_to_contractor && (
-              <Alert
-                severity="error"
-                icon={<ReportProblemOutlinedIcon />}
-                sx={{ mb: 2, alignItems: 'flex-start', '& .MuiAlert-message': { fontSize: 14 } }}
-              >
+              <Alert severity="error" icon={<ReportProblemOutlinedIcon />} sx={{ mb: 2.5, alignItems: 'flex-start' }}>
                 <Typography sx={{ fontWeight: 700, mb: 0.25 }}>Escalate to pest contractor</Typography>
                 {result.escalation_reason}
               </Alert>
             )}
 
             {result.stubbed && (
-              <Alert severity="info" sx={{ mb: 2 }}>Stub mode — set GEMINI_API_KEY for real AI assessment.</Alert>
+              <Alert severity="info" sx={{ mb: 2.5 }}>
+                Offline assessment — the AI service was unavailable, so this used the built-in fallback.
+              </Alert>
             )}
 
-            <Box mb={2}>
-              <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.75 }}>Likely Cause</Typography>
-              <Typography variant="body2" sx={{ color: BRAND.text }}>{result.likely_cause}</Typography>
-            </Box>
+            {/* two zones: reasoning (light) | actions (the tasks) */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1px 1.1fr' }, gap: { xs: 2.5, md: 3 } }}>
+              {/* zone 1: reasoning */}
+              <Box>
+                <Typography sx={labelSx}>Likely cause</Typography>
+                <Typography variant="body2" sx={{ color: BRAND.text, mb: 2.5, lineHeight: 1.6 }}>{result.likely_cause}</Typography>
 
-            {result.signs_identified?.length > 0 && (
-              <Box mb={2}>
-                <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.75 }}>Signs Identified</Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {result.signs_identified.map((s, i) => (
-                    <Chip key={i} label={s} size="small" variant="outlined" />
-                  ))}
-                </Box>
-              </Box>
-            )}
-
-            {/* FIX 2: chunked, front-loaded actions - numbered, bold lead-in, scannable */}
-            {actions.length > 0 && (
-              <Box mb={1}>
-                <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.75 }}>Immediate Actions</Typography>
-                {actions.map((a, i) => (
-                  <Typography
-                    key={i}
-                    variant="body2"
-                    sx={{ color: BRAND.text, lineHeight: 1.6, py: 0.6, borderTop: i === 0 ? 'none' : `1px solid ${BRAND.section}` }}
-                  >
-                    {/* number sits inline, snug against the bold action title */}
-                    <Box component="span" sx={{ fontWeight: 700, color: BRAND.heading }}>
-                      {i + 1}. {a.title && `${a.title}: `}
+                {result.signs_identified?.length > 0 && (
+                  <>
+                    <Typography sx={labelSx}>Signs identified</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {result.signs_identified.map((s, i) => (
+                        <Chip key={i} label={s} size="small" sx={{ bgcolor: BRAND.section, color: BRAND.text, borderRadius: '6px', fontWeight: 500 }} />
+                      ))}
                     </Box>
-                    {a.detail}
-                  </Typography>
-                ))}
+                  </>
+                )}
+
+                {result.estimated_timeline && (
+                  <Box sx={{ mt: 2.5 }}>
+                    <Typography sx={labelSx}>Timeline</Typography>
+                    <Typography variant="body2" sx={{ color: BRAND.text }}>{result.estimated_timeline}</Typography>
+                  </Box>
+                )}
               </Box>
-            )}
+
+              <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
+
+              {/* zone 2: actions as a checklist - these are tasks, not prose */}
+              <Box>
+                <Typography sx={labelSx}>Immediate actions</Typography>
+                <Stack spacing={0}>
+                  {actions.map((a, i) => {
+                    const done = Boolean(doneActions[i]);
+                    return (
+                      <Box
+                        key={i}
+                        sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', py: 1, borderTop: i === 0 ? 'none' : `1px solid ${BRAND.section}` }}
+                      >
+                        <Typography sx={{ fontSize: 11, color: BRAND.textLight, mt: 1, fontStyle: 'italic' }}>
+                          Working checklist — ticks aren't saved yet
+                        </Typography>
+                        <Checkbox
+                          size="small"
+                          checked={done}
+                          onChange={() => setDoneActions(p => ({ ...p, [i]: !p[i] }))}
+                          sx={{ p: 0.25, mt: 0.1, color: BRAND.textLight, '&.Mui-checked': { color: BRAND.slate } }}
+                        />
+                        <Typography variant="body2" sx={{ color: done ? BRAND.textLight : BRAND.text, lineHeight: 1.6, textDecoration: done ? 'line-through' : 'none' }}>
+                          <Box component="span" sx={{ fontWeight: 700, color: done ? BRAND.textLight : BRAND.heading }}>
+                            {a.title ? `${a.title}: ` : ''}
+                          </Box>
+                          {a.detail}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            </Box>
           </CardContent>
         </Card>
       )}
@@ -222,13 +310,13 @@ export default function RodentAssessment() {
       ) : history.length === 0 ? (
         <Typography sx={{ color: BRAND.textLight }}>No assessments logged yet.</Typography>
       ) : (
-        // FIX 3: cap width so columns sit close, zebra striping, centred Risk/Escalated
         <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '10px', overflow: 'hidden' }}>
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: BRAND.section }}>
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Date</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Location</TableCell>
+                <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Observation</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Risk</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Escalated</TableCell>
               </TableRow>
@@ -236,8 +324,16 @@ export default function RodentAssessment() {
             <TableBody>
               {history.map((h, i) => (
                 <TableRow key={h.id} sx={{ bgcolor: i % 2 ? BRAND.section : 'inherit' }}>
-                  <TableCell sx={{ color: BRAND.text }}>{new Date(h.createdAt).toLocaleDateString('en-SG')}</TableCell>
-                  <TableCell sx={{ color: BRAND.text }}>{[h.block_number, h.floor_level].filter(Boolean).join(', ') || '—'}</TableCell>
+                  <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{new Date(h.createdAt).toLocaleDateString('en-SG')}</TableCell>
+                  <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{[h.block_number, h.floor_level].filter(Boolean).join(', ') || '—'}</TableCell>
+                  {/* snippet so the history is scannable and recurrence is visible */}
+                  <TableCell sx={{ color: BRAND.textLight, maxWidth: 280 }}>
+                    <Tooltip title={h.observations || ''} arrow>
+                      <Typography sx={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'default' }}>
+                        {h.observations}
+                      </Typography>
+                    </Tooltip>
+                  </TableCell>
                   <TableCell align="center">
                     <Chip label={h.risk_level} size="small" sx={riskChipSx(h.risk_level)} />
                   </TableCell>

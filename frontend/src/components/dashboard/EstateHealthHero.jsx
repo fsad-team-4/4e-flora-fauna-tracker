@@ -1,94 +1,185 @@
-import { Box, Typography, Card, Stack, Chip } from '@mui/material';
+import { Box, Typography, Card, Stack, Chip, Tooltip } from '@mui/material';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
-import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
-import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
-import TrendingFlatRoundedIcon from '@mui/icons-material/TrendingFlatRounded';
-import { BRAND, HEALTH_META, TREND } from '../../theme';
+import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
+import { BRAND, HEALTH_META, TREND, GAUGE_ZONES } from '../../theme';
 
-// The hero is the estate's "thesis": the one number that says how the estate is
-// doing right now. Its colour is driven by HEALTH_META (the same traffic-light
-// the header chip uses), so healthy/watch/critical read consistently everywhere.
+// Thresholds match riskStatus() in estateStats.js: <25 healthy, 25-59 watch, 60+
+// critical. The gauge uses HARD STOPS because those thresholds are discrete, not
+// a continuous gradient.
+const HEALTHY_MAX = 25;
+const WATCH_MAX = 60;
 
-// For a RISK score, a fall is an improvement, so a negative delta shows the
-// "good" ink and a downward arrow.
-function TrendBadge({ delta }) {
-  if (delta == null) return null;
-  if (delta === 0) {
-    return (
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', color: TREND.neutral }}>
-        <TrendingFlatRoundedIcon sx={{ fontSize: 18 }} />
-        <Typography variant="body2">no change since yesterday</Typography>
-      </Stack>
-    );
-  }
-  const improving = delta < 0;
-  const color = improving ? TREND.good : TREND.bad;
-  const Icon = improving ? TrendingDownRoundedIcon : TrendingUpRoundedIcon;
+// A score of 0 with no data is NOT "healthy" - it means we know nothing. Rendering
+// an unknown estate as a green needle at 0 would actively mislead, so the no-data
+// case gets its own visual state.
+function GaugeUnknown() {
   return (
-    <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', color }}>
-      <Icon sx={{ fontSize: 18 }} />
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-        {improving ? '' : '+'}{delta} since yesterday
+    <Box sx={{ mt: 2 }}>
+      <Box sx={{ height: 10, borderRadius: '5px', bgcolor: '#ECECEC', border: `1px dashed ${BRAND.border}` }} />
+      <Typography sx={{ fontSize: 11, color: BRAND.textLight, mt: 0.75 }}>
+        No scored data yet — this is not a healthy reading, it is an absent one.
       </Typography>
-    </Stack>
+    </Box>
   );
 }
 
-export default function EstateHealthHero({ estateHealth, loading }) {
+function RiskGauge({ score }) {
+  const pct = Math.max(0, Math.min(100, score));
+  return (
+    <Box sx={{ mt: 2 }}>
+      {/* hard stops: three discrete zones, no gradient blending */}
+      <Box sx={{ position: 'relative', height: 10, borderRadius: '5px', overflow: 'hidden', display: 'flex' }}>
+        <Box sx={{ width: `${HEALTHY_MAX}%`, bgcolor: GAUGE_ZONES.healthy.fill }} />
+        <Box sx={{ width: `${WATCH_MAX - HEALTHY_MAX}%`, bgcolor: GAUGE_ZONES.watch.fill }} />
+        <Box sx={{ width: `${100 - WATCH_MAX}%`, bgcolor: GAUGE_ZONES.critical.fill }} />
+      </Box>
+      <Box sx={{ position: 'relative', height: 0 }}>
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute', top: -13, left: `${pct}%`, transform: 'translateX(-50%)',
+            width: 3, height: 16, bgcolor: BRAND.heading, borderRadius: '2px', boxShadow: '0 0 0 2px #fff',
+          }}
+        />
+      </Box>
+      {/* zone labels so the number explains itself without the chip */}
+      <Box sx={{ display: 'flex', mt: 0.75 }}>
+        <Typography sx={{ width: `${HEALTHY_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'left' }}>
+          {GAUGE_ZONES.healthy.label}
+        </Typography>
+        <Typography sx={{ width: `${WATCH_MAX - HEALTHY_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'center' }}>
+          {GAUGE_ZONES.watch.label}
+        </Typography>
+        <Typography sx={{ width: `${100 - WATCH_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'right' }}>
+          {GAUGE_ZONES.critical.label}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+// A line with direction but no magnitude is decoration. Labelling start and end
+// turns it into a sentence: "76, down from 84".
+function ScoreSparkline({ scores }) {
+  if (!scores || scores.length < 2) return null;
+  const w = 200, h = 40;
+  const min = Math.min(...scores), max = Math.max(...scores);
+  const range = max - min || 1;
+  const first = scores[0], last = scores[scores.length - 1];
+  const pts = scores.map((s, i) => [(i / (scores.length - 1)) * w, h - ((s - min) / range) * (h - 6) - 3]);
+  const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const end = pts[pts.length - 1];
+  const rising = last >= first; // rising risk is bad
+  const lineColor = rising ? TREND.bad : TREND.good;
+  const delta = last - first;
+  const summary = delta === 0
+    ? `Risk index steady at ${last} over the last ${scores.length} days.`
+    : `Risk index ${last}, ${rising ? 'up' : 'down'} from ${first} over the last ${scores.length} days.`;
+
+  return (
+    <Box sx={{ mt: 2.5 }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+          Risk trend ({scores.length}d)
+        </Typography>
+        {/* magnitude, not just direction */}
+        <Typography sx={{ fontSize: 12, fontWeight: 600, color: lineColor }}>
+          {delta === 0 ? `steady at ${last}` : `${last}, ${rising ? 'up' : 'down'} from ${first}`}
+        </Typography>
+      </Stack>
+      <Box role="img" aria-label={summary}>
+        <Box component="svg" viewBox={`0 0 ${w} ${h}`} sx={{ display: 'block', width: '100%', height: 40, mt: 0.5 }} preserveAspectRatio="none">
+          <path d={d} fill="none" stroke={lineColor} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx={end[0]} cy={end[1]} r={3} fill={lineColor} />
+        </Box>
+      </Box>
+      {/* visually hidden table for screen readers */}
+      <Box component="table" sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+        <caption>{summary}</caption>
+        <tbody>
+          <tr><th scope="row">Start</th><td>{first}</td></tr>
+          <tr><th scope="row">End</th><td>{last}</td></tr>
+        </tbody>
+      </Box>
+    </Box>
+  );
+}
+
+export default function EstateHealthHero({ estateHealth, history = [], loading, tiedBlocks = [] }) {
   const meta = HEALTH_META[estateHealth?.status] || HEALTH_META.watch;
-  const score = estateHealth?.score ?? 0;
-  const { scoreTrend, highestRiskBlock, lastIncident } = estateHealth || {};
+  // distinguish "no data" from "scored zero" - they must never look the same
+  const hasScore = estateHealth != null && typeof estateHealth.score === 'number';
+  const score = hasScore ? estateHealth.score : null;
+  const { highestRiskBlock, lastIncident } = estateHealth || {};
+  const scores = history.map(h => h.riskScore).filter(v => typeof v === 'number');
 
   return (
     <Card
       elevation={0}
       sx={{
-        borderRadius: '16px',
-        border: `1px solid ${BRAND.border}`,
-        boxShadow: '0 4px 16px rgba(0,0,0,.05)',
-        overflow: 'hidden',
-        mb: 2.5,
-        opacity: loading ? 0.6 : 1,
-        transition: 'opacity .2s',
+        borderRadius: '16px', border: `1px solid ${BRAND.border}`,
+        boxShadow: '0 4px 16px rgba(0,0,0,.05)', overflow: 'hidden', mb: 2.5,
+        opacity: loading ? 0.6 : 1, transition: 'opacity .2s',
       }}
     >
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'auto 1px 1fr' }, alignItems: 'stretch' }}>
-        {/* left: the hero score, tinted by estate status */}
-        <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: meta.bg, minWidth: { md: 340 } }}>
-          <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
-            Estate Risk Index
-          </Typography>
-
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-end', mt: 1 }}>
-            <Typography sx={{ fontSize: 76, fontWeight: 800, lineHeight: 0.85, color: meta.color, letterSpacing: '-2px' }}>
-              {score}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.15fr 1px 1fr' }, alignItems: 'stretch' }}>
+        <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: hasScore ? meta.bg : '#FAFAFA' }}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+              Estate Risk Index
             </Typography>
-            <Typography sx={{ color: BRAND.textLight, fontSize: 20, fontWeight: 600, pb: 1 }}>/ 100</Typography>
+            <Tooltip
+              arrow
+              title="A weighted 0–100 heuristic: critical flora, active hotspots, open cases and at-risk flora each contribute. Higher means more needs attention."
+            >
+              <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: BRAND.textLight, cursor: 'help' }} />
+            </Tooltip>
           </Stack>
 
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mt: 2, flexWrap: 'wrap', rowGap: 1 }}>
-            <Chip
-              label={meta.label}
-              sx={{ bgcolor: meta.color, color: '#fff', fontWeight: 700, borderRadius: '8px' }}
-            />
-            <TrendBadge delta={scoreTrend} />
-          </Stack>
+          {hasScore ? (
+            <>
+              {/* baseline-aligned: both sit on the same alignItems: 'baseline' row */}
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline', mt: 1 }}>
+                <Typography sx={{ fontSize: 76, fontWeight: 800, lineHeight: 1, color: meta.color, letterSpacing: '-2px', fontVariantNumeric: 'tabular-nums' }}>
+                  {score}
+                </Typography>
+                <Typography sx={{ color: BRAND.textLight, fontSize: 20, fontWeight: 600 }}>/ 100</Typography>
+                <Chip label={meta.label} size="small" sx={{ bgcolor: meta.color, color: '#fff', fontWeight: 700, borderRadius: '8px', alignSelf: 'center' }} />
+              </Stack>
+              <RiskGauge score={score} />
+              <ScoreSparkline scores={scores} />
+            </>
+          ) : (
+            <>
+              <Typography sx={{ fontSize: 40, fontWeight: 800, lineHeight: 1.2, color: BRAND.textLight, mt: 1 }}>
+                No data
+              </Typography>
+              <GaugeUnknown />
+            </>
+          )}
         </Box>
 
         <Box sx={{ display: { xs: 'none', md: 'block' }, bgcolor: BRAND.border }} />
 
-        {/* right: what most needs attention */}
-        <Box sx={{ p: { xs: 3, md: 4 }, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2.5 }}>
+        <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: BRAND.section, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 2.75 }}>
           <Box>
             <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
               Highest-Risk Block
             </Typography>
             {highestRiskBlock ? (
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
-                <PlaceOutlinedIcon sx={{ color: BRAND.primary, fontSize: 22 }} />
-                <Typography sx={{ fontSize: 22, fontWeight: 700, color: BRAND.heading }}>{highestRiskBlock}</Typography>
-                <Typography variant="body2" sx={{ color: BRAND.textLight }}>most sightings this period</Typography>
-              </Stack>
+              <>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
+                  <PlaceOutlinedIcon sx={{ color: BRAND.primary, fontSize: 22 }} />
+                  <Typography sx={{ fontSize: 22, fontWeight: 700, color: BRAND.heading }}>{highestRiskBlock}</Typography>
+                </Stack>
+                {/* data trust: if blocks tie, say so rather than contradicting the
+                    Activity by Block card, which shows them level */}
+                <Typography variant="body2" sx={{ color: BRAND.textLight, mt: 0.25 }}>
+                  {tiedBlocks.length > 1
+                    ? `most sightings this period — tied with ${tiedBlocks.filter(b => b !== highestRiskBlock).join(', ')}`
+                    : 'most sightings this period'}
+                </Typography>
+              </>
             ) : (
               <Typography sx={{ mt: 0.5, color: BRAND.textLight }}>No active hotspots</Typography>
             )}
