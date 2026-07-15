@@ -4,6 +4,25 @@ const { RodentAssessment } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const { assessRodentRisk, hasApiKey, stubAssessment } = require('../services/rodentService');
 
+const { Op } = require('sequelize');
+
+// Look up prior assessments at the SAME block in the last N days, so the AI can
+// judge recurrence rather than treating every note as an isolated incident.
+// Block is free text, so match on a trimmed/lowercased comparison.
+async function getBlockHistory(block, days = 7) {
+  if (!block || !block.trim()) return [];
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const rows = await RodentAssessment.findAll({
+    where: { is_deleted: false, createdAt: { [Op.gte]: since } },
+    order: [['createdAt', 'DESC']],
+    limit: 20,
+  });
+  const key = block.trim().toLowerCase();
+  return rows
+    .filter(r => (r.block_number || '').trim().toLowerCase() === key)
+    .map(r => ({ createdAt: r.createdAt, risk_level: r.risk_level, observations: r.observations }));
+}
+
 const router = express.Router();
 
 router.use(protect);
@@ -51,21 +70,26 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
     return res.status(400).json({ error: 'observations are required' });
   }
 
+  // prior reports at this block feed the assessment's recurrence reasoning
+  let history = [];
+  try {
+    history = await getBlockHistory(block_number);
+  } catch (e) {
+    console.error('block history lookup failed (continuing without context):', e.message);
+  }
+
   let assessment;
   let stubbed = false;
   if (hasApiKey()) {
     try {
-      assessment = await assessRodentRisk({ block: block_number, floorLevel: floor_level, observations });
+      assessment = await assessRodentRisk({ block: block_number, floorLevel: floor_level, observations, history });
     } catch (err) {
-      // AI call failed (bad key, timeout, service down) - fall back to the
-      // deterministic stub so the officer still gets an assessment rather than
-      // an error. graceful degradation instead of a hard failure.
       console.error('rodent AI failed, falling back to stub:', err.message);
-      assessment = stubAssessment(observations);
+      assessment = stubAssessment(observations, history);
       stubbed = true;
     }
   } else {
-    assessment = stubAssessment(observations);
+    assessment = stubAssessment(observations, history);
     stubbed = true;
   }
 
@@ -83,7 +107,13 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
       follow_up_notes: null,
       assessed_by: req.user.user_id,
     });
-    res.status(201).json({ ...row.toJSON(), stubbed });
+    res.status(201).json({
+      ...row.toJSON(),
+      stubbed,
+      confidence: assessment.confidence || null,
+      recurrence_note: assessment.recurrence_note || null,
+      prior_count: history.length,
+    });
   } catch (err) {
     console.error('save assessment failed:', err);
     res.status(500).json({ error: 'assessment generated but failed to save' });

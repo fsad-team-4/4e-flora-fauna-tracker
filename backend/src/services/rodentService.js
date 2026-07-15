@@ -1,10 +1,12 @@
-// angelyn
 // rodent risk assessment via gemini
 // this is the "ai sensemaking" feature for sector 2
 //
 // staff describes what they saw on the ground.
 // gemini returns a structured risk assessment: level, cause, actions, escalate flag.
-// this turns messy unstructured field notes into actionable intelligence.
+//
+// The assessment is CONTEXT-AWARE: prior observations at the same block over the
+// last week are passed in, so a repeat sighting is judged as recurrence rather
+// than an isolated incident. That is the judgement a lone field note can't give.
 
 const { GoogleGenAI } = require('@google/genai');
 
@@ -16,7 +18,7 @@ function hasApiKey() {
   return ai !== null;
 }
 
-async function assessRodentRisk({ block, floorLevel, observations }) {
+async function assessRodentRisk({ block, floorLevel, observations, history = [] }) {
   if (!ai) {
     throw new Error('GEMINI_API_KEY not set');
   }
@@ -28,43 +30,61 @@ You MUST respond with ONLY a valid JSON object. No preamble, no explanation, no 
 The JSON must match this exact structure:
 {
   "risk_level": "low" | "medium" | "high" | "critical",
+  "confidence": "low" | "moderate" | "high",
   "likely_cause": "string - one sentence explaining the most probable cause",
-  "signs_identified": ["array", "of", "specific", "signs", "mentioned"],
+  "signs_identified": ["array of NORMALISED clinical sign labels"],
   "immediate_actions": [
     { "title": "2-3 word action summary", "detail": "one sentence describing the concrete action for the field officer" }
   ],
   "escalate_to_contractor": true | false,
   "escalation_reason": "string if escalate is true, null if false",
-  "estimated_timeline": "string - how urgently this needs to be addressed"
+  "estimated_timeline": "string - how urgently this needs to be addressed",
+  "recurrence_note": "string or null - if prior observations exist at this location, one sentence on what the pattern means for risk"
 }
 
-Each immediate_actions item MUST have a short "title" (2-3 words, e.g. "Inspect Vicinity", "Locate Entry Points", "Educate Residents") that front-loads the action, plus a "detail" sentence. The title lets an officer scan the steps at a glance.
+signs_identified rules: do NOT echo the officer's wording back. Normalise each sign
+into clinical terms, dropping subjective language. For example "unpleasant dropping
+on the floor" becomes "Rodent droppings". Use standard labels such as: Rodent
+droppings, Gnaw marks, Burrow/nest, Live sighting, Grease marks, Urine odour,
+Food source exposed, Structural gap.
+
+confidence rules: state how confident this assessment is given the detail provided.
+A single vague sentence with no location is "low". A specific description with
+multiple signs, or corroborating prior reports, is "moderate" or "high". Be honest -
+this is an inference, not a measurement.
+
+RECURRENCE (important): you may be given prior observations at the same location.
+Recurrence at one location is a strong risk escalator - repeated droppings at the
+same block indicate an established, not transient, presence. If prior observations
+exist, factor them into risk_level and explain the pattern in recurrence_note. A
+sign that would be "low" in isolation should usually be raised to at least "medium"
+if the same location reported similar signs within the last week.
+
+Each immediate_actions item MUST have a short "title" (2-3 words) that front-loads
+the action, plus a "detail" sentence.
 
 Risk level guide:
-- low: minor droppings only, no active nesting, isolated to one area
-- medium: multiple signs, possible nesting, near but not inside buildings
-- high: active infestation signs, inside building areas, near food sources or gardens
+- low: minor droppings only, no active nesting, isolated to one area, no prior reports
+- medium: multiple signs, possible nesting, near but not inside buildings, OR a repeat report at the same location
+- high: active infestation signs, inside building areas, near food sources or gardens, or a persistent recurring pattern
 - critical: large-scale infestation, confirmed nesting, near resident common areas or food sources, rapid escalation needed
 
 Keep immediate_actions practical and specific to what a field officer can do.
 Do not recommend chemical pesticide application - that requires a licensed contractor.
 Escalate to contractor when the situation is beyond self-treatment scope.`;
 
-  const prompt = buildPrompt({ block, floorLevel, observations });
+  const prompt = buildPrompt({ block, floorLevel, observations, history });
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {
       systemInstruction,
-      // ask gemini to return json directly - cleaner than parsing loose text
       responseMimeType: 'application/json',
     },
   });
 
   const raw = (response.text || '').trim();
-
-  // strip markdown fences just in case the model wraps the json
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
 
   let parsed;
@@ -80,14 +100,12 @@ Escalate to contractor when the situation is beyond self-treatment scope.`;
     throw new Error(`unexpected risk_level value: ${parsed.risk_level}`);
   }
 
-  // normalise actions: accept the new {title, detail} shape, but if the model
-  // ever returns plain strings, wrap them so downstream always gets objects.
   parsed.immediate_actions = normalizeActions(parsed.immediate_actions);
+  if (!['low', 'moderate', 'high'].includes(parsed.confidence)) parsed.confidence = 'moderate';
 
   return parsed;
 }
 
-// keep action shape consistent regardless of what the model returns
 function normalizeActions(actions) {
   if (!Array.isArray(actions)) return [];
   return actions.map(a => {
@@ -98,30 +116,49 @@ function normalizeActions(actions) {
   });
 }
 
-function buildPrompt({ block, floorLevel, observations }) {
+function buildPrompt({ block, floorLevel, observations, history = [] }) {
   const location = [block, floorLevel].filter(Boolean).join(', ');
+  let historyBlock = '';
+  if (history.length > 0) {
+    const lines = history.map(h => {
+      const when = new Date(h.createdAt).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
+      return `- ${when} (${h.risk_level}): ${h.observations}`;
+    }).join('\n');
+    historyBlock = `\n\nPRIOR OBSERVATIONS AT THIS LOCATION (last 7 days) - ${history.length} report(s):\n${lines}\n\nThis is a RECURRING location. Factor this pattern into your risk assessment.`;
+  } else {
+    historyBlock = '\n\nNo prior observations at this location in the last 7 days.';
+  }
+
   return `Location: ${location || 'not specified'}
 
 Field officer observations:
-${observations.trim()}
+${observations.trim()}${historyBlock}
 
-Assess the rodent risk based on these observations and return the JSON assessment.`;
+Assess the rodent risk based on these observations AND any recurrence pattern, then return the JSON assessment.`;
 }
 
-// fallback stub for when there is no api key
-function stubAssessment(observations) {
+// fallback stub for when there is no api key or the AI call fails
+function stubAssessment(observations, history = []) {
   const hasDroppings = /dropping|faece|pellet/i.test(observations);
   const hasNesting = /nest|gnaw|burrow|hole/i.test(observations);
   const nearGarden = /garden|plant|compost/i.test(observations);
 
-  const level = hasNesting && nearGarden ? 'high'
+  let level = hasNesting && nearGarden ? 'high'
     : hasNesting || nearGarden ? 'medium'
     : 'low';
+  // recurrence elevates risk even in the stub, so the fallback stays honest
+  let recurrence_note = null;
+  if (history.length > 0) {
+    recurrence_note = `${history.length} similar observation(s) at this location in the last 7 days — recurrence raises the risk above an isolated incident.`;
+    if (level === 'low') level = 'medium';
+    else if (level === 'medium') level = 'high';
+  }
 
   return {
     risk_level: level,
+    confidence: 'low',
     likely_cause: 'Assessment based on stub logic (no API key). Set GEMINI_API_KEY for real AI assessment.',
-    signs_identified: hasDroppings ? ['rodent droppings observed'] : ['general signs noted'],
+    signs_identified: hasDroppings ? ['Rodent droppings'] : ['General signs noted'],
     immediate_actions: [
       { title: 'Document Location', detail: 'Record the exact location with photos for the case file.' },
       { title: 'Inspect Vicinity', detail: 'Check for additional signs within a 10m radius of the observation.' },
@@ -131,6 +168,7 @@ function stubAssessment(observations) {
     escalate_to_contractor: level === 'high',
     escalation_reason: level === 'high' ? 'Multiple risk factors present — beyond self-treatment scope' : null,
     estimated_timeline: level === 'high' ? 'Same day' : 'Within 3 days',
+    recurrence_note,
     stubbed: true,
   };
 }
