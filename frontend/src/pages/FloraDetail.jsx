@@ -177,6 +177,24 @@ export default function FloraDetail() {
 
   const statusColor = plant ? (HEALTH_STATUS_COLORS[plant.health_status] || 'default') : 'default';
 
+  // Species + status chip - mirrors the plant card design in FloraList
+  const detailsHeader = plant && (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
+          {plant.species}
+        </Typography>
+        {plant.common_name && (
+          <Typography color="text.secondary">{plant.common_name}</Typography>
+        )}
+      </Box>
+      <Chip
+        label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+        color={statusColor}
+      />
+    </Box>
+  );
+
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
       <Button
@@ -360,32 +378,24 @@ export default function FloraDetail() {
           ) : (
             <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
               <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
-                {plant.image_url && (
-                  <Box
-                    component="img"
-                    src={plant.image_url}
-                    alt={plant.species}
-                    sx={{
-                      width: 200, height: 200, objectFit: 'cover',
-                      borderRadius: 2, display: 'block', mb: 2,
-                    }}
-                  />
-                )}
-                {/* Species + status chip - mirrors the plant card design in FloraList */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
-                      {plant.species}
-                    </Typography>
-                    {plant.common_name && (
-                      <Typography color="text.secondary">{plant.common_name}</Typography>
-                    )}
+                {plant.image_url ? (
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                    <Box
+                      component="img"
+                      src={plant.image_url}
+                      alt={plant.species}
+                      sx={{
+                        width: 200, height: 200, objectFit: 'cover',
+                        borderRadius: 2, display: 'block', flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                      {detailsHeader}
+                    </Box>
                   </Box>
-                  <Chip
-                    label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                    color={statusColor}
-                  />
-                </Box>
+                ) : (
+                  detailsHeader
+                )}
 
                 <Divider sx={{ my: 3 }} />
 
