@@ -19,18 +19,22 @@ import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
 import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
+import { getPlantIcon } from '../utils/plantIcons';
 
 const HEALTH_SEVERITY_RANK = { critical: 0, at_risk: 1, healthy: 2 };
 
 // Plain CSS grid instead of MUI's <Grid> component - guarantees equal-width
 // cards regardless of MUI version differences in the Grid API.
+// Capped at 3 columns so cards have more breathing room on wide screens.
 const CARD_GRID_SX = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-  gap: 2,
+  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' },
+  gap: 2.5,
 };
 
 const SORT_OPTIONS = [
+  { value: 'default', label: 'Newest First' },
+  { value: 'oldest', label: 'Oldest First' },
   { value: 'species_asc', label: 'Species (A-Z)' },
   { value: 'species_desc', label: 'Species (Z-A)' },
   { value: 'health_severity', label: 'Health (critical first)' },
@@ -89,7 +93,7 @@ export default function FloraList() {
   const [error, setError] = useState('');
   const [healthFilter, setHealthFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('species_asc');
+  const [sortBy, setSortBy] = useState('default');
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [csvFile, setCsvFile] = useState(null);
@@ -166,6 +170,11 @@ export default function FloraList() {
 
     result = [...result].sort((a, b) => {
       switch (sortBy) {
+        case 'default':
+          // No reordering - keep the backend's newest-first fetch order.
+          return 0;
+        case 'oldest':
+          return new Date(a.createdAt) - new Date(b.createdAt);
         case 'species_desc':
           return b.species.localeCompare(a.species);
         case 'health_severity':
@@ -505,6 +514,7 @@ export default function FloraList() {
         <Box sx={CARD_GRID_SX}>
           {visiblePlants.map((plant) => {
             const statusColor = HEALTH_STATUS_COLORS[plant.health_status] || 'default';
+            const { Icon: PlantIcon, color: plantIconColor } = getPlantIcon(plant.plant_family);
             return (
               <Card
                 key={plant.id}
@@ -518,12 +528,15 @@ export default function FloraList() {
                   onClick={() => navigate(`/flora/${plant.id}`)}
                   sx={{ height: '100%', '&:hover': { bgcolor: 'action.hover' } }}
                 >
-                  <CardContent>
+                  <CardContent sx={{ p: 2.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
-                          {plant.species}
-                        </Typography>
+                        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                          <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
+                          <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
+                            {plant.species}
+                          </Typography>
+                        </Stack>
                         {plant.common_name && (
                           <Typography color="text.secondary" variant="body2" noWrap>
                             {plant.common_name}
