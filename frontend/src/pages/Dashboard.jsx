@@ -155,7 +155,14 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       ) : (
-        <EstateHealthHero estateHealth={metrics?.estateHealth} history={metrics?.history || []} loading={loading} />
+        <EstateHealthHero
+          estateHealth={metrics?.estateHealth}
+          history={metrics?.history || []}
+          tiedBlocks={(metrics?.sightingsByBlock || [])
+            .filter(b => b.count === metrics?.sightingsByBlock?.[0]?.count)
+            .map(b => b.block_number)}
+          loading={loading}
+        />
       )}
 
       {/* weekly-summary result */}
