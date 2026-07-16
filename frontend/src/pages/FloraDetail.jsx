@@ -379,7 +379,7 @@ export default function FloraDetail() {
             <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
               <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
                 {plant.image_url ? (
-                  <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                     <Box
                       component="img"
                       src={plant.image_url}
