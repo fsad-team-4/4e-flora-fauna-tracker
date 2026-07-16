@@ -52,6 +52,10 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.TEXT,
     allowNull: true,
   },
+  image_url: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   last_inspected_at: {
     type: DataTypes.DATE,
     allowNull: true,

@@ -360,6 +360,17 @@ export default function FloraDetail() {
           ) : (
             <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
               <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                {plant.image_url && (
+                  <Box
+                    component="img"
+                    src={plant.image_url}
+                    alt={plant.species}
+                    sx={{
+                      width: 200, height: 200, objectFit: 'cover',
+                      borderRadius: 2, display: 'block', mb: 2,
+                    }}
+                  />
+                )}
                 {/* Species + status chip - mirrors the plant card design in FloraList */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                   <Box sx={{ minWidth: 0 }}>

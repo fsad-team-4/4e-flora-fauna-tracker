@@ -51,6 +51,7 @@ const createSchema = yup.object({
     .transform((value) => (isNaN(value) ? null : value))
     .positive('Max height must be a positive number')
     .nullable(),
+  image_url: yup.string().trim().url().nullable(),
 });
 
 const updateSchema = yup.object({
@@ -68,6 +69,7 @@ const updateSchema = yup.object({
   .transform((value) => (isNaN(value) ? null : value))
   .positive('Max height must be a positive number')
   .nullable(),
+  image_url: yup.string().trim().url().nullable(),
 });
 
 // Splits a CSV buffer into row objects keyed by the header row.
@@ -131,6 +133,7 @@ async function createGreenery(req, res) {
     color: data.color,
     max_height_at_maturity: data.max_height_at_maturity,
     last_inspected_at: data.last_inspected_at,
+    image_url: data.image_url,
     recorded_by: req.user.user_id,
   });
 

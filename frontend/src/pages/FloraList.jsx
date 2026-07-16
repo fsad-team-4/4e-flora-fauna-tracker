@@ -529,6 +529,17 @@ export default function FloraList() {
                   sx={{ height: '100%', '&:hover': { bgcolor: 'action.hover' } }}
                 >
                   <CardContent sx={{ p: 2.5 }}>
+                    {plant.image_url && (
+                      <Box
+                        component="img"
+                        src={plant.image_url}
+                        alt={plant.species}
+                        sx={{
+                          width: 56, height: 56, objectFit: 'cover',
+                          borderRadius: 1, display: 'block', mb: 1,
+                        }}
+                      />
+                    )}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
                       <Box sx={{ minWidth: 0 }}>
                         <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
