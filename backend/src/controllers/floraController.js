@@ -29,7 +29,7 @@ Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
 Health notes: ${record.health_notes || 'none'}
-
+${record.image_url ? `Photo: ${record.image_url}\n` : ''}
 Check the app for the AI care recommendation.
 
 - 4E Biodiversity Tracker`,
