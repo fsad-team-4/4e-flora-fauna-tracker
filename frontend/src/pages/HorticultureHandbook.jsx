@@ -339,74 +339,76 @@ export default function HorticultureHandbook() {
                         to={`/flora/${plant.id}`}
                         sx={{ height: '100%', '&:hover': { bgcolor: 'action.hover' } }}
                       >
-                        <CardContent>
+                        <CardContent sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
                           {plant.image_url && (
                             <Box
                               component="img"
                               src={plant.image_url}
                               alt={plant.species}
                               sx={{
-                                width: 56, height: 56, objectFit: 'cover',
-                                borderRadius: 1, display: 'block', mb: 1,
+                                width: 80, height: 80, objectFit: 'cover',
+                                borderRadius: 1, display: 'block', flexShrink: 0,
                               }}
                             />
                           )}
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
-                            <Box sx={{ minWidth: 0 }}>
-                              <Stack direction="row" spacing={0.75} alignItems="center">
-                                <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
-                                <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
-                                  {plant.species}
-                                </Typography>
-                              </Stack>
-                              {plant.common_name && (
-                                <Typography color="text.secondary" variant="body2" noWrap>
-                                  {plant.common_name}
+                          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Stack direction="row" spacing={0.75} alignItems="center">
+                                  <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
+                                  <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
+                                    {plant.species}
+                                  </Typography>
+                                </Stack>
+                                {plant.common_name && (
+                                  <Typography color="text.secondary" variant="body2" noWrap>
+                                    {plant.common_name}
+                                  </Typography>
+                                )}
+                              </Box>
+                              <Chip
+                                label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+                                color={statusColor}
+                                size="small"
+                              />
+                            </Box>
+
+                            <Stack spacing={0.25} sx={{ mt: 1 }}>
+                              {plant.plant_family && (
+                                <Typography variant="body2" color="text.secondary" noWrap>
+                                  <Box component="span" sx={{ fontWeight: 700 }}>Family:</Box>{' '}
+                                  {plant.plant_family}
                                 </Typography>
                               )}
-                            </Box>
-                            <Chip
-                              label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                              color={statusColor}
-                              size="small"
-                            />
+                              {plant.site_suitability && (
+                                <Typography
+                                  variant="body2"
+                                  color="text.secondary"
+                                  sx={{
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden',
+                                  }}
+                                >
+                                  <Box component="span" sx={{ fontWeight: 700 }}>Suitability:</Box>{' '}
+                                  {plant.site_suitability}
+                                </Typography>
+                              )}
+                              {plant.color && (
+                                <Typography variant="body2" color="text.secondary" noWrap>
+                                  <Box component="span" sx={{ fontWeight: 700 }}>Color:</Box>{' '}
+                                  {plant.color}
+                                </Typography>
+                              )}
+                              {plant.max_height_at_maturity != null && (
+                                <Typography variant="body2" color="text.secondary" noWrap>
+                                  <Box component="span" sx={{ fontWeight: 700 }}>Max height:</Box>{' '}
+                                  {plant.max_height_at_maturity} m
+                                </Typography>
+                              )}
+                            </Stack>
                           </Box>
-
-                          <Stack spacing={0.25} sx={{ mt: 1 }}>
-                            {plant.plant_family && (
-                              <Typography variant="body2" color="text.secondary" noWrap>
-                                <Box component="span" sx={{ fontWeight: 700 }}>Family:</Box>{' '}
-                                {plant.plant_family}
-                              </Typography>
-                            )}
-                            {plant.site_suitability && (
-                              <Typography
-                                variant="body2"
-                                color="text.secondary"
-                                sx={{
-                                  display: '-webkit-box',
-                                  WebkitLineClamp: 2,
-                                  WebkitBoxOrient: 'vertical',
-                                  overflow: 'hidden',
-                                }}
-                              >
-                                <Box component="span" sx={{ fontWeight: 700 }}>Suitability:</Box>{' '}
-                                {plant.site_suitability}
-                              </Typography>
-                            )}
-                            {plant.color && (
-                              <Typography variant="body2" color="text.secondary" noWrap>
-                                <Box component="span" sx={{ fontWeight: 700 }}>Color:</Box>{' '}
-                                {plant.color}
-                              </Typography>
-                            )}
-                            {plant.max_height_at_maturity != null && (
-                              <Typography variant="body2" color="text.secondary" noWrap>
-                                <Box component="span" sx={{ fontWeight: 700 }}>Max height:</Box>{' '}
-                                {plant.max_height_at_maturity} m
-                              </Typography>
-                            )}
-                          </Stack>
                         </CardContent>
                       </CardActionArea>
                     </Card>
