@@ -12,7 +12,7 @@ My module (Member 3 / Klemens): Resident Reports & Authentication
 - Rule-based auto-email to resident when their case is resolved
 
 Member 1 / Shernell - Flora Management:
-- GreeneryRecord CRUD with RBAC (read: any logged-in user; mutations: staff/admin)
+- GreeneryRecord CRUD with RBAC (read and mutations: staff/admin only; residents have zero access)
 - CSV bulk upload (partial-failure: valid rows import, invalid rows reported by row number)
 - Health status tracking (healthy / at_risk / critical)
 - Soft delete (is_deleted flag; hidden from lists, retained for data retention)
