@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
@@ -101,6 +101,35 @@ export default function FloraDetail() {
   const [deleting, setDeleting] = useState(false);
   const [recommending, setRecommending] = useState(false);
   const [recError, setRecError] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    setUploadError('');
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      const res = await http.post('/api/uploads', formData);
+      setImageUrl(res.data.url);
+    } catch (err) {
+      setUploadError(err.response?.data?.error || 'Upload failed');
+      // reset the input so the same file can be retried
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setImageUrl('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const loadPlant = () =>
     http
@@ -109,6 +138,9 @@ export default function FloraDetail() {
         const found = res.data.find((p) => String(p.id) === id);
         if (found) {
           setPlant(found);
+          // Sync the photo draft with the loaded plant, mirroring what
+          // enableReinitialize does for the formik fields.
+          setImageUrl(found.image_url || '');
           setError('');
         } else {
           setError('Plant not found.');
@@ -139,7 +171,7 @@ export default function FloraDetail() {
     onSubmit: async (values) => {
       setSaveError('');
       try {
-        const res = await http.patch(`/api/flora/${id}`, values);
+        const res = await http.patch(`/api/flora/${id}`, { ...values, image_url: imageUrl || null });
         setPlant(res.data);
         setEditing(false);
         setSaveSuccess(true);
@@ -176,6 +208,24 @@ export default function FloraDetail() {
   };
 
   const statusColor = plant ? (HEALTH_STATUS_COLORS[plant.health_status] || 'default') : 'default';
+
+  // Species + status chip - mirrors the plant card design in FloraList
+  const detailsHeader = plant && (
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
+          {plant.species}
+        </Typography>
+        {plant.common_name && (
+          <Typography color="text.secondary">{plant.common_name}</Typography>
+        )}
+      </Box>
+      <Chip
+        label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+        color={statusColor}
+      />
+    </Box>
+  );
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
@@ -342,16 +392,48 @@ export default function FloraDetail() {
                   helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
                 />
 
+                <Box sx={{ mt: 2 }}>
+                  {uploadError && <Alert severity="error" sx={{ mb: 1 }}>{uploadError}</Alert>}
+                  <Button variant="outlined" component="label" disabled={uploading}>
+                    {uploading ? 'Uploading...' : 'Add Photo'}
+                    <input
+                      type="file"
+                      hidden
+                      accept="image/*"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                    />
+                  </Button>
+                  {imageUrl && (
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                      <img
+                        src={imageUrl}
+                        alt="Uploaded preview"
+                        style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4 }}
+                      />
+                      <Button color="error" onClick={handleRemovePhoto} size="small">
+                        Remove
+                      </Button>
+                    </Stack>
+                  )}
+                </Box>
+
                 <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
                   <Button
                     variant="outlined"
                     color="secondary"
-                    onClick={() => { setEditing(false); setSaveError(''); formik.resetForm(); }}
-                    disabled={formik.isSubmitting}
+                    onClick={() => {
+                      setEditing(false);
+                      setSaveError('');
+                      setUploadError('');
+                      setImageUrl(plant?.image_url || '');
+                      formik.resetForm();
+                    }}
+                    disabled={formik.isSubmitting || uploading}
                   >
                     Cancel
                   </Button>
-                  <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting}>
+                  <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting || uploading}>
                     {formik.isSubmitting ? 'Saving...' : 'Save Changes'}
                   </Button>
                 </Stack>
@@ -360,21 +442,24 @@ export default function FloraDetail() {
           ) : (
             <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
               <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
-                {/* Species + status chip - mirrors the plant card design in FloraList */}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
-                      {plant.species}
-                    </Typography>
-                    {plant.common_name && (
-                      <Typography color="text.secondary">{plant.common_name}</Typography>
-                    )}
+                {plant.image_url ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box
+                      component="img"
+                      src={plant.image_url}
+                      alt={plant.species}
+                      sx={{
+                        width: 200, height: 200, objectFit: 'cover',
+                        borderRadius: 2, display: 'block', flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                      {detailsHeader}
+                    </Box>
                   </Box>
-                  <Chip
-                    label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                    color={statusColor}
-                  />
-                </Box>
+                ) : (
+                  detailsHeader
+                )}
 
                 <Divider sx={{ my: 3 }} />
 

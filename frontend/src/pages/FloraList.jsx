@@ -528,36 +528,49 @@ export default function FloraList() {
                   onClick={() => navigate(`/flora/${plant.id}`)}
                   sx={{ height: '100%', '&:hover': { bgcolor: 'action.hover' } }}
                 >
-                  <CardContent sx={{ p: 2.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
-                          <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
-                          <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
-                            {plant.species}
+                  <CardContent sx={{ p: 2.5, display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                    {plant.image_url && (
+                      <Box
+                        component="img"
+                        src={plant.image_url}
+                        alt={plant.species}
+                        sx={{
+                          width: 80, height: 80, objectFit: 'cover',
+                          borderRadius: 1, display: 'block', flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
+                            <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
+                            <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
+                              {plant.species}
+                            </Typography>
+                          </Stack>
+                          {plant.common_name && (
+                            <Typography color="text.secondary" variant="body2" noWrap>
+                              {plant.common_name}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Chip
+                          label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+                          color={statusColor}
+                          size="small"
+                        />
+                      </Box>
+
+                      {plant.location_zone && (
+                        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+                          <LocationOnOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {plant.location_zone}
                           </Typography>
                         </Stack>
-                        {plant.common_name && (
-                          <Typography color="text.secondary" variant="body2" noWrap>
-                            {plant.common_name}
-                          </Typography>
-                        )}
-                      </Box>
-                      <Chip
-                        label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
-                        color={statusColor}
-                        size="small"
-                      />
+                      )}
                     </Box>
-
-                    {plant.location_zone && (
-                      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
-                        <LocationOnOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {plant.location_zone}
-                        </Typography>
-                      </Stack>
-                    )}
                   </CardContent>
                 </CardActionArea>
               </Card>
