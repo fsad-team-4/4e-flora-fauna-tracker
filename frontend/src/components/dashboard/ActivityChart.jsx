@@ -5,9 +5,12 @@ import {
 } from 'recharts';
 import { BRAND, CHART } from '../../theme';
 
+// Dashboard-scoped slate-navy series (kept local so the shared CHART tokens used
+// by the Prevention / Notification pages stay unchanged). navy + orange is a
+// high-separation, colourblind-safe pair - validated with the dataviz checker.
 const SERIES = [
-  { key: 'openCases', name: 'Open cases', color: CHART.series.primary },
-  { key: 'sightings', name: 'Fauna sightings', color: CHART.series.secondary },
+  { key: 'openCases', name: 'Open cases', color: '#2E67B5' },
+  { key: 'sightings', name: 'Fauna sightings', color: '#E5683A' },
 ];
 
 function fmtDay(iso) {
@@ -53,7 +56,7 @@ export default function ActivityChart({ history = [] }) {
     : 'No activity history yet.';
 
   return (
-    <Card sx={{ mb: 2.5 }}>
+    <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: 3 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 2.5 }}>
           <Box>
@@ -87,7 +90,7 @@ export default function ActivityChart({ history = [] }) {
                   interval="preserveStartEnd"
                   minTickGap={12}
                 />
-                <Tooltip cursor={{ fill: 'rgba(42,120,214,.06)' }} content={<ChartTooltip />} />
+                <Tooltip cursor={{ fill: 'rgba(46,103,181,.06)' }} content={<ChartTooltip />} />
                 {SERIES.map(s => (
                   <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={22}>
                     <LabelList

@@ -3,7 +3,7 @@ import { Card, CardContent, Box, Stack, Typography, Collapse, Chip } from '@mui/
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { BRAND } from '../../theme';
 
-const NEUTRAL_BAR = '#9ec5f4'; // calm blue, distinct from semantic red/amber/green
+const NEUTRAL_BAR = '#2E67B5'; // slate-navy for normal blocks; hotspots use the brand red alert
 
 function fmtWhen(iso) {
   if (!iso) return null;

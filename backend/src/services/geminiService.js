@@ -7,6 +7,7 @@
 // if anything still requires ./claudeService, update it to ./geminiService
 
 const { GoogleGenAI } = require('@google/genai');
+const { withTimeout } = require('../utils/withTimeout');
 
 // only create the client if a key is present
 // lets the app keep working for teammates who dont have a key yet
@@ -26,10 +27,10 @@ async function generateSummary(stats) {
 
   const prompt = buildPrompt(stats);
 
-  const response = await ai.models.generateContent({
+  const response = await withTimeout(ai.models.generateContent({
     model: 'gemini-3.5-flash',
     contents: prompt,
-  });
+  }), 20000, 'Gemini weekly summary');
 
   // the SDK exposes the plain text on response.text
   return (response.text || '').trim();

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import {
   Box, Typography, Button, Card, CardContent, Switch,
   TextField, Select, MenuItem, FormControl, InputLabel,
-  Alert, CircularProgress, Chip, IconButton, Menu, ListItemIcon, ListItemText,
+  Alert, Chip, IconButton, Menu, ListItemIcon, ListItemText,
   Autocomplete, Grid, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions,
-  Divider, Stack,
+  Divider, Stack, Skeleton,
 } from '@mui/material';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -13,23 +13,12 @@ import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import { useUser } from '../contexts/UserContext';
+import { BRAND } from '../theme';
 import http from '../http';
+import ConfirmDialog from '../components/ConfirmDialog';
 
-const BRAND = {
-  primary: '#C1272D',
-  primaryHover: '#A61D22',
-  heading: '#222222',
-  text: '#444444',
-  textLight: '#777777',
-  border: '#E5E5E5',
-  section: '#F7F7F7',
-  success: '#2E7D32',
-  slate: '#37474F',
-  slateHover: '#263238',
-  commsTint: '#E8F1FB',
-  commsBorder: '#9EC5F4',
-  logicFill: '#F0F1F3',
-};
+// page-specific neutral fill for the threshold/logic chip (not a shared token)
+const LOGIC_FILL = '#F0F1F3';
 
 // Trigger config: label, the category colour used on the trigger chip (semantic
 // vs categorical split from the dashboard), whether it takes a threshold, and the
@@ -73,7 +62,7 @@ function ThresholdChip({ triggerType, threshold }) {
   if (!t?.threshold || threshold == null) return null;
   // NOTE: computeHotspots() applies no time window, so we deliberately do NOT
   // claim one here. Once a window lands in the hotspot logic, show it.
-  return <Chip label={`\u2265 ${threshold} ${t.unit}`} size="small" sx={{ bgcolor: BRAND.logicFill, color: BRAND.heading, fontWeight: 600, borderRadius: '6px' }} />;
+  return <Chip label={`\u2265 ${threshold} ${t.unit}`} size="small" sx={{ bgcolor: LOGIC_FILL, color: BRAND.heading, fontWeight: 600, borderRadius: '6px' }} />;
 }
 
 // status derived from the toggle - single source of truth, no "(paused)" in names
@@ -160,12 +149,13 @@ function RuleRow({ rule, isAdmin, onToggle, onEdit, onDelete }) {
   // so the row only desaturates its accent instead.
   const paused = !rule.is_active;
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2.5, py: 1.75, bgcolor: paused ? BRAND.section : 'transparent' }}>
-      {/* accent encodes SEVERITY, matching the chip - one meaning per colour */}
-      <Box sx={{ width: 3, alignSelf: 'stretch', borderRadius: '2px', bgcolor: paused ? BRAND.border : sev.color, flexShrink: 0 }} />
+    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { sm: 'center' }, gap: { xs: 1.25, sm: 2 }, px: 2.5, py: 1.75, bgcolor: paused ? BRAND.section : 'transparent' }}>
+      {/* accent encodes SEVERITY, matching the chip - one meaning per colour.
+          Hidden on mobile (the coloured trigger chip already carries severity). */}
+      <Box sx={{ display: { xs: 'none', sm: 'block' }, width: 3, alignSelf: 'stretch', borderRadius: '2px', bgcolor: paused ? BRAND.border : sev.color, flexShrink: 0 }} />
 
       {/* name + status + condition chips */}
-      <Box sx={{ flex: '1 1 40%', minWidth: 0 }}>
+      <Box sx={{ flex: { sm: '1 1 40%' }, width: { xs: '100%', sm: 'auto' }, minWidth: 0 }}>
         <RuleNameLine name={rule.name} active={rule.is_active} />
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.75 }}>
           <TriggerChip triggerType={rule.trigger_type} />
@@ -174,19 +164,19 @@ function RuleRow({ rule, isAdmin, onToggle, onEdit, onDelete }) {
       </Box>
 
       {/* channel + recipients */}
-      <Box sx={{ flex: '1 1 40%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      <Box sx={{ flex: { sm: '1 1 40%' }, width: { xs: '100%', sm: 'auto' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
         <Box><ChannelChip channel={rule.channel} /></Box>
         <RecipientPills recipients={rule.recipients} />
       </Box>
 
-      {/* toggle + menu */}
+      {/* toggle + menu - right-aligned, and its own row on mobile */}
       {isAdmin && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, alignSelf: { xs: 'flex-end', sm: 'auto' }, mt: { xs: -0.5, sm: 0 } }}>
           <Switch
             checked={rule.is_active}
             onChange={() => onToggle(rule)}
             size="small"
-            inputProps={{ 'aria-label': `${rule.is_active ? 'Pause' : 'Activate'} rule: ${rule.name}` }}
+            slotProps={{ input: { 'aria-label': `${rule.is_active ? 'Pause' : 'Activate'} rule: ${rule.name}` } }}
             sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: BRAND.success }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: BRAND.success } }}
           />
           <RowMenu onEdit={() => onEdit(rule)} onDelete={() => onDelete(rule.id)} />
@@ -216,6 +206,8 @@ export default function AlertRules() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
   const [saveError, setSaveError] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -256,13 +248,17 @@ export default function AlertRules() {
     }
   }
 
-  async function handleDelete(id) {
-    if (!window.confirm('Delete this rule?')) return;
+  async function confirmDelete() {
+    setDeleting(true);
     try {
-      await http.delete(`/api/alert-rules/${id}`);
+      await http.delete(`/api/alert-rules/${deleteId}`);
+      setDeleteId(null);
       load();
     } catch (e) {
-      alert(e.response?.data?.error || 'delete failed');
+      setError(e.response?.data?.error || 'Could not delete the rule. Please try again.');
+      setDeleteId(null);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -271,17 +267,37 @@ export default function AlertRules() {
       await http.patch(`/api/alert-rules/${rule.id}`, { is_active: !rule.is_active });
       load();
     } catch (e) {
-      alert('toggle failed');
+      setError(`Could not ${rule.is_active ? 'pause' : 'activate'} "${rule.name}". Please try again.`);
     }
   }
 
-  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress sx={{ color: BRAND.primary }} /></Box>;
+  if (loading) return (
+    <Box sx={{ p: 3 }}>
+      <Skeleton variant="text" width={160} height={36} />
+      <Skeleton variant="text" width={300} height={22} sx={{ mb: 3 }} />
+      <Card sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '12px', overflow: 'hidden' }}>
+        {[0, 1, 2, 3].map(i => (
+          <Box key={i} sx={{ px: 2.5, py: 1.75, borderTop: i ? `1px solid ${BRAND.border}` : 'none', display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Box sx={{ flex: 1 }}>
+              <Skeleton variant="text" width="45%" height={24} />
+              <Skeleton variant="rounded" width={110} height={22} sx={{ mt: 0.75 }} />
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Skeleton variant="text" width={90} />
+              <Skeleton variant="rounded" width={150} height={22} sx={{ mt: 0.5 }} />
+            </Box>
+            <Skeleton variant="rounded" width={34} height={20} />
+          </Box>
+        ))}
+      </Card>
+    </Box>
+  );
 
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 3 }}>
         <div>
-          <Typography variant="h5" fontWeight={700} sx={{ color: BRAND.heading }}>Alert Rules</Typography>
+          <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Alert Rules</Typography>
           <Typography variant="body2" sx={{ color: BRAND.textLight }}>
             Configure when the system should notify staff
             {!isAdmin && <Chip label="read-only" size="small" sx={{ ml: 1 }} />}
@@ -333,7 +349,7 @@ export default function AlertRules() {
                 isAdmin={isAdmin}
                 onToggle={handleToggle}
                 onEdit={openEdit}
-                onDelete={handleDelete}
+                onDelete={setDeleteId}
               />
             </Box>
           ))}
@@ -347,6 +363,17 @@ export default function AlertRules() {
         onSave={handleSave}
         onClose={closeForm}
         saveError={saveError}
+      />
+
+      <ConfirmDialog
+        open={deleteId != null}
+        title="Delete this alert rule?"
+        message="The rule will be removed and will stop notifying staff. This can't be undone."
+        confirmLabel="Delete"
+        destructive
+        busy={deleting}
+        onConfirm={confirmDelete}
+        onClose={() => setDeleteId(null)}
       />
     </Box>
   );

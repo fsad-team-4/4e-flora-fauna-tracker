@@ -1,7 +1,10 @@
-import { BrowserRouter, Routes, Route, Link as RouterLink, NavLink, useLocation } from 'react-router-dom'
-import { AppBar, Toolbar, Typography, Button, Container, Box, Divider } from '@mui/material'
+import { useState } from 'react'
+import { BrowserRouter, Routes, Route, Link as RouterLink, useLocation } from 'react-router-dom'
+import { AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer, List, ListItemButton, ListItemText, ListSubheader } from '@mui/material'
+import MenuIcon from '@mui/icons-material/Menu'
 import { UserProvider, useUser } from './contexts/UserContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import ErrorBoundary from './components/ErrorBoundary'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import SubmitReport from './pages/SubmitReport'
@@ -16,6 +19,8 @@ import Dashboard from './pages/Dashboard'
 import AlertRules from './pages/AlertRules'
 import NotificationLog from './pages/NotificationLog'
 import RodentAssessment from './pages/RodentAssessment'
+import ActionQueue from './pages/ActionQueue'
+import PreventionScorecard from './pages/PreventionScorecard'
 import FaunaSightings from './pages/FaunaSightings'
 import FaunaLogSighting from './pages/FaunaLogSighting'
 import FaunaSightingDetail from './pages/FaunaSightingDetail'
@@ -38,108 +43,159 @@ function Home() {
         Welcome back, {user.name}
       </Typography>
       <Typography color="text.secondary">
-        Use the navigation above to submit or manage reports.
+        Open the menu (top-left) to submit or manage reports.
       </Typography>
     </Box>
   )
 }
 
-function NavLinkButton({ to, children }) {
+// Grouped so the drawer stays scannable. `any` shows for every logged-in user;
+// `staff` groups only for staff/admin.
+const NAV_GROUPS = [
+  { header: null, roles: 'any', items: [
+    { to: '/submit-report', label: 'Submit Report' },
+    { to: '/reports', label: 'My Reports' },
+  ] },
+  { header: 'Estate', roles: 'staff', items: [
+    { to: '/dashboard', label: 'Dashboard' },
+    { to: '/all-reports', label: 'All Reports' },
+    { to: '/alert-rules', label: 'Alerts' },
+    { to: '/notif-log', label: 'Log' },
+  ] },
+  { header: 'Flora', roles: 'staff', items: [
+    { to: '/flora', label: 'Flora' },
+    { to: '/handbook', label: 'Handbook' },
+  ] },
+  { header: 'Fauna', roles: 'staff', items: [
+    { to: '/fauna', label: 'Fauna Sightings' },
+    { to: '/fauna/log', label: 'Log Sighting' },
+    { to: '/fauna/hotspots', label: 'Fauna Hotspots' },
+  ] },
+  { header: 'Rodent', roles: 'staff', items: [
+    { to: '/rodent', label: 'Rodent' },
+    { to: '/action-queue', label: 'Action Queue' },
+    { to: '/prevention', label: 'Prevention' },
+  ] },
+]
+
+function NavDrawer({ open, onClose, isStaff }) {
   const location = useLocation()
-  const active = location.pathname === to
+  const groups = NAV_GROUPS.filter(g => g.roles === 'any' || isStaff)
   return (
-    <Button
-      component={NavLink}
-      to={to}
-      disableRipple
-      sx={{
-        color: active ? 'primary.main' : 'text.secondary',
-        fontWeight: active ? 700 : 500,
-        px: 1.5,
-        borderRadius: 2,
-        bgcolor: active ? 'rgba(193,39,45,.08)' : 'transparent',
-        '&:hover': { bgcolor: 'rgba(193,39,45,.06)', color: 'primary.main' },
-      }}
-    >
-      {children}
-    </Button>
+    <Drawer anchor="left" open={open} onClose={onClose}>
+      {/* click anywhere in the panel closes it - link navigation still fires first */}
+      <Box sx={{ width: 264, pb: 2 }} role="navigation" onClick={onClose}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 2 }}>
+          <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>
+            EM
+          </Box>
+          <Typography sx={{ fontWeight: 800, letterSpacing: '-0.3px', fontSize: 17 }}>4E Biodiversity Tracker</Typography>
+        </Box>
+        <Divider />
+        {groups.map((g, gi) => (
+          <List
+            key={gi}
+            dense
+            subheader={g.header ? (
+              <ListSubheader disableSticky sx={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'text.secondary', lineHeight: 2.4, bgcolor: 'transparent' }}>
+                {g.header}
+              </ListSubheader>
+            ) : undefined}
+            sx={{ py: 0.5 }}
+          >
+            {g.items.map(item => {
+              const active = location.pathname === item.to
+              return (
+                <ListItemButton
+                  key={item.to}
+                  component={RouterLink}
+                  to={item.to}
+                  selected={active}
+                  sx={{
+                    mx: 1, my: 0.25, borderRadius: 2,
+                    '&.Mui-selected': { bgcolor: 'rgba(193,39,45,.08)', '&:hover': { bgcolor: 'rgba(193,39,45,.12)' } },
+                  }}
+                >
+                  <ListItemText
+                    primary={item.label}
+                    sx={{ '& .MuiListItemText-primary': { fontWeight: active ? 700 : 500, color: active ? 'primary.main' : 'text.primary' } }}
+                  />
+                </ListItemButton>
+              )
+            })}
+          </List>
+        ))}
+      </Box>
+    </Drawer>
   )
 }
 
 function NavBar() {
   const { user, setUser } = useUser()
+  const [drawerOpen, setDrawerOpen] = useState(false)
   const logout = () => {
     localStorage.removeItem('accessToken')
     setUser(null)
   }
+  const isStaff = Boolean(user && (user.role === 'staff' || user.role === 'admin'))
   return (
-    <AppBar position="sticky">
-      <Toolbar sx={{ gap: 1, py: 0.5 }}>
-        <Box
-          component={RouterLink}
-          to="/"
-          sx={{ display: 'flex', alignItems: 'center', gap: 1.25, textDecoration: 'none' }}
-        >
-          <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>
-            EM
-          </Box>
-          <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 800, letterSpacing: '-0.3px', fontSize: 18 }}>
-            4E Biodiversity Tracker
-          </Typography>
-        </Box>
-
-        {/* nav links */}
-        {user && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
-            <NavLinkButton to="/submit-report">Submit Report</NavLinkButton>
-            <NavLinkButton to="/reports">My Reports</NavLinkButton>
-            {(user.role === 'staff' || user.role === 'admin') && (
-              <>
-                <NavLinkButton to="/all-reports">All Reports</NavLinkButton>
-                <NavLinkButton to="/flora">Flora</NavLinkButton>
-                <NavLinkButton to="/handbook">Handbook</NavLinkButton>
-                <NavLinkButton to="/dashboard">Dashboard</NavLinkButton>
-                <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
-                <NavLinkButton to="/notif-log">Log</NavLinkButton>
-                <NavLinkButton to="/rodent">Rodent</NavLinkButton>
-                <NavLinkButton to="/fauna">Fauna Sightings</NavLinkButton>
-                <NavLinkButton to="/fauna/log">Log Sighting</NavLinkButton>
-                <NavLinkButton to="/fauna/hotspots">Fauna Hotspots</NavLinkButton>
-              </>
-            )}
-          </Box>
-        )}
-
-        {/* spacer pushes the user block to the far right */}
-        <Box sx={{ flexGrow: 1 }} />
-
-        {/* user identity + logout, hard right */}
-        {user && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Divider orientation="vertical" flexItem sx={{ my: 1 }} />
-            <Box sx={{ textAlign: 'right', lineHeight: 1.2 }}>
-              <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'text.primary' }}>
-                {user.name}
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>
-                {user.role}
-              </Typography>
+    <>
+      <AppBar position="sticky">
+        <Toolbar sx={{ gap: 1, py: 0.5 }}>
+          {user && (
+            <IconButton edge="start" onClick={() => setDrawerOpen(true)} aria-label="Open navigation menu" sx={{ color: 'text.primary', mr: 0.5 }}>
+              <MenuIcon />
+            </IconButton>
+          )}
+          <Box
+            component={RouterLink}
+            to="/"
+            sx={{ display: 'flex', alignItems: 'center', gap: 1.25, textDecoration: 'none' }}
+          >
+            <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>
+              EM
             </Box>
-            <Button
-              onClick={logout}
-              variant="outlined"
-              size="small"
-              color="primary"
-              disableRipple
-              sx={{ borderRadius: 2 }}
-            >
-              Logout
-            </Button>
+            <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 800, letterSpacing: '-0.3px', fontSize: 18 }}>
+              4E Biodiversity Tracker
+            </Typography>
           </Box>
-        )}
-      </Toolbar>
-    </AppBar>
+
+          <Box sx={{ flexGrow: 1 }} />
+
+          {user && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ textAlign: 'right', lineHeight: 1.2, display: { xs: 'none', sm: 'block' } }}>
+                <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'text.primary' }}>
+                  {user.name}
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>
+                  {user.role}
+                </Typography>
+              </Box>
+              <Button
+                onClick={logout}
+                variant="outlined"
+                size="small"
+                color="primary"
+                disableRipple
+                sx={{ borderRadius: 2 }}
+              >
+                Logout
+              </Button>
+            </Box>
+          )}
+        </Toolbar>
+      </AppBar>
+      {user && <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isStaff={isStaff} />}
+    </>
   )
+}
+
+// Keys the error boundary by route, so a crash on one page clears the moment the
+// user navigates elsewhere (rather than staying broken until a manual reload).
+function RouteBoundary({ children }) {
+  const location = useLocation()
+  return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>
 }
 
 function App() {
@@ -148,6 +204,7 @@ function App() {
       <BrowserRouter>
         <NavBar />
         <Container maxWidth="xl">
+          <RouteBoundary>
           <Routes>
             {/* public */}
             <Route path="/" element={<Home />} />
@@ -169,11 +226,14 @@ function App() {
             <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
             <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
             <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
+            <Route path="/action-queue" element={<ProtectedRoute roles={['staff', 'admin']}><ActionQueue /></ProtectedRoute>} />
+            <Route path="/prevention" element={<ProtectedRoute roles={['staff', 'admin']}><PreventionScorecard /></ProtectedRoute>} />
             <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
             <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
             <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
             <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
           </Routes>
+          </RouteBoundary>
         </Container>
       </BrowserRouter>
     </UserProvider>

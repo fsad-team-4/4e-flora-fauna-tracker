@@ -32,7 +32,7 @@ function TrendChip({ delta, improve, base, label }) {
       <Icon sx={{ fontSize: 16 }} aria-hidden />
       <span>{delta === 0 ? '0' : `${sign}${delta}`}</span>
       {pct != null && delta !== 0 && (
-        <Box component="span" sx={{ fontWeight: 600, opacity: 0.8, ml: 0.25 }}>
+        <Box component="span" sx={{ fontWeight: 600, ml: 0.25 }}>
           ({sign}{pct}%)
         </Box>
       )}
@@ -50,11 +50,15 @@ export default function KpiCard({ label, value, icon, color, tint, trend, trendL
     <Card
       sx={{
         height: '100%',
+        // accent rail ties each tile to its metric colour without a heavy fill
+        borderLeft: `3px solid ${color}`,
         transition: 'transform .18s ease, box-shadow .18s ease',
         '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 10px 24px rgba(16,24,40,.08)' },
       }}
     >
-      <CardContent sx={{ p: 2.5 }}>
+      {/* fill the card height and pin the value block to the bottom, so tiles that
+          stretch to match the chart beside them read as deliberate, not top-heavy */}
+      <CardContent sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Box aria-hidden sx={{ color, bgcolor: tint, width: 28, height: 28, borderRadius: '8px', display: 'grid', placeItems: 'center', '& svg': { fontSize: 17 } }}>
             {icon}
@@ -64,9 +68,9 @@ export default function KpiCard({ label, value, icon, color, tint, trend, trendL
           </Typography>
         </Stack>
         {loading ? (
-          <Skeleton variant="text" width={96} height={48} sx={{ mt: 1.25 }} />
+          <Skeleton variant="text" width={96} height={48} sx={{ mt: 'auto' }} />
         ) : (
-          <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-end', mt: 1.25 }}>
+          <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-end', mt: 'auto', pt: 1.25 }}>
             <Typography sx={{ color: BRAND.heading, fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: '-0.5px' }}>
               {value}
             </Typography>

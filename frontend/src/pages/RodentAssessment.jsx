@@ -1,23 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Box, Typography, TextField, Button, Card, CardContent,
   Alert, CircularProgress, Chip, Table, TableHead,
-  TableRow, TableCell, TableBody, Paper, Stack, Checkbox, Divider, Tooltip,
+  TableRow, TableCell, TableBody, Paper, Stack, Checkbox, Divider, Tooltip, MenuItem,
 } from '@mui/material';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
+import { BRAND } from '../theme';
 import http from '../http';
-
-const BRAND = {
-  primary: '#C1272D',
-  heading: '#222222',
-  text: '#444444',
-  textLight: '#777777',
-  border: '#E5E5E5',
-  section: '#F7F7F7',
-  slate: '#37474F',
-  slateHover: '#263238',
-};
 
 // Risk levels on one scale, so an officer can see where their result sits.
 // Critical gets a distinctly heavier treatment, not just a redder chip.
@@ -47,6 +38,31 @@ function isValidObservation(text) {
 function normalizeAction(a) {
   if (a && typeof a === 'object') return { title: a.title || '', detail: a.detail || a.text || '' };
   return { title: '', detail: String(a) };
+}
+
+// Downscale + re-encode the photo to JPEG client-side, so the base64 payload
+// stays well under the server body limit and any camera format the browser can
+// decode (incl. HEIC on Safari) is normalised to one the backend accepts.
+const MAX_PHOTO_DIM = 1600;
+function fileToJpegDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const scale = Math.min(1, MAX_PHOTO_DIM / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('unreadable image'));
+    };
+    img.src = objectUrl;
+  });
 }
 
 // The verdict band: the one thing the eye should hit first. Large, colour-filled,
@@ -102,20 +118,61 @@ export default function RodentAssessment() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [doneActions, setDoneActions] = useState({});
+  const [photo, setPhoto] = useState(null); // { dataUrl, name }
+  const [photoError, setPhotoError] = useState(null);
+  const [filters, setFilters] = useState({ search: '', block: '', risk: 'all', escalated: 'all' });
+  const fileInputRef = useRef(null);
 
-  useEffect(() => { loadHistory(); }, []);
+  // Filtering is server-side (the list paginates, so filtering only the loaded
+  // rows would show a subset and call it the whole answer). Text inputs are
+  // debounced so a query isn't fired on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(loadHistory, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
+
+  const filtersActive =
+    filters.search.trim() || filters.block.trim() || filters.risk !== 'all' || filters.escalated !== 'all';
 
   async function loadHistory() {
+    setLoadingHistory(true);
     try {
-      const { data } = await http.get('/api/rodent-assessments?limit=10');
-      setHistory(data);
+      const params = new URLSearchParams({ limit: '50' });
+      if (filters.search.trim()) params.append('search', filters.search.trim());
+      if (filters.block.trim()) params.append('block', filters.block.trim());
+      if (filters.risk !== 'all') params.append('risk_level', filters.risk);
+      if (filters.escalated !== 'all') params.append('escalated', filters.escalated);
+      const res = await http.get(`/api/rodent-assessments?${params.toString()}`);
+      setHistory(res.data);
+      setTotal(Number(res.headers['x-total-count']) || res.data.length);
     } catch (e) {
       console.error('failed to load history', e);
     } finally {
       setLoadingHistory(false);
     }
+  }
+
+  async function handlePhotoChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPhotoError(null);
+    try {
+      const dataUrl = await fileToJpegDataUrl(file);
+      setPhoto({ dataUrl, name: file.name });
+    } catch {
+      setPhotoError('Could not read that image - please choose a photo file (JPEG or PNG).');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  function handleRemovePhoto() {
+    setPhoto(null);
+    setPhotoError(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
   async function handleSubmit(e) {
@@ -130,8 +187,11 @@ export default function RodentAssessment() {
         block_number: block.trim() || null,
         floor_level: floorLevel.trim() || null,
         observations: observations.trim(),
+        image: photo ? photo.dataUrl : undefined,
       });
-      setResult(data);
+      // keep the local preview so the result can show the photo even when
+      // storage is not configured and no image_url came back
+      setResult({ ...data, local_photo: photo ? photo.dataUrl : null });
       loadHistory();
     } catch (e) {
       setError(e.response?.data?.error || 'assessment failed');
@@ -146,7 +206,7 @@ export default function RodentAssessment() {
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent Risk Assessment</Typography>
+        <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent Risk Assessment</Typography>
         <Typography variant="body2" sx={{ color: BRAND.textLight }}>
           Describe what you observed in the field — AI assesses risk level and recommends action
         </Typography>
@@ -183,9 +243,43 @@ export default function RodentAssessment() {
                 ? 'Please describe what you observed in a bit more detail (a full sentence or two) so the assessment is meaningful.'
                 : ' '}
             />
+            {/* optional field photo - Gemini reads it as evidence alongside the note */}
+            <Box>
+              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handlePhotoChange} />
+              {!photo ? (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<PhotoCameraOutlinedIcon />}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={submitting}
+                  sx={{ color: BRAND.slate, borderColor: BRAND.border, textTransform: 'none', '&:hover': { borderColor: BRAND.slate } }}
+                >
+                  Attach photo (optional)
+                </Button>
+              ) : (
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                  <Box
+                    component="img"
+                    src={photo.dataUrl}
+                    alt="field photo preview"
+                    sx={{ width: 72, height: 72, objectFit: 'cover', borderRadius: '8px', border: `1px solid ${BRAND.border}` }}
+                  />
+                  <Box>
+                    <Typography sx={{ fontSize: 13, color: BRAND.text }}>{photo.name}</Typography>
+                    <Button size="small" color="error" onClick={handleRemovePhoto} disabled={submitting} sx={{ px: 0.5, minWidth: 0 }}>
+                      Remove
+                    </Button>
+                  </Box>
+                </Stack>
+              )}
+              <Typography sx={{ fontSize: 12, color: photoError ? '#B3261E' : BRAND.textLight, mt: 0.5 }}>
+                {photoError || 'A photo of droppings, gnaw marks or burrows lets the AI assess what is visible, not just the note.'}
+              </Typography>
+            </Box>
             {error && <Alert severity="error">{error}</Alert>}
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-              <Button onClick={() => { setBlock(''); setFloorLevel(''); setObservations(''); setResult(null); setError(null); }} disabled={submitting} sx={{ color: BRAND.textLight }}>
+              <Button onClick={() => { setBlock(''); setFloorLevel(''); setObservations(''); setResult(null); setError(null); handleRemovePhoto(); }} disabled={submitting} sx={{ color: BRAND.textLight }}>
                 Clear
               </Button>
               <Button type="submit" variant="contained" disabled={submitting || !isValidObservation(observations)} sx={{ bgcolor: BRAND.slate, '&:hover': { bgcolor: BRAND.slateHover } }}>
@@ -202,7 +296,7 @@ export default function RodentAssessment() {
           <CardContent sx={{ py: 5, textAlign: 'center' }}>
             <CircularProgress size={28} sx={{ color: BRAND.slate, mb: 1.5 }} />
             <Typography sx={{ color: BRAND.textLight, fontSize: 14 }}>
-              Assessing the observation{block ? ` and checking prior reports at ${block}` : ''}…
+              Assessing the observation{photo ? ' and photo' : ''}{block ? ` and checking prior reports at ${block}` : ''}…
             </Typography>
           </CardContent>
         </Card>
@@ -264,6 +358,24 @@ export default function RodentAssessment() {
                     <Typography variant="body2" sx={{ color: BRAND.text }}>{result.estimated_timeline}</Typography>
                   </Box>
                 )}
+
+                {/* the evidence the AI actually looked at */}
+                {result.assessed_from_image && (result.image_url || result.local_photo) && (
+                  <Box sx={{ mt: 2.5 }}>
+                    <Typography sx={labelSx}>Field photo (analysed by AI)</Typography>
+                    <Box
+                      component="img"
+                      src={result.image_url || result.local_photo}
+                      alt="field photo"
+                      sx={{ maxWidth: '100%', maxHeight: 240, borderRadius: '8px', border: `1px solid ${BRAND.border}`, display: 'block' }}
+                    />
+                    {result.image_stored === false && (
+                      <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 0.5 }}>
+                        The AI assessed this photo, but it was not saved (image storage is not configured).
+                      </Typography>
+                    )}
+                  </Box>
+                )}
               </Box>
 
               <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
@@ -304,19 +416,78 @@ export default function RodentAssessment() {
         </Card>
       )}
 
-      <Typography variant="h6" fontWeight={600} mb={1.5} sx={{ color: BRAND.heading }}>Recent Assessments</Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'baseline' }, justifyContent: 'space-between', mb: 1.5 }}>
+        <Typography variant="h6" fontWeight={600} sx={{ color: BRAND.heading }}>Recent Assessments</Typography>
+        {!loadingHistory && (
+          <Typography sx={{ fontSize: 13, color: BRAND.textLight }}>
+            {total} result{total === 1 ? '' : 's'}{filtersActive ? ' · filtered' : ''}
+          </Typography>
+        )}
+      </Stack>
+
+      {/* server-side filters (backend supports search / block / risk_level / escalated) */}
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mb: 2, flexWrap: 'wrap' }}>
+        <TextField
+          size="small" label="Search text" placeholder="observations or cause"
+          value={filters.search}
+          onChange={e => setFilters(f => ({ ...f, search: e.target.value }))}
+          sx={{ flexGrow: 1, minWidth: 200 }}
+        />
+        <TextField
+          size="small" label="Block"
+          value={filters.block}
+          onChange={e => setFilters(f => ({ ...f, block: e.target.value }))}
+          sx={{ width: { xs: '100%', md: 150 } }}
+        />
+        <TextField
+          size="small" select label="Risk"
+          value={filters.risk}
+          onChange={e => setFilters(f => ({ ...f, risk: e.target.value }))}
+          sx={{ width: { xs: '100%', md: 140 } }}
+        >
+          <MenuItem value="all">All risks</MenuItem>
+          <MenuItem value="low">Low</MenuItem>
+          <MenuItem value="medium">Medium</MenuItem>
+          <MenuItem value="high">High</MenuItem>
+          <MenuItem value="critical">Critical</MenuItem>
+        </TextField>
+        <TextField
+          size="small" select label="Escalated"
+          value={filters.escalated}
+          onChange={e => setFilters(f => ({ ...f, escalated: e.target.value }))}
+          sx={{ width: { xs: '100%', md: 160 } }}
+        >
+          <MenuItem value="all">All</MenuItem>
+          <MenuItem value="true">Escalated only</MenuItem>
+          <MenuItem value="false">Not escalated</MenuItem>
+        </TextField>
+        {filtersActive && (
+          <Button
+            onClick={() => setFilters({ search: '', block: '', risk: 'all', escalated: 'all' })}
+            sx={{ color: BRAND.textLight, alignSelf: { md: 'center' }, flexShrink: 0 }}
+          >
+            Clear
+          </Button>
+        )}
+      </Stack>
+
       {loadingHistory ? (
         <CircularProgress size={24} sx={{ color: BRAND.primary }} />
       ) : history.length === 0 ? (
-        <Typography sx={{ color: BRAND.textLight }}>No assessments logged yet.</Typography>
+        <Typography sx={{ color: BRAND.textLight }}>
+          {filtersActive ? 'No assessments match these filters.' : 'No assessments logged yet.'}
+        </Typography>
       ) : (
         <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-          <Table size="small">
+          {/* the 6-column history scrolls inside its card on narrow screens rather than widening the page */}
+          <Box tabIndex={0} role="region" aria-label="Recent assessments (scrollable)" sx={{ overflowX: 'auto', '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' } }}>
+          <Table size="small" sx={{ minWidth: 680 }}>
             <TableHead>
               <TableRow sx={{ bgcolor: BRAND.section }}>
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Date</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Location</TableCell>
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Observation</TableCell>
+                <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Photo</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Risk</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Escalated</TableCell>
               </TableRow>
@@ -334,6 +505,20 @@ export default function RodentAssessment() {
                       </Typography>
                     </Tooltip>
                   </TableCell>
+                  <TableCell>
+                    {h.image_url ? (
+                      <a href={h.image_url} target="_blank" rel="noreferrer">
+                        <Box
+                          component="img"
+                          src={h.image_url}
+                          alt="field photo"
+                          sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: `1px solid ${BRAND.border}`, display: 'block' }}
+                        />
+                      </a>
+                    ) : (
+                      <Box component="span" sx={{ color: BRAND.textLight }}>—</Box>
+                    )}
+                  </TableCell>
                   <TableCell align="center">
                     <Chip label={h.risk_level} size="small" sx={riskChipSx(h.risk_level)} />
                   </TableCell>
@@ -346,6 +531,7 @@ export default function RodentAssessment() {
               ))}
             </TableBody>
           </Table>
+          </Box>
         </Paper>
       )}
     </Box>

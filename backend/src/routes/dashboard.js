@@ -1,12 +1,13 @@
 // angelyn
 const express = require('express');
 const { Op } = require('sequelize');
-const { NotificationLog } = require('../models');
+const { NotificationLog, RodentAssessment } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const mock = require('../services/mockDataService');
 const { sendWeeklySummary } = require('../services/weeklySummary');
 const { computeEstateMetrics } = require('../services/estateStats');
 const { getTrends, getHistory, dayKey } = require('../services/metricsSnapshot');
+const { aiLimiter } = require('../utils/rateLimiters');
 
 const router = express.Router();
 
@@ -29,6 +30,17 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
     const notifPrevCount = await NotificationLog.count({
       where: { createdAt: { [Op.gte]: prevSince, [Op.lt]: since } },
     });
+
+    // rodent escalations the AI has recommended but no officer has actioned yet -
+    // drives the dashboard's "awaiting review" call-to-action.
+    const pendingRows = await RodentAssessment.findAll({
+      where: { escalate_to_contractor: true, work_order_id: null, escalation_status: null, is_deleted: false },
+      attributes: ['block_number'],
+    });
+    const pendingEscalations = pendingRows.length;
+    const pendingEscalationBlocks = new Set(
+      pendingRows.map(r => (r.block_number || '').trim().toLowerCase()).filter(Boolean)
+    ).size;
 
     // real trend deltas from the stored daily snapshots (null until history exists)
     const trends = await getTrends(m);
@@ -62,6 +74,8 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
       criticalFloraSpecies: flora.filter(f => f.health_status === 'critical').map(f => f.species),
       notificationsLast7Days: notifCount,
       notificationsPrev7Days: notifPrevCount,
+      pendingEscalations,
+      pendingEscalationBlocks,
       recentCases,
     });
   } catch (err) {
@@ -71,7 +85,7 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // trigger summary - admin only (the live demo button)
-router.post('/trigger-summary', restrictTo('admin'), async (req, res) => {
+router.post('/trigger-summary', aiLimiter, restrictTo('admin'), async (req, res) => {
   try {
     const result = await sendWeeklySummary(req.user.user_id);
     res.json(result);

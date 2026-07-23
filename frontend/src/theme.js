@@ -13,6 +13,11 @@ export const BRAND = {
   textLight: '#6B7280', // slate-500: ~4.8:1 on white, meets WCAG AA for body text
   border: '#EAEAEA',
   section: '#F6F7F9',
+  // neutral slate accent (secondary buttons / quiet chrome) + success green,
+  // shared so pages stop redefining their own drifted copies.
+  slate: '#37474F',
+  slateHover: '#263238',
+  success: '#2E7D32',
 };
 
 // Semantic status tokens shared by StatusPill and any status UI.
@@ -38,19 +43,19 @@ export const CHART = {
 // colour is never confused with "attention/warning/healthy". Kept colourblind-
 // distinct (blue / purple / teal / magenta / slate).
 export const CATEGORY_COLORS = {
-  community_cat: '#2a78d6', // blue
-  pigeon: '#7c4dff',        // purple (was green — moved off semantic green)
-  flora_health: '#00838f',  // teal (was amber — moved off semantic amber)
+  community_cat: '#2860C0', // navy-blue (deepened from #2a78d6 for the slate-navy dashboard scheme)
+  pigeon: '#7c4dff',        // violet (was green — moved off semantic green)
+  flora_health: '#0E8A8A',  // teal (was amber — moved off semantic amber)
   pest: '#c2185b',          // magenta (was green — now distinct from pigeon)
-  other: '#546e7a',         // slate
+  other: '#5B6B82',         // slate (recessive neutral; every bar is directly labelled)
 };
 
 // Trend/status ink for KPI deltas. Direction is shown by an arrow; colour marks
 // whether the movement is good or bad for that specific metric (never colour-alone).
 export const TREND = {
-  good: '#12801e',
-  bad: '#d03b3b',
-  neutral: '#6B7280',
+  good: '#0E6B18', // darkened from #12801e so green text clears AA (4.5:1) on the risk tints too
+  bad: '#C0392B',  // darkened so red delta text clears AA on tinted backgrounds
+  neutral: '#5B6472', // darker than textLight so a dimmed % still clears AA
 };
 
 // Estate-health traffic light for the header status chip.
@@ -98,6 +103,9 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: '"Inter", "Helvetica", "Arial", sans-serif',
+    // Base bumped 14 -> 15 (~7%) to lift readability a little across every page.
+    // Scales all variant-based text (headings, body, buttons, inputs, table cells).
+    fontSize: 15,
     h4: { fontWeight: 800, letterSpacing: '-0.6px' },
     h5: { fontWeight: 700, letterSpacing: '-0.4px' },
     h6: { fontWeight: 700 },

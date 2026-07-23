@@ -9,6 +9,7 @@
 // than an isolated incident. That is the judgement a lone field note can't give.
 
 const { GoogleGenAI } = require('@google/genai');
+const { withTimeout } = require('../utils/withTimeout');
 
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
@@ -18,7 +19,7 @@ function hasApiKey() {
   return ai !== null;
 }
 
-async function assessRodentRisk({ block, floorLevel, observations, history = [] }) {
+async function assessRodentRisk({ block, floorLevel, observations, history = [], image = null }) {
   if (!ai) {
     throw new Error('GEMINI_API_KEY not set');
   }
@@ -53,6 +54,18 @@ A single vague sentence with no location is "low". A specific description with
 multiple signs, or corroborating prior reports, is "moderate" or "high". Be honest -
 this is an inference, not a measurement.
 
+PHOTOGRAPH (when provided): a field photo may accompany the note. Read it as
+primary evidence, not decoration. Identify what is actually visible - droppings and
+their size and freshness, gnaw marks, burrows, grease trails, nesting material,
+exposed food waste, structural gaps. Ground signs_identified in what you can SEE,
+not only what the officer wrote.
+
+If the photo and the note disagree, say so in likely_cause and lower confidence.
+An officer who writes "a few droppings" over a photo showing heavy infestation is
+the exact case this feature exists to catch. If the photo is too dark, blurred or
+close-cropped to judge, say that plainly and set confidence to "low" rather than
+guessing.
+
 RECURRENCE (important): you may be given prior observations at the same location.
 Recurrence at one location is a strong risk escalator - repeated droppings at the
 same block indicate an established, not transient, presence. If prior observations
@@ -73,16 +86,25 @@ Keep immediate_actions practical and specific to what a field officer can do.
 Do not recommend chemical pesticide application - that requires a licensed contractor.
 Escalate to contractor when the situation is beyond self-treatment scope.`;
 
-  const prompt = buildPrompt({ block, floorLevel, observations, history });
+  const prompt = buildPrompt({ block, floorLevel, observations, history, hasImage: Boolean(image) });
 
-  const response = await ai.models.generateContent({
+  // Multimodal when a photo is attached: the image is sent inline rather than as a
+  // URL, so the assessment does not depend on the image host being reachable.
+  const contents = image
+    ? [{ role: 'user', parts: [
+        { inlineData: { mimeType: image.mimeType, data: image.data } },
+        { text: prompt },
+      ] }]
+    : prompt;
+
+  const response = await withTimeout(ai.models.generateContent({
     model: 'gemini-2.5-flash',
-    contents: prompt,
+    contents,
     config: {
       systemInstruction,
       responseMimeType: 'application/json',
     },
-  });
+  }), 15000, 'Gemini rodent assessment');
 
   const raw = (response.text || '').trim();
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim();
@@ -116,7 +138,7 @@ function normalizeActions(actions) {
   });
 }
 
-function buildPrompt({ block, floorLevel, observations, history = [] }) {
+function buildPrompt({ block, floorLevel, observations, history = [], hasImage = false }) {
   const location = [block, floorLevel].filter(Boolean).join(', ');
   let historyBlock = '';
   if (history.length > 0) {
@@ -129,12 +151,16 @@ function buildPrompt({ block, floorLevel, observations, history = [] }) {
     historyBlock = '\n\nNo prior observations at this location in the last 7 days.';
   }
 
+  const imgLine = hasImage
+    ? '\n\nA field photograph of the site is attached. Assess what is visible in it as primary evidence.'
+    : '';
+
   return `Location: ${location || 'not specified'}
 
 Field officer observations:
-${observations.trim()}${historyBlock}
+${observations.trim()}${imgLine}${historyBlock}
 
-Assess the rodent risk based on these observations AND any recurrence pattern, then return the JSON assessment.`;
+Assess the rodent risk based on the observations${hasImage ? ', the attached photograph' : ''} AND any recurrence pattern, then return the JSON assessment.`;
 }
 
 // fallback stub for when there is no api key or the AI call fails

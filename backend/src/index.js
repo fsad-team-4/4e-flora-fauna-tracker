@@ -13,7 +13,9 @@ if (!process.env.JWT_SECRET) {
 
 const app = express();
 
-app.use(express.json());
+// 10mb: rodent assessments can carry a base64 field photo in the JSON body
+// (the express default of 100kb rejects any real photo before it reaches the route).
+app.use(express.json({ limit: '10mb' }));
 app.use(cors());
 
 app.get('/api/health', (req, res) => {
@@ -30,6 +32,8 @@ app.use('/api/alert-rules', require('./routes/alertRules'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/rodent-assessments', require('./routes/rodentAssessments'));
+app.use('/api/work-orders', require('./routes/workOrders'));
+app.use('/api/scorecard', require('./routes/scorecard'));
 
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {

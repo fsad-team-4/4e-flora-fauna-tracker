@@ -2,10 +2,11 @@
 // weekly summary feature - uses Sequelize, gemini, and nodemailer
 // gathers the week's data, asks gemini to write the briefing, emails it, logs it
 
-const { AlertRule, NotificationLog } = require('../models');
+const { AlertRule } = require('../models');
 const mock = require('./mockDataService');
 const gemini = require('./geminiService');
 const email = require('./emailService');
+const { recordDispatch } = require('./notificationService');
 const { computeHotspots } = require('./estateStats');
 
 async function sendWeeklySummary(triggeredByUserId) {
@@ -43,27 +44,22 @@ async function sendWeeklySummary(triggeredByUserId) {
   let failedCount = 0;
 
   for (const recipient of recipients) {
+    let status = 'sent';
+    let error_reason = null;
     try {
       await email.sendEmail({ to: recipient, subject, body: summary });
-      await NotificationLog.create({
-        rule_id: rule.id,
-        channel: 'email',
-        recipient,
-        status: 'sent',
-        message_preview: summary.slice(0, 200),
-      });
-      sentCount++;
     } catch (e) {
       console.error(`email to ${recipient} failed:`, e.message);
-      await NotificationLog.create({
-        rule_id: rule.id,
-        channel: 'email',
-        recipient,
-        status: 'failed',
-        message_preview: e.message.slice(0, 200),
-      });
-      failedCount++;
+      status = 'failed';
+      error_reason = e.message;
     }
+    // recordDispatch keeps subject/body (so it can be re-sent), tags the source,
+    // and mirrors to the client webhook
+    await recordDispatch({
+      rule_id: rule.id, channel: 'email', recipient, subject, body: summary,
+      status, error_reason, severity: 'info', source_type: 'weekly_summary',
+    });
+    if (status === 'sent') sentCount++; else failedCount++;
   }
 
   return {

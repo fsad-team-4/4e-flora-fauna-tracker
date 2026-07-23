@@ -1,12 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Box, Card, CardContent, Stack, Typography } from '@mui/material';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from 'recharts';
 import { BRAND, CHART } from '../theme';
 
-const SENT = CHART.series.primary;   // dispatched OK (categorical blue)
-const FAILED = '#d03b3b';            // status: critical
+const SENT = '#2E67B5';   // dispatched OK - slate-navy, matching the dashboard data palette
+const FAILED = '#d03b3b'; // status: critical
 
 const dayKey = t => {
   const d = new Date(t);
@@ -56,19 +56,36 @@ function DispatchTooltip({ active, payload }) {
       {row.failed > 0 && (
         <Typography sx={{ fontSize: 12.5, color: FAILED, fontWeight: 600 }}>{row.failed} failed</Typography>
       )}
-      <Typography sx={{ fontSize: 10.5, color: BRAND.textLight, mt: 0.5 }}>click to filter to this day</Typography>
+      <Typography sx={{ fontSize: 10.5, color: BRAND.textLight, mt: 0.5 }}>click a day · drag to select a range</Typography>
     </Box>
   );
 }
 
-// onDayClick(dayStartMs) lets the parent filter the table to that day
-export default function NotificationTimeline({ logs = [], onDayClick, selectedDay = null }) {
+const DAY = 86400000;
+
+// onSelect(fromMs, toMs) lets the parent filter the table to a day or a dragged
+// range. selectedRange { from, to } (YYYY-MM-DD) renders as a shaded band.
+export default function NotificationTimeline({ logs = [], onSelect, selectedRange = null }) {
+  const [refLeft, setRefLeft] = useState(null);
+  const [refRight, setRefRight] = useState(null);
+  const [dragging, setDragging] = useState(false);
   const model = useDailyBuckets(logs);
   if (!model) return null;
   const { bins, sent, failed } = model;
-  // the selected day gets a reference band, so the active filter is visible on
-  // the control that set it
-  const selMs = selectedDay ? new Date(`${selectedDay}T00:00:00`).getTime() : null;
+
+  // pad half a day each side so a single-day selection reads as a band, not a line
+  const HALF = 0.45 * DAY;
+  const selFrom = selectedRange ? new Date(`${selectedRange.from}T00:00:00`).getTime() : null;
+  const selTo = selectedRange ? new Date(`${selectedRange.to}T00:00:00`).getTime() : null;
+
+  function finishDrag() {
+    if (refLeft != null && refRight != null && onSelect) {
+      onSelect(Math.min(refLeft, refRight), Math.max(refLeft, refRight));
+    }
+    setRefLeft(null);
+    setRefRight(null);
+    setDragging(false);
+  }
 
   // clean y-axis ticks: round the max up to a nice step (multiples of 12) so the
   // axis reads 0/12/24/36 instead of an awkward step of 9.
@@ -103,14 +120,19 @@ export default function NotificationTimeline({ logs = [], onDayClick, selectedDa
           <AreaChart
             data={bins}
             margin={{ top: 8, right: 12, left: -12, bottom: 4 }}
-            onClick={e => {
-              if (!onDayClick) return;
-              // activeLabel fallback: recharts only populates activePayload on a
-              // dead-on hit, so clicking near a bar would silently do nothing
+            onMouseDown={e => {
+              if (!onSelect) return;
               const t = e?.activePayload?.[0]?.payload?.t ?? e?.activeLabel;
-              if (t != null) onDayClick(t);
+              if (t != null) { setRefLeft(t); setRefRight(t); setDragging(true); }
             }}
-            style={{ cursor: onDayClick ? 'pointer' : 'default' }}
+            onMouseMove={e => {
+              if (!dragging) return;
+              const t = e?.activePayload?.[0]?.payload?.t ?? e?.activeLabel;
+              if (t != null) setRefRight(t);
+            }}
+            onMouseUp={finishDrag}
+            onMouseLeave={() => { if (dragging) finishDrag(); }}
+            style={{ cursor: onSelect ? 'crosshair' : 'default', userSelect: 'none' }}
           >
             <defs>
               <linearGradient id="sentFill" x1="0" y1="0" x2="0" y2="1">
@@ -134,8 +156,13 @@ export default function NotificationTimeline({ logs = [], onDayClick, selectedDa
             />
             <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: CHART.axis }} width={32} domain={[0, niceMax]} ticks={yTicks} />
             <Tooltip content={<DispatchTooltip />} cursor={{ stroke: BRAND.textLight, strokeWidth: 1, strokeDasharray: '4 4' }} />
-            {selMs != null && (
-              <ReferenceLine x={selMs} stroke={BRAND.heading} strokeWidth={2} ifOverflow="extendDomain" />
+            {/* committed selection - a soft brand band, not a hard line */}
+            {selFrom != null && (
+              <ReferenceArea x1={selFrom - HALF} x2={selTo + HALF} fill={BRAND.primary} fillOpacity={0.1} stroke={BRAND.primary} strokeOpacity={0.4} ifOverflow="extendDomain" />
+            )}
+            {/* live drag preview */}
+            {dragging && refLeft != null && refRight != null && refLeft !== refRight && (
+              <ReferenceArea x1={Math.min(refLeft, refRight)} x2={Math.max(refLeft, refRight)} fill={SENT} fillOpacity={0.12} stroke={SENT} strokeOpacity={0.45} />
             )}
             <Area type="monotone" dataKey="sent" stroke={SENT} strokeWidth={2} fill="url(#sentFill)" />
             <Area type="monotone" dataKey="failed" stroke={FAILED} strokeWidth={2.5} fill="url(#failedFill)" />

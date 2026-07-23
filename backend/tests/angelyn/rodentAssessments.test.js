@@ -82,6 +82,26 @@ describe('POST /api/rodent-assessments (create)', () => {
     expect(res.body.immediate_actions.length).toBeGreaterThan(0);
   });
 
+  test('unsupported image format -> 400', async () => {
+    const res = await request(app)
+      .post('/api/rodent-assessments')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ ...observation, image: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' });
+    expect(res.status).toBe(400);
+  });
+
+  test('valid JPEG data URL is accepted and flagged in the response', async () => {
+    const res = await request(app)
+      .post('/api/rodent-assessments')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ ...observation, image: `data:image/jpeg;base64,${'A'.repeat(120)}` });
+    expect(res.status).toBe(201);
+    expect(res.body.assessed_from_image).toBe(true);
+    // no Cloudinary credentials in the test env, so the photo cannot be stored
+    expect(res.body.image_stored).toBe(false);
+    expect(res.body.image_url).toBeNull();
+  });
+
   test('missing observations -> 400', async () => {
     const res = await request(app)
       .post('/api/rodent-assessments')

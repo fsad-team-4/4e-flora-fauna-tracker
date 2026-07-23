@@ -20,6 +20,10 @@ const RodentAssessment = sequelize.define('RodentAssessment', {
     type: DataTypes.TEXT,
     allowNull: false,
   },
+  image_url: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   risk_level: {
     type: DataTypes.STRING,
     allowNull: true,
@@ -54,6 +58,31 @@ const RodentAssessment = sequelize.define('RodentAssessment', {
   },
   assessed_by: {
     type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  // Escalation-queue state. An assessment with escalate_to_contractor = true is
+  // "pending" until an officer either consolidates it into a work order
+  // (work_order_id set) or dismisses it (escalation_status = 'dismissed'). Both
+  // paths remove it from the queue; the fields below are the decision audit.
+  work_order_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  escalation_status: {
+    // null = pending review, 'dismissed' = reviewed and not actioned
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  escalation_note: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  escalation_decided_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  escalation_decided_at: {
+    type: DataTypes.DATE,
     allowNull: true,
   },
   is_deleted: {

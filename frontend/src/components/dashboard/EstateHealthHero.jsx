@@ -9,6 +9,11 @@ import { BRAND, HEALTH_META, TREND, GAUGE_ZONES } from '../../theme';
 const HEALTHY_MAX = 25;
 const WATCH_MAX = 60;
 
+// Darker muted gray than MUTED: the hero's labels sit on the coloured
+// risk-tint band, where #6b7280 drops to 4.2:1. This clears WCAG AA (4.5:1) on
+// the tint and on white.
+const MUTED = '#4B5563';
+
 // A score of 0 with no data is NOT "healthy" - it means we know nothing. Rendering
 // an unknown estate as a green needle at 0 would actively mislead, so the no-data
 // case gets its own visual state.
@@ -16,7 +21,7 @@ function GaugeUnknown() {
   return (
     <Box sx={{ mt: 2 }}>
       <Box sx={{ height: 10, borderRadius: '5px', bgcolor: '#ECECEC', border: `1px dashed ${BRAND.border}` }} />
-      <Typography sx={{ fontSize: 11, color: BRAND.textLight, mt: 0.75 }}>
+      <Typography sx={{ fontSize: 11, color: MUTED, mt: 0.75 }}>
         No scored data yet — this is not a healthy reading, it is an absent one.
       </Typography>
     </Box>
@@ -44,13 +49,13 @@ function RiskGauge({ score }) {
       </Box>
       {/* zone labels so the number explains itself without the chip */}
       <Box sx={{ display: 'flex', mt: 0.75 }}>
-        <Typography sx={{ width: `${HEALTHY_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'left' }}>
+        <Typography sx={{ width: `${HEALTHY_MAX}%`, fontSize: 9.5, color: MUTED, textAlign: 'left' }}>
           {GAUGE_ZONES.healthy.label}
         </Typography>
-        <Typography sx={{ width: `${WATCH_MAX - HEALTHY_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'center' }}>
+        <Typography sx={{ width: `${WATCH_MAX - HEALTHY_MAX}%`, fontSize: 9.5, color: MUTED, textAlign: 'center' }}>
           {GAUGE_ZONES.watch.label}
         </Typography>
-        <Typography sx={{ width: `${100 - WATCH_MAX}%`, fontSize: 9.5, color: BRAND.textLight, textAlign: 'right' }}>
+        <Typography sx={{ width: `${100 - WATCH_MAX}%`, fontSize: 9.5, color: MUTED, textAlign: 'right' }}>
           {GAUGE_ZONES.critical.label}
         </Typography>
       </Box>
@@ -79,7 +84,7 @@ function ScoreSparkline({ scores }) {
   return (
     <Box sx={{ mt: 2.5 }}>
       <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
-        <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+        <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
           Risk trend ({scores.length}d)
         </Typography>
         {/* magnitude, not just direction */}
@@ -93,13 +98,18 @@ function ScoreSparkline({ scores }) {
           <circle cx={end[0]} cy={end[1]} r={3} fill={lineColor} />
         </Box>
       </Box>
-      {/* visually hidden table for screen readers */}
-      <Box component="table" sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
-        <caption>{summary}</caption>
-        <tbody>
-          <tr><th scope="row">Start</th><td>{first}</td></tr>
-          <tr><th scope="row">End</th><td>{last}</td></tr>
-        </tbody>
+      {/* visually hidden table for screen readers. Wrapped in an overflow:hidden
+          1px box - a bare <table> ignores width:1px (table-layout auto sizes to
+          content) and clip only hides painting, so the unclipped layout box was
+          overflowing the page; the wrapper clips it out of layout entirely. */}
+      <Box sx={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' }}>
+        <table>
+          <caption>{summary}</caption>
+          <tbody>
+            <tr><th scope="row">Start</th><td>{first}</td></tr>
+            <tr><th scope="row">End</th><td>{last}</td></tr>
+          </tbody>
+        </table>
       </Box>
     </Box>
   );
@@ -118,21 +128,21 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
       elevation={0}
       sx={{
         borderRadius: '16px', border: `1px solid ${BRAND.border}`,
-        boxShadow: '0 4px 16px rgba(0,0,0,.05)', overflow: 'hidden', mb: 2.5,
+        boxShadow: '0 4px 16px rgba(0,0,0,.05)', overflow: 'hidden', height: '100%',
         opacity: loading ? 0.6 : 1, transition: 'opacity .2s',
       }}
     >
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.15fr 1px 1fr' }, alignItems: 'stretch' }}>
         <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: hasScore ? meta.bg : '#FAFAFA' }}>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+            <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
               Estate Risk Index
             </Typography>
             <Tooltip
               arrow
               title="A weighted 0–100 heuristic: critical flora, active hotspots, open cases and at-risk flora each contribute. Higher means more needs attention."
             >
-              <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: BRAND.textLight, cursor: 'help' }} />
+              <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: MUTED, cursor: 'help' }} />
             </Tooltip>
           </Stack>
 
@@ -143,7 +153,7 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
                 <Typography sx={{ fontSize: 76, fontWeight: 800, lineHeight: 1, color: meta.color, letterSpacing: '-2px', fontVariantNumeric: 'tabular-nums' }}>
                   {score}
                 </Typography>
-                <Typography sx={{ color: BRAND.textLight, fontSize: 20, fontWeight: 600 }}>/ 100</Typography>
+                <Typography sx={{ color: MUTED, fontSize: 20, fontWeight: 600 }}>/ 100</Typography>
                 <Chip label={meta.label} size="small" sx={{ bgcolor: meta.color, color: '#fff', fontWeight: 700, borderRadius: '8px', alignSelf: 'center' }} />
               </Stack>
               <RiskGauge score={score} />
@@ -151,7 +161,7 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
             </>
           ) : (
             <>
-              <Typography sx={{ fontSize: 40, fontWeight: 800, lineHeight: 1.2, color: BRAND.textLight, mt: 1 }}>
+              <Typography sx={{ fontSize: 40, fontWeight: 800, lineHeight: 1.2, color: MUTED, mt: 1 }}>
                 No data
               </Typography>
               <GaugeUnknown />
@@ -161,9 +171,9 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
 
         <Box sx={{ display: { xs: 'none', md: 'block' }, bgcolor: BRAND.border }} />
 
-        <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: BRAND.section, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: 2.75 }}>
+        <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: BRAND.section, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2.75 }}>
           <Box>
-            <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+            <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
               Highest-Risk Block
             </Typography>
             {highestRiskBlock ? (
@@ -174,19 +184,21 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
                 </Stack>
                 {/* data trust: if blocks tie, say so rather than contradicting the
                     Activity by Block card, which shows them level */}
-                <Typography variant="body2" sx={{ color: BRAND.textLight, mt: 0.25 }}>
+                <Typography variant="body2" sx={{ color: MUTED, mt: 0.25 }}>
                   {tiedBlocks.length > 1
                     ? `most sightings this period — tied with ${tiedBlocks.filter(b => b !== highestRiskBlock).join(', ')}`
                     : 'most sightings this period'}
                 </Typography>
               </>
             ) : (
-              <Typography sx={{ mt: 0.5, color: BRAND.textLight }}>No active hotspots</Typography>
+              <Typography sx={{ mt: 0.5, color: MUTED }}>No active hotspots</Typography>
             )}
           </Box>
 
+          <Box sx={{ height: '1px', bgcolor: BRAND.border }} />
+
           <Box>
-            <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+            <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
               Latest Incident
             </Typography>
             {lastIncident ? (
@@ -195,7 +207,7 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
                 {lastIncident.block_number ? ` · ${lastIncident.block_number}` : ''}
               </Typography>
             ) : (
-              <Typography sx={{ mt: 0.5, color: BRAND.textLight }}>No recent incidents</Typography>
+              <Typography sx={{ mt: 0.5, color: MUTED }}>No recent incidents</Typography>
             )}
           </Box>
         </Box>

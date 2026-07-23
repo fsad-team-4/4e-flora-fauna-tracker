@@ -8,6 +8,7 @@ const NotificationLog = require('./NotificationLog');
 const RodentAssessment = require('./RodentAssessment');
 const FaunaSighting = require('./FaunaSighting');
 const MetricSnapshot = require('./MetricSnapshot');
+const WorkOrder = require('./WorkOrder');
 
 User.hasMany(ResidentReport, { foreignKey: 'reported_by' });
 ResidentReport.belongsTo(User, { as: 'reporter', foreignKey: 'reported_by' });
@@ -25,6 +26,10 @@ GreeneryRecord.belongsTo(User, { as: 'recorder', foreignKey: 'recorded_by' });
 AlertRule.belongsTo(User, { as: 'creator', foreignKey: 'created_by' });
 NotificationLog.belongsTo(AlertRule, { as: 'rule', foreignKey: 'rule_id' });
 
+// A work order consolidates several rodent assessments into one contractor call-out.
+WorkOrder.hasMany(RodentAssessment, { foreignKey: 'work_order_id', as: 'assessments' });
+RodentAssessment.belongsTo(WorkOrder, { foreignKey: 'work_order_id', as: 'workOrder' });
+
 module.exports = {
   sequelize,
   User,
@@ -36,4 +41,5 @@ module.exports = {
   RodentAssessment,
   FaunaSighting,
   MetricSnapshot,
+  WorkOrder,
 };
