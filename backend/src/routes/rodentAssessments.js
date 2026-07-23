@@ -13,6 +13,10 @@ const createSchema = yup.object({
   floor_level: yup.string().nullable().max(120, 'floor / area is too long'),
   observations: yup.string().required('observations are required').max(5000, 'observations are too long'),
   image: yup.string().nullable(),
+  // optional reported position - range-checked so a garbage coordinate is a clean
+  // 400, not a dot in the ocean. Both-or-neither is enforced in the handler.
+  gps_lat: yup.number().nullable().min(-90).max(90),
+  gps_lng: yup.number().nullable().min(-180).max(180),
 });
 
 // Same Cloudinary credentials the rest of the app uses (config/cloudinary.js).
@@ -117,10 +121,14 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
 
 // create - runs AI assessment (optionally from a photo) + saves
 router.post('/', aiLimiter, restrictTo('admin', 'staff'), validateBody(createSchema), async (req, res) => {
-  const { block_number, floor_level, observations, image } = req.body;
+  const { block_number, floor_level, observations, image, gps_lat, gps_lng } = req.body;
   if (!observations || !observations.trim()) {
     return res.status(400).json({ error: 'observations are required' });
   }
+
+  // Store a position only if BOTH parts are real numbers - a lone lat/lng is
+  // meaningless, so it is dropped rather than half-recorded (never invented).
+  const hasCoords = Number.isFinite(gps_lat) && Number.isFinite(gps_lng);
 
   const parsedImage = parseImage(image);
   if (image && !parsedImage) {
@@ -179,6 +187,8 @@ router.post('/', aiLimiter, restrictTo('admin', 'staff'), validateBody(createSch
     const row = await RodentAssessment.create({
       block_number: block_number || null,
       floor_level: floor_level || null,
+      gps_lat: hasCoords ? gps_lat : null,
+      gps_lng: hasCoords ? gps_lng : null,
       observations: observations.trim(),
       image_url,
       risk_level: assessment.risk_level,

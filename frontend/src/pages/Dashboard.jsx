@@ -23,6 +23,7 @@ import KpiCard from '../components/dashboard/KpiCard';
 import ActivityChart from '../components/dashboard/ActivityChart';
 import CategoryBar from '../components/dashboard/CategoryBar';
 import BlocksRanked from '../components/dashboard/BlocksRanked';
+import FeedingRodentCorrelation from '../components/dashboard/FeedingRodentCorrelation';
 
 function buildKpis(m) {
   const t = m?.trends || {};
@@ -337,6 +338,7 @@ export default function Dashboard() {
                 <Box sx={{ display: 'flex', '& > *': { width: '100%' } }}><BlocksRanked sightingsByBlock={metrics.sightingsByBlock || []} hotspots={metrics.hotspots || []} /></Box>
               </Box>
               <ActivityChart history={metrics.history} />
+              <FeedingRodentCorrelation />
             </Stack>
           </Box>
 

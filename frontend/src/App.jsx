@@ -25,6 +25,7 @@ import FaunaSightings from './pages/FaunaSightings'
 import FaunaLogSighting from './pages/FaunaLogSighting'
 import FaunaSightingDetail from './pages/FaunaSightingDetail'
 import FaunaHotspots from './pages/FaunaHotspots'
+import RodentRiskMap from './components/dashboard/RodentRiskMap'
 
 function Home() {
   const { user } = useUser()
@@ -73,6 +74,7 @@ const NAV_GROUPS = [
   ] },
   { header: 'Rodent', roles: 'staff', items: [
     { to: '/rodent', label: 'Rodent' },
+    { to: '/rodent-heatmap', label: 'Risk Map' },
     { to: '/action-queue', label: 'Action Queue' },
     { to: '/prevention', label: 'Prevention' },
   ] },
@@ -226,6 +228,7 @@ function App() {
             <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
             <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
             <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
+            <Route path="/rodent-heatmap" element={<ProtectedRoute roles={['staff', 'admin']}><Box sx={{ py: 4 }}><RodentRiskMap /></Box></ProtectedRoute>} />
             <Route path="/action-queue" element={<ProtectedRoute roles={['staff', 'admin']}><ActionQueue /></ProtectedRoute>} />
             <Route path="/prevention" element={<ProtectedRoute roles={['staff', 'admin']}><PreventionScorecard /></ProtectedRoute>} />
             <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />

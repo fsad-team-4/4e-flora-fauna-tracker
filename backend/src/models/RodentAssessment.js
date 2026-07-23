@@ -16,6 +16,18 @@ const RodentAssessment = sequelize.define('RodentAssessment', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  // Reported field position. Column names/types match Renee's FaunaSighting so
+  // the two modules agree. Nullable and staying that way: ~34 existing rows have
+  // no recorded position and never will, and an officer with no signal must still
+  // be able to file - absence of a coordinate is real data, not a gap to fill.
+  gps_lat: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  gps_lng: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
   observations: {
     type: DataTypes.TEXT,
     allowNull: false,

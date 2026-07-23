@@ -7,6 +7,8 @@ import {
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
+import MyLocationRoundedIcon from '@mui/icons-material/MyLocationRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import { BRAND } from '../theme';
 import http from '../http';
 
@@ -123,6 +125,9 @@ export default function RodentAssessment() {
   const [doneActions, setDoneActions] = useState({});
   const [photo, setPhoto] = useState(null); // { dataUrl, name }
   const [photoError, setPhotoError] = useState(null);
+  const [location, setLocation] = useState(null); // { lat, lng, accuracy } - the reported position
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState(null);
   const [filters, setFilters] = useState({ search: '', block: '', risk: 'all', escalated: 'all' });
   const fileInputRef = useRef(null);
 
@@ -175,6 +180,38 @@ export default function RodentAssessment() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
+  // Capture the officer's actual position from the device. Optional by design: a
+  // failure (no signal in a stairwell, permission denied) must never block filing,
+  // so it only sets an explanatory message - it never disables submit.
+  function handleCaptureLocation() {
+    setLocationError(null);
+    if (!('geolocation' in navigator)) {
+      setLocationError('This device has no location support - you can still file without it.');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+        setLocating(false);
+      },
+      err => {
+        setLocationError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied - you can still file without it.'
+            : 'Could not get a location fix (no signal?) - you can still file without it.'
+        );
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  function handleClearLocation() {
+    setLocation(null);
+    setLocationError(null);
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!isValidObservation(observations)) return;
@@ -188,6 +225,8 @@ export default function RodentAssessment() {
         floor_level: floorLevel.trim() || null,
         observations: observations.trim(),
         image: photo ? photo.dataUrl : undefined,
+        gps_lat: location ? location.lat : null,
+        gps_lng: location ? location.lng : null,
       });
       // keep the local preview so the result can show the photo even when
       // storage is not configured and no image_url came back
@@ -277,9 +316,44 @@ export default function RodentAssessment() {
                 {photoError || 'A photo of droppings, gnaw marks or burrows lets the AI assess what is visible, not just the note.'}
               </Typography>
             </Box>
+            {/* optional reported position - lets this report appear on the risk map.
+                Never required: an officer with no signal must still be able to file. */}
+            <Box>
+              {!location ? (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<MyLocationRoundedIcon />}
+                  onClick={handleCaptureLocation}
+                  disabled={submitting || locating}
+                  sx={{ color: BRAND.slate, borderColor: BRAND.border, textTransform: 'none', '&:hover': { borderColor: BRAND.slate } }}
+                >
+                  {locating ? 'Getting location…' : 'Capture location (optional)'}
+                </Button>
+              ) : (
+                <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: '#E7F4E8', color: '#1E6023' }}>
+                    <CheckCircleRoundedIcon sx={{ fontSize: 18 }} />
+                    <Typography sx={{ fontSize: 13, fontWeight: 700 }}>Location recorded</Typography>
+                  </Stack>
+                  <Box>
+                    <Typography sx={{ fontSize: 13, color: BRAND.text, fontVariantNumeric: 'tabular-nums' }}>
+                      {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                      {location.accuracy ? ` · ±${Math.round(location.accuracy)}m` : ''}
+                    </Typography>
+                    <Button size="small" color="error" onClick={handleClearLocation} disabled={submitting} sx={{ px: 0.5, minWidth: 0 }}>
+                      Remove
+                    </Button>
+                  </Box>
+                </Stack>
+              )}
+              <Typography sx={{ fontSize: 12, color: locationError ? '#B3261E' : BRAND.textLight, mt: 0.5 }}>
+                {locationError || 'Records where you are standing so this report can be mapped. Optional - you can file without it.'}
+              </Typography>
+            </Box>
             {error && <Alert severity="error">{error}</Alert>}
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-              <Button onClick={() => { setBlock(''); setFloorLevel(''); setObservations(''); setResult(null); setError(null); handleRemovePhoto(); }} disabled={submitting} sx={{ color: BRAND.textLight }}>
+              <Button onClick={() => { setBlock(''); setFloorLevel(''); setObservations(''); setResult(null); setError(null); handleRemovePhoto(); handleClearLocation(); }} disabled={submitting} sx={{ color: BRAND.textLight }}>
                 Clear
               </Button>
               <Button type="submit" variant="contained" disabled={submitting || !isValidObservation(observations)} sx={{ bgcolor: BRAND.slate, '&:hover': { bgcolor: BRAND.slateHover } }}>

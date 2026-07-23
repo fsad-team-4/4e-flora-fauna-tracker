@@ -34,6 +34,8 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/rodent-assessments', require('./routes/rodentAssessments'));
 app.use('/api/work-orders', require('./routes/workOrders'));
 app.use('/api/scorecard', require('./routes/scorecard'));
+app.use('/api/block-diagnosis', require('./routes/blockDiagnosis'));
+app.use('/api/rodent-riskmap', require('./routes/rodentRiskMap'));
 
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {
