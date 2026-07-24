@@ -58,7 +58,7 @@ describe('computeFeedingRodentCorrelation - co-occurrence rule', () => {
   });
 });
 
-describe('block matching (free-text, trim + lowercase)', () => {
+describe('block matching (trim + lowercase + strip "Block" prefix)', () => {
   test('matches feeding and rodent records that differ only in case/whitespace', () => {
     const sightings = [{ block_number: '  Block 234 ', behaviour_tags: ['feeding'], createdAt: daysAgo(4) }];
     const assessments = [{ block_number: 'block 234', risk_level: 'medium', createdAt: daysAgo(2) }];
@@ -66,6 +66,19 @@ describe('block matching (free-text, trim + lowercase)', () => {
     expect(result).toHaveLength(1);
     expect(result[0].feedingCount).toBe(1);
     expect(result[0].rodentAssessmentCount).toBe(1);
+  });
+
+  test('reconciles the two modules\' formats: fauna "128" and rodent "Block 128" are the same block', () => {
+    // The whole point of the cross-domain join: fauna writes bare numbers, rodent
+    // writes "Block N". Without stripping the prefix these fall into separate
+    // buckets and a genuine co-occurrence is silently missed.
+    const sightings = [{ block_number: '128', behaviour_tags: ['feeding'], createdAt: daysAgo(20) }];
+    const assessments = [{ block_number: 'Block 128', risk_level: 'high', createdAt: daysAgo(5) }];
+    const result = run(sightings, assessments);
+    expect(result).toHaveLength(1);
+    expect(result[0].feedingCount).toBe(1);
+    expect(result[0].rodentAssessmentCount).toBe(1);
+    expect(result[0].elevatedRodentCount).toBe(1);
   });
 
   test('does not correlate records with a blank/unknown block', () => {

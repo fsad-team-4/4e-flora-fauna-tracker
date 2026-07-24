@@ -7,6 +7,7 @@ const { RodentAssessment, FaunaSighting } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const { computeRiskMap } = require('../services/rodentRiskMap');
 const { computeFeedingPoints } = require('../services/feedingPoints');
+const { computeFeedingRodentCorrelation, blockKey } = require('../services/blockDiagnosis');
 
 const router = express.Router();
 router.use(protect);
@@ -31,16 +32,22 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
       }),
     ]);
 
-    const map = computeRiskMap({
-      assessments: assessments.map(a => a.toJSON()),
-      windowDays,
-    });
-    const feeding = computeFeedingPoints({
-      sightings: sightings.map(s => s.toJSON()),
-      windowDays,
-    });
+    const assessmentsJson = assessments.map(a => a.toJSON());
+    const sightingsJson = sightings.map(s => s.toJSON());
 
-    res.json({ ...map, feeding });
+    const map = computeRiskMap({ assessments: assessmentsJson, windowDays });
+    const feeding = computeFeedingPoints({ sightings: sightingsJson, windowDays });
+
+    // Reuse the Behavioural Diagnosis correlation (blocks where feeding AND rodent
+    // both appear in-window) to tag which points sit at a co-occurrence block, so
+    // the map can highlight exactly what that service already flags - no new
+    // spatial inference, no invented radius. Matched on the same normalised key.
+    const correlation = computeFeedingRodentCorrelation({ sightings: sightingsJson, assessments: assessmentsJson, windowDays });
+    const coKeys = new Set(correlation.map(b => blockKey(b.block_number)));
+    map.points.forEach(p => { p.coOccurs = coKeys.has(blockKey(p.block)); });
+    feeding.points.forEach(p => { p.coOccurs = coKeys.has(blockKey(p.block)); });
+
+    res.json({ ...map, feeding, coOccurrenceBlocks: correlation.map(b => b.block_number) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'failed to compute rodent risk map' });

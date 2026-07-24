@@ -27,10 +27,14 @@ const ELEVATED_LEVELS = ['medium', 'high', 'critical'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Normalise a free-text block string for matching, identical to getBlockHistory
-// in routes/rodentAssessments.js (trim + lowercase). Returns '' if unusable.
+// Normalise a free-text block string for matching. This is the ONLY place fauna
+// and rodent block labels are joined, and the two modules write different formats:
+// fauna writes bare numbers ("128") while rodent writes "Block 128". So beyond
+// trim + lowercase we also strip a leading "block" prefix - otherwise "128" and
+// "block 128" fall into different buckets and a real co-occurrence is missed
+// (they were, until this was fixed). Returns '' if unusable.
 function blockKey(block) {
-  return (block || '').trim().toLowerCase();
+  return (block || '').trim().toLowerCase().replace(/^block\s*/, '').trim();
 }
 
 // True if a sighting was tagged as feeding. This repo currently carries TWO
@@ -128,4 +132,4 @@ function computeFeedingRodentCorrelation({
     );
 }
 
-module.exports = { computeFeedingRodentCorrelation, FEEDING_TAG, ELEVATED_LEVELS };
+module.exports = { computeFeedingRodentCorrelation, blockKey, FEEDING_TAG, ELEVATED_LEVELS };
