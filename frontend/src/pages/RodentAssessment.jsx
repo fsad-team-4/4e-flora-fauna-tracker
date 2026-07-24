@@ -9,8 +9,15 @@ import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
 import MyLocationRoundedIcon from '@mui/icons-material/MyLocationRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded';
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
+import { Link as RouterLink } from 'react-router-dom';
 import { BRAND } from '../theme';
 import http from '../http';
+import AssessmentLifecyclePanel from '../components/AssessmentLifecyclePanel';
+
+// 7 days ago as YYYY-MM-DD, for the "Last 7 days" quick filter (backend supports ?from=)
+const sevenDaysAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
 
 // Risk levels on one scale, so an officer can see where their result sits.
 // Critical gets a distinctly heavier treatment, not just a redder chip.
@@ -128,7 +135,8 @@ export default function RodentAssessment() {
   const [location, setLocation] = useState(null); // { lat, lng, accuracy } - the reported position
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
-  const [filters, setFilters] = useState({ search: '', block: '', risk: 'all', escalated: 'all' });
+  const [filters, setFilters] = useState({ search: '', block: '', risk: 'all', escalated: 'all', dateFrom: '' });
+  const [selectedId, setSelectedId] = useState(null); // row whose lifecycle panel is open
   const fileInputRef = useRef(null);
 
   // Filtering is server-side (the list paginates, so filtering only the loaded
@@ -141,7 +149,7 @@ export default function RodentAssessment() {
   }, [filters]);
 
   const filtersActive =
-    filters.search.trim() || filters.block.trim() || filters.risk !== 'all' || filters.escalated !== 'all';
+    filters.search.trim() || filters.block.trim() || filters.risk !== 'all' || filters.escalated !== 'all' || filters.dateFrom;
 
   async function loadHistory() {
     setLoadingHistory(true);
@@ -151,6 +159,7 @@ export default function RodentAssessment() {
       if (filters.block.trim()) params.append('block', filters.block.trim());
       if (filters.risk !== 'all') params.append('risk_level', filters.risk);
       if (filters.escalated !== 'all') params.append('escalated', filters.escalated);
+      if (filters.dateFrom) params.append('from', filters.dateFrom);
       const res = await http.get(`/api/rodent-assessments?${params.toString()}`);
       setHistory(res.data);
       setTotal(Number(res.headers['x-total-count']) || res.data.length);
@@ -244,18 +253,29 @@ export default function RodentAssessment() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent Risk Assessment</Typography>
-        <Typography variant="body2" sx={{ color: BRAND.textLight }}>
-          Describe what you observed in the field — AI assesses risk level and recommends action
-        </Typography>
-      </Box>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', alignItems: { sm: 'flex-start' }, mb: 3 }}>
+        <Box>
+          <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent Risk Assessment</Typography>
+          <Typography variant="body2" sx={{ color: BRAND.textLight }}>
+            Describe what you observed in the field — AI assesses risk level and recommends action
+          </Typography>
+        </Box>
+        <Button component={RouterLink} to="/rodent-heatmap" variant="outlined" size="small" startIcon={<MapOutlinedIcon />}
+          sx={{ textTransform: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: BRAND.slate, borderColor: BRAND.border, '&:hover': { borderColor: BRAND.slate } }}>
+          View Risk Map
+        </Button>
+      </Stack>
 
       <Card sx={{ mb: 3, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
         <CardContent>
           <Typography variant="subtitle1" fontWeight={600} mb={2} sx={{ color: BRAND.heading }}>New Field Observation</Typography>
-          <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && isValidObservation(observations) && !submitting) handleSubmit(e); }}
+            sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+          >
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
               <TextField
                 label="Block"
                 value={block}
@@ -273,14 +293,16 @@ export default function RodentAssessment() {
               value={observations}
               onChange={e => setObservations(e.target.value)}
               multiline
-              rows={4}
+              rows={6}
               required
               fullWidth
               disabled={submitting}
               placeholder="e.g. Found droppings near the compost area. A few small holes in the soil along the fenceline. Resident has fruit trees planted close to the void deck."
               helperText={observations.trim().length > 0 && !isValidObservation(observations)
-                ? 'Please describe what you observed in a bit more detail (a full sentence or two) so the assessment is meaningful.'
-                : ' '}
+                ? 'Add a bit more detail (a full sentence or two) so the assessment is meaningful.'
+                : observations.length
+                  ? `${observations.length} characters`
+                  : 'Tip: note what you saw, where, and any nearby food or harbourage.'}
             />
             {/* optional field photo - Gemini reads it as evidence alongside the note */}
             <Box>
@@ -356,9 +378,13 @@ export default function RodentAssessment() {
               <Button onClick={() => { setBlock(''); setFloorLevel(''); setObservations(''); setResult(null); setError(null); handleRemovePhoto(); handleClearLocation(); }} disabled={submitting} sx={{ color: BRAND.textLight }}>
                 Clear
               </Button>
-              <Button type="submit" variant="contained" disabled={submitting || !isValidObservation(observations)} sx={{ bgcolor: BRAND.slate, '&:hover': { bgcolor: BRAND.slateHover } }}>
-                {submitting ? <><CircularProgress size={16} sx={{ mr: 1, color: 'white' }} />Assessing...</> : 'Get AI Assessment'}
-              </Button>
+              <Tooltip title="AI reviews your note (and photo, if attached) and suggests a risk level and next actions. Tip: press ⌘/Ctrl + Enter to run it.">
+                <span>
+                  <Button type="submit" variant="contained" color="primary" disabled={submitting || !isValidObservation(observations)} sx={{ px: 3, py: 1 }}>
+                    {submitting ? <><CircularProgress size={16} sx={{ mr: 1, color: 'white' }} />Assessing...</> : 'Get AI Assessment'}
+                  </Button>
+                </span>
+              </Tooltip>
             </Box>
           </Box>
         </CardContent>
@@ -499,7 +525,25 @@ export default function RodentAssessment() {
         )}
       </Stack>
 
-      {/* server-side filters (backend supports search / block / risk_level / escalated) */}
+      {/* quick presets (shortcuts over the same server-side filters below) */}
+      <Stack direction="row" spacing={1} sx={{ mb: 1.5, flexWrap: 'wrap', rowGap: 1, alignItems: 'center' }}>
+        <Typography sx={{ fontSize: 12, color: BRAND.textLight, fontWeight: 600 }}>Quick:</Typography>
+        {[
+          { key: 'critical', label: 'Critical only', active: filters.risk === 'critical', toggle: () => setFilters(f => ({ ...f, risk: f.risk === 'critical' ? 'all' : 'critical' })) },
+          { key: 'week', label: 'Last 7 days', active: Boolean(filters.dateFrom), toggle: () => setFilters(f => ({ ...f, dateFrom: f.dateFrom ? '' : sevenDaysAgo() })) },
+          { key: 'escalated', label: 'Escalated', active: filters.escalated === 'true', toggle: () => setFilters(f => ({ ...f, escalated: f.escalated === 'true' ? 'all' : 'true' })) },
+        ].map(p => (
+          <Chip key={p.key} label={p.label} clickable onClick={p.toggle} aria-pressed={p.active}
+            sx={{
+              borderRadius: '999px', fontWeight: 600,
+              bgcolor: p.active ? BRAND.slate : '#fff', color: p.active ? '#fff' : BRAND.text,
+              border: `1px solid ${p.active ? BRAND.slate : BRAND.border}`,
+              '&:hover': { bgcolor: p.active ? BRAND.slateHover : BRAND.section },
+            }} />
+        ))}
+      </Stack>
+
+      {/* server-side filters (backend supports search / block / risk_level / escalated / from) */}
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mb: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small" label="Search text" placeholder="observations or cause"
@@ -537,7 +581,7 @@ export default function RodentAssessment() {
         </TextField>
         {filtersActive && (
           <Button
-            onClick={() => setFilters({ search: '', block: '', risk: 'all', escalated: 'all' })}
+            onClick={() => setFilters({ search: '', block: '', risk: 'all', escalated: 'all', dateFrom: '' })}
             sx={{ color: BRAND.textLight, alignSelf: { md: 'center' }, flexShrink: 0 }}
           >
             Clear
@@ -564,50 +608,75 @@ export default function RodentAssessment() {
                 <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Photo</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Risk</TableCell>
                 <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Escalated</TableCell>
+                <TableCell sx={{ width: 44 }} aria-hidden />
               </TableRow>
             </TableHead>
             <TableBody>
-              {history.map((h, i) => (
-                <TableRow key={h.id} sx={{ bgcolor: i % 2 ? BRAND.section : 'inherit' }}>
-                  <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{new Date(h.createdAt).toLocaleDateString('en-SG')}</TableCell>
-                  <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{[h.block_number, h.floor_level].filter(Boolean).join(', ') || '—'}</TableCell>
-                  {/* snippet so the history is scannable and recurrence is visible */}
-                  <TableCell sx={{ color: BRAND.textLight, maxWidth: 280 }}>
-                    <Tooltip title={h.observations || ''} arrow>
-                      <Typography sx={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'default' }}>
-                        {h.observations}
-                      </Typography>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    {h.image_url ? (
-                      <a href={h.image_url} target="_blank" rel="noreferrer">
-                        <Box
-                          component="img"
-                          src={h.image_url}
-                          alt="field photo"
-                          sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: `1px solid ${BRAND.border}`, display: 'block' }}
-                        />
-                      </a>
-                    ) : (
-                      <Box component="span" sx={{ color: BRAND.textLight }}>—</Box>
-                    )}
-                  </TableCell>
-                  <TableCell align="center">
-                    <Chip label={h.risk_level} size="small" sx={riskChipSx(h.risk_level)} />
-                  </TableCell>
-                  <TableCell align="center">
-                    {h.escalate_to_contractor
-                      ? <Chip label="Yes" size="small" sx={{ bgcolor: '#FDECEA', color: '#B3261E', fontWeight: 700, borderRadius: '6px' }} />
-                      : <Box component="span" sx={{ color: BRAND.textLight }}>—</Box>}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {history.map((h, i) => {
+                const isOpen = selectedId === h.id;
+                const loc = [h.block_number, h.floor_level].filter(Boolean).join(', ') || 'no location';
+                const open = () => setSelectedId(h.id);
+                return (
+                  // A <tr> can't be a <button>, so the row is an accessible button-role
+                  // row: keyboard-activatable, aria-expanded, focus ring, 44px+ tall.
+                  // Opens the lifecycle side panel (which traps focus / Escape-closes).
+                  <TableRow
+                    key={h.id}
+                    hover
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isOpen}
+                    aria-label={`Report at ${loc} on ${new Date(h.createdAt).toLocaleDateString('en-SG')}, ${h.risk_level} risk. Open lifecycle`}
+                    onClick={open}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } }}
+                    sx={{
+                      cursor: 'pointer',
+                      bgcolor: isOpen ? '#EAF1FB' : (i % 2 ? BRAND.section : 'inherit'),
+                      '& > td': { py: 1.25 }, // ensures a >=44px target
+                      '&:hover': { bgcolor: isOpen ? '#EAF1FB' : '#EEF1F4' },
+                      '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' },
+                    }}
+                  >
+                    <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{new Date(h.createdAt).toLocaleDateString('en-SG')}</TableCell>
+                    <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{[h.block_number, h.floor_level].filter(Boolean).join(', ') || '—'}</TableCell>
+                    {/* snippet so the history is scannable and recurrence is visible */}
+                    <TableCell sx={{ color: BRAND.textLight, maxWidth: 280 }}>
+                      <Tooltip title={h.observations || ''} arrow>
+                        <Typography sx={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'inherit' }}>
+                          {h.observations}
+                        </Typography>
+                      </Tooltip>
+                    </TableCell>
+                    <TableCell>
+                      {/* thumbnail only (full photo lives in the lifecycle panel) so the
+                          row has no nested interactive element */}
+                      {h.image_url ? (
+                        <Box component="img" src={h.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: `1px solid ${BRAND.border}`, display: 'block' }} />
+                      ) : (
+                        <Box component="span" sx={{ color: BRAND.textLight }}>—</Box>
+                      )}
+                    </TableCell>
+                    <TableCell align="center">
+                      <Chip label={h.risk_level} size="small" sx={riskChipSx(h.risk_level)} />
+                    </TableCell>
+                    <TableCell align="center">
+                      {h.escalate_to_contractor
+                        ? <Chip label="Yes" size="small" sx={{ bgcolor: '#FDECEA', color: '#B3261E', fontWeight: 700, borderRadius: '6px' }} />
+                        : <Box component="span" sx={{ color: BRAND.textLight }}>—</Box>}
+                    </TableCell>
+                    <TableCell align="center" sx={{ width: 44 }}>
+                      <KeyboardArrowRightRoundedIcon aria-hidden sx={{ fontSize: 20, color: isOpen ? BRAND.primary : BRAND.textLight }} />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           </Box>
         </Paper>
       )}
+
+      <AssessmentLifecyclePanel assessmentId={selectedId} open={Boolean(selectedId)} onClose={() => setSelectedId(null)} />
     </Box>
   );
 }

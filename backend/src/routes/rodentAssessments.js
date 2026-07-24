@@ -1,6 +1,6 @@
 const express = require('express');
 const cloudinary = require('../config/cloudinary');
-const { RodentAssessment } = require('../models');
+const { RodentAssessment, WorkOrder } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const yup = require('yup');
 const { assessRodentRisk, hasApiKey, stubAssessment } = require('../services/rodentService');
@@ -105,14 +105,26 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
   }
 });
 
-// get one
+// get one - with the work order it was consolidated into, if any. This turns the
+// row into a lifecycle view ("what happened to this report?"). The assessment
+// carries work_order_id directly (set when an officer approves a call-out), so we
+// resolve the outcome via that FK rather than a JSON-containment query against
+// WorkOrder.assessment_ids (which SQLite can't do reliably). The row already
+// carries escalate_to_contractor / escalation_status, so the "no work order"
+// states (not recommended / pending / dismissed) are distinguishable client-side.
 router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const row = await RodentAssessment.findOne({
       where: { id: req.params.id, is_deleted: false },
     });
     if (!row) return res.status(404).json({ error: 'not found' });
-    res.json(row);
+
+    let work_order = null;
+    if (row.work_order_id) {
+      const wo = await WorkOrder.findOne({ where: { id: row.work_order_id, is_deleted: false } });
+      work_order = wo ? wo.toJSON() : null;
+    }
+    res.json({ ...row.toJSON(), work_order });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'failed to fetch assessment' });
