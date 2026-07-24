@@ -1,16 +1,16 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
 import {
   BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, LabelList,
 } from 'recharts';
 import { BRAND, CHART } from '../../theme';
 
-// Dashboard-scoped slate-navy series (kept local so the shared CHART tokens used
-// by the Prevention / Notification pages stay unchanged). navy + orange is a
-// high-separation, colourblind-safe pair - validated with the dataviz checker.
+// Colours from the theme's dedicated two-series tokens (single source of truth).
 const SERIES = [
-  { key: 'openCases', name: 'Open cases', color: '#2E67B5' },
-  { key: 'sightings', name: 'Fauna sightings', color: '#E5683A' },
+  { key: 'openCases', name: 'Open cases', color: CHART.series.primary },
+  { key: 'sightings', name: 'Fauna sightings', color: CHART.series.secondary },
 ];
 
 function fmtDay(iso) {
@@ -18,19 +18,34 @@ function fmtDay(iso) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
 
-function LegendDot({ color, label }) {
+// Clickable legend pill that doubles as a show/hide toggle for its series.
+function LegendToggle({ color, label, active, onClick }) {
   return (
-    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-      <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color, flexShrink: 0 }} />
-      <Typography sx={{ fontSize: 13, color: BRAND.text, fontWeight: 500 }}>{label}</Typography>
-    </Stack>
+    <Box
+      component="button"
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      sx={{
+        border: 'none', cursor: 'pointer', font: 'inherit',
+        borderRadius: '100px', px: 1.5, py: 0.4,
+        display: 'inline-flex', alignItems: 'center', gap: 0.6,
+        bgcolor: active ? alpha(color, 0.12) : 'transparent',
+        opacity: active ? 1 : 0.45,
+        transition: 'opacity .15s, background-color .15s',
+        '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: 2 },
+      }}
+    >
+      <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
+      <Typography component="span" sx={{ fontSize: 13, color, fontWeight: 600, textDecoration: active ? 'none' : 'line-through' }}>{label}</Typography>
+    </Box>
   );
 }
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <Box sx={{ bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '10px', boxShadow: '0 8px 24px rgba(16,24,40,.12)', px: 1.5, py: 1 }}>
+    <Box sx={{ bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '12px', boxShadow: '0 12px 32px rgba(16,24,40,.15)', px: 1.5, py: 1 }}>
       <Typography sx={{ fontSize: 12, color: BRAND.textLight, mb: 0.5 }}>{fmtDay(label)}</Typography>
       {payload.map(p => (
         <Stack key={p.dataKey} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
@@ -44,16 +59,17 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-/**
- * Estate activity over time: open cases and fauna sightings per day. Direct data
- * labels sit above each bar (data-ink ratio), so the Y-axis and gridlines are
- * removed - the reader gets absolute values without tracing back to an axis.
- */
 export default function ActivityChart({ history = [] }) {
+  const [hidden, setHidden] = useState({}); // series keys toggled off via the legend
+  const shown = SERIES.filter(s => !hidden[s.key]);
   const data = useMemo(() => history.map(h => ({ ...h, label: h.date })), [history]);
   const summary = data.length
     ? `Estate activity over ${data.length} days. Open cases from ${data[0].openCases} to ${data[data.length - 1].openCases}; sightings from ${data[0].sightings} to ${data[data.length - 1].sightings}.`
     : 'No activity history yet.';
+
+  const dateRangeText = data.length > 0
+    ? ` (${fmtDay(data[0].date)} – ${fmtDay(data[data.length - 1].date)})`
+    : '';
 
   return (
     <Card sx={{ height: '100%' }}>
@@ -64,23 +80,28 @@ export default function ActivityChart({ history = [] }) {
               Estate Activity
             </Typography>
             <Typography variant="body2" sx={{ color: BRAND.textLight }}>
-              Open cases and fauna sightings, last {data.length} days
+              Open cases and fauna sightings, last {data.length} days{dateRangeText}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={2.5}>
-            {SERIES.map(s => <LegendDot key={s.key} color={s.color} label={s.name} />)}
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+            {SERIES.map(s => (
+              <LegendToggle key={s.key} color={s.color} label={s.name} active={!hidden[s.key]}
+                onClick={() => setHidden(h => ({ ...h, [s.key]: !h[s.key] }))} />
+            ))}
           </Stack>
         </Stack>
 
         {data.length === 0 ? (
-          <Typography variant="body2" sx={{ color: BRAND.textLight, py: 8, textAlign: 'center' }}>
-            No activity history yet.
-          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', py: 8 }}>
+            <BarChartOutlined sx={{ fontSize: 48, color: BRAND.textLight, mb: 1.5 }} />
+            <Typography variant="body2" sx={{ color: BRAND.textLight, textAlign: 'center' }}>
+              No activity history yet.
+            </Typography>
+          </Box>
         ) : (
           <Box role="img" aria-label={summary}>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={data} margin={{ top: 20, right: 8, left: 8, bottom: 4 }} barGap={4} barCategoryGap="24%">
-                {/* no CartesianGrid, no YAxis - direct labels carry the values */}
                 <XAxis
                   dataKey="label"
                   tickFormatter={fmtDay}
@@ -91,8 +112,17 @@ export default function ActivityChart({ history = [] }) {
                   minTickGap={12}
                 />
                 <Tooltip cursor={{ fill: 'rgba(46,103,181,.06)' }} content={<ChartTooltip />} />
-                {SERIES.map(s => (
-                  <Bar key={s.key} dataKey={s.key} name={s.name} fill={s.color} radius={[4, 4, 0, 0]} maxBarSize={22}>
+                {shown.map(s => (
+                  <Bar
+                    key={s.key}
+                    dataKey={s.key}
+                    name={s.name}
+                    fill={s.color}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={22}
+                    animationBegin={0}
+                    animationDuration={800}
+                  >
                     <LabelList
                       dataKey={s.key}
                       position="top"

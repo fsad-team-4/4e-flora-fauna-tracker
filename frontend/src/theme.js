@@ -61,7 +61,7 @@ export const TREND = {
 // Estate-health traffic light for the header status chip.
 export const HEALTH_META = {
   healthy: { label: 'Healthy', color: '#12801e', bg: '#E7F4E8', dot: '#0ca30c' },
-  watch: { label: 'Watch', color: '#8A5200', bg: '#FFF4E5', dot: '#fab219' },
+  watch: { label: 'Monitor', color: '#8A5200', bg: '#FFF4E5', dot: '#fab219' },
   critical: { label: 'Needs Attention', color: '#B3261E', bg: '#FDECEA', dot: '#d03b3b' },
 };
 
@@ -162,7 +162,7 @@ const theme = createTheme({
       defaultProps: { elevation: 0 },
       styleOverrides: {
         root: {
-          borderRadius: 14,
+          borderRadius: 16,
           border: `1px solid ${BRAND.border}`,
           boxShadow: '0 1px 3px rgba(16,24,40,.04), 0 8px 24px rgba(16,24,40,.04)',
         },

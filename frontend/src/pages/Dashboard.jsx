@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
-  Box, Typography, Button, Alert, Collapse, Stack, IconButton, Skeleton, Card, CardContent, Divider,
+  Box, Typography, Button, Alert, Collapse, Stack, IconButton,
+  Skeleton, Card, CardContent, LinearProgress,
+  useMediaQuery, useTheme, Tabs, Tab,
 } from '@mui/material';
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
@@ -58,7 +60,11 @@ function useSyncedAgo(updatedAt) {
     if (!updatedAt) return undefined;
     const tick = () => {
       const secs = Math.max(0, Math.round((Date.now() - updatedAt.getTime()) / 1000));
-      setLabel(secs < 60 ? `${secs}s ago` : secs < 3600 ? `${Math.floor(secs / 60)}m ago` : `${Math.floor(secs / 3600)}h ago`);
+      setLabel(
+        secs < 60 ? `${secs}s ago`
+        : secs < 3600 ? `${Math.floor(secs / 60)}m ago`
+        : `${Math.floor(secs / 3600)}h ago`
+      );
     };
     const first = setTimeout(tick, 0);
     const id = setInterval(tick, 5000);
@@ -67,138 +73,223 @@ function useSyncedAgo(updatedAt) {
   return label;
 }
 
-// Section spine: a numbered header that turns the dashboard into a narrative -
-// Verdict -> Why -> Act -> Impact (the estate's detect -> act -> measure story).
-function BandHeader({ n, title, blurb }) {
-  return (
-    <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1.75 }}>
-      <Box aria-hidden sx={{ width: 30, height: 30, borderRadius: '50%', bgcolor: BRAND.heading, color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14, flexShrink: 0 }}>
-        {n}
-      </Box>
-      <Box>
-        <Typography sx={{ fontSize: 17, fontWeight: 800, color: BRAND.heading, lineHeight: 1.15 }}>{title}</Typography>
-        <Typography sx={{ fontSize: 13, color: BRAND.textLight }}>{blurb}</Typography>
-      </Box>
-    </Stack>
-  );
-}
-
-// Tiny inline trend line for the Impact band (weekly rodent report volume).
-function Sparkline({ points, color = TREND.good }) {
-  if (!points || points.length < 2) return null;
-  const w = 150, h = 38;
-  const max = Math.max(...points), min = Math.min(...points);
-  const range = max - min || 1;
-  const pts = points.map((v, i) => [(i / (points.length - 1)) * w, h - ((v - min) / range) * (h - 6) - 3]);
-  const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-  return (
-    <Box component="svg" viewBox={`0 0 ${w} ${h}`} sx={{ width: 150, height: 38, display: 'block' }} preserveAspectRatio="none" aria-hidden>
-      <path d={d} fill="none" stroke={color} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
-    </Box>
-  );
-}
-
-function Figure({ value, label }) {
-  return (
-    <Box>
-      <Typography sx={{ fontSize: 22, fontWeight: 800, color: BRAND.heading, lineHeight: 1.1 }}>{value}</Typography>
-      <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>{label}</Typography>
-    </Box>
-  );
-}
-
-// Band 3 - the human-in-the-loop action step. Amber when escalations are pending,
-// calm green when the queue is clear.
-function ActBand({ count = 0, blocks = 0 }) {
+// Compact inline act banner — sits in the grid, not a full-width band
+function ActBanner({ count = 0, blocks = 0 }) {
   const active = count > 0;
   return (
-    <Card sx={{ p: { xs: 2.5, md: 3 }, border: `1px solid ${active ? '#F0D9B5' : BRAND.border}`, bgcolor: active ? '#FFF8EC' : '#F2FAF3', display: 'flex', alignItems: 'center', gap: 2.5, flexWrap: 'wrap' }}>
-      <Box aria-hidden sx={{ width: 52, height: 52, borderRadius: '14px', bgcolor: active ? '#FFF0D6' : '#E7F4E8', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-        {active ? <AssignmentTurnedInOutlinedIcon sx={{ color: '#8A5200', fontSize: 26 }} /> : <CheckCircleOutlineRoundedIcon sx={{ color: '#1E6023', fontSize: 26 }} />}
-      </Box>
-      <Box sx={{ flexGrow: 1, minWidth: 220 }}>
-        {active ? (
-          <>
-            <Typography sx={{ fontSize: 19, fontWeight: 800, color: '#6B4200' }}>
-              {count} escalation{count === 1 ? '' : 's'} awaiting your review{blocks > 0 ? ` at ${blocks} block${blocks === 1 ? '' : 's'}` : ''}
-            </Typography>
-            <Typography sx={{ fontSize: 13.5, color: '#8A5200' }}>
-              The AI recommends contractor call-outs. You approve before any dispatch - consolidating repeat reports at the same block so the estate never pays for separate visits.
-            </Typography>
-          </>
-        ) : (
-          <>
-            <Typography sx={{ fontSize: 19, fontWeight: 800, color: '#1E6023' }}>All clear - nothing awaiting approval</Typography>
-            <Typography sx={{ fontSize: 13.5, color: '#3B7A40' }}>New AI-flagged rodent risks surface here for review before any contractor is engaged.</Typography>
-          </>
-        )}
-      </Box>
+    <Card
+      sx={{
+        border: `1px solid ${active ? '#F0D9B5' : BRAND.border}`,
+        bgcolor: active ? '#FFF8EC' : '#F2FAF3',
+        p: 2.5,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1.5,
+      }}
+    >
+      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+        <Box
+          aria-hidden
+          sx={{
+            width: 40, height: 40, borderRadius: '12px',
+            bgcolor: active ? '#FFF0D6' : '#E7F4E8',
+            display: 'grid', placeItems: 'center', flexShrink: 0,
+            '@keyframes pulse': {
+              '0%,100%': { boxShadow: '0 0 0 0 rgba(138,82,0,0.35)' },
+              '50%': { boxShadow: '0 0 0 7px rgba(138,82,0,0)' },
+            },
+            animation: active ? 'pulse 2s ease-in-out infinite' : 'none',
+          }}
+        >
+          {active
+            ? <AssignmentTurnedInOutlinedIcon sx={{ color: '#8A5200', fontSize: 22 }} />
+            : <CheckCircleOutlineRoundedIcon sx={{ color: '#1E6023', fontSize: 22 }} />}
+        </Box>
+        <Box>
+          {active ? (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+              <Typography sx={{ fontSize: 32, fontWeight: 800, color: '#8A5200', lineHeight: 1, letterSpacing: '-0.5px' }}>{count}</Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#6B4200' }}>escalation{count === 1 ? '' : 's'} pending</Typography>
+            </Stack>
+          ) : (
+            <Typography sx={{ fontSize: 15, fontWeight: 700, color: '#1E6023', lineHeight: 1.2 }}>Action queue clear</Typography>
+          )}
+          <Typography sx={{ fontSize: 12, color: active ? '#8A5200' : '#3B7A40' }}>
+            {active
+              ? `${blocks > 0 ? `${blocks} block${blocks === 1 ? '' : 's'} · ` : ''}awaiting your review`
+              : 'Nothing needs approval right now'}
+          </Typography>
+        </Box>
+      </Stack>
       <Button
         component={RouterLink}
         to="/action-queue"
         variant="contained"
+        size="small"
         endIcon={<ArrowForwardRoundedIcon />}
-        sx={{ bgcolor: active ? '#8A5200' : '#37474F', whiteSpace: 'nowrap', '&:hover': { bgcolor: active ? '#6B4200' : '#263238' } }}
+        sx={{
+          mt: 'auto',
+          bgcolor: active ? '#8A5200' : '#37474F',
+          alignSelf: 'flex-start',
+          '&:hover': { bgcolor: active ? '#6B4200' : '#263238' },
+        }}
       >
-        {active ? 'Review the queue' : 'Open Action Queue'}
+        {active ? 'Review queue' : 'Open queue'}
       </Button>
     </Card>
   );
 }
 
-// Band 4 - did the interventions work? Headline repeat-risk reduction + supporting
-// figures + the weekly report trend, linking to the full Prevention Scorecard.
-function ImpactBand({ scorecard }) {
+// Impact summary — compact card for the grid
+function ImpactCard({ scorecard }) {
   const s = scorecard?.summary;
   const r = s?.repeat_risk_reduction;
   const known = r != null;
   const improved = known && r > 0;
-  const trendPts = (scorecard?.trend || []).map(w => w.reports);
   const money = n => `S$${(n || 0).toLocaleString('en-SG')}`;
 
   return (
-    <Card sx={{ p: { xs: 2.5, md: 3 } }}>
-      {!s ? (
-        <Skeleton variant="rounded" height={72} />
+    <Card sx={{ p: 2.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        Prevention Impact
+      </Typography>
+
+      {!scorecard ? (
+        <Skeleton variant="rounded" height={60} sx={{ mt: 1 }} />
       ) : known ? (
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} sx={{ alignItems: { md: 'center' } }}>
-          <Box sx={{ minWidth: 170 }}>
-            <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.6px' }}>Repeat-risk reduction</Typography>
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'baseline', mt: 0.25 }}>
-              {improved && <TrendingDownRoundedIcon sx={{ color: TREND.good, fontSize: 30, alignSelf: 'center' }} />}
-              <Typography sx={{ fontSize: 46, fontWeight: 800, lineHeight: 1, color: improved ? TREND.good : BRAND.heading, letterSpacing: '-1px' }}>
-                {Math.round(Math.abs(r) * 100)}%
-              </Typography>
-            </Stack>
-            <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>{improved ? 'fewer repeat reports' : 'change in repeat risk'}</Typography>
-          </Box>
-          <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
-          <Stack direction="row" spacing={4} sx={{ flexWrap: 'wrap', rowGap: 1.5 }}>
-            <Figure value={`${s.prevented}/${s.measured}`} label="held, no repeat" />
-            <Figure value={s.avg_time_to_close_days == null ? '-' : `${s.avg_time_to_close_days}d`} label="avg time to close" />
-            <Figure value={money(s.est_savings)} label={`${s.call_outs_avoided} call-outs avoided`} />
+        <>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline' }}>
+            {improved && <TrendingDownRoundedIcon sx={{ color: TREND.good, fontSize: 22, alignSelf: 'center' }} />}
+            <Typography sx={{ fontSize: 38, fontWeight: 800, lineHeight: 1, color: improved ? TREND.good : BRAND.heading, letterSpacing: '-1px' }}>
+              {Math.round(Math.abs(r) * 100)}%
+            </Typography>
+            <Typography sx={{ fontSize: 13, color: BRAND.textLight }}>
+              {improved ? 'fewer repeats' : 'change'}
+            </Typography>
           </Stack>
-          <Box sx={{ ml: { md: 'auto' }, textAlign: 'center' }}>
-            <Sparkline points={trendPts} />
-            <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>rodent reports / week</Typography>
-          </Box>
-          <Button component={RouterLink} to="/prevention" variant="outlined" endIcon={<ArrowForwardRoundedIcon />} sx={{ whiteSpace: 'nowrap', borderColor: BRAND.border, color: '#37474F', '&:hover': { borderColor: '#37474F' } }}>
-            View scorecard
+          <Stack direction="row" spacing={2.5} sx={{ flexWrap: 'wrap', rowGap: 1, mt: 0.5 }}>
+            <Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, color: BRAND.heading }}>{s.call_outs_avoided}</Typography>
+              <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>call-outs avoided</Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, color: BRAND.heading }}>{money(s.est_savings)}</Typography>
+              <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>est. savings</Typography>
+            </Box>
+            <Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, color: BRAND.heading }}>
+                {s.avg_time_to_close_days == null ? '—' : `${s.avg_time_to_close_days}d`}
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>avg to close</Typography>
+            </Box>
+          </Stack>
+          <Button
+            component={RouterLink}
+            to="/prevention"
+            variant="outlined"
+            size="small"
+            endIcon={<ArrowForwardRoundedIcon />}
+            sx={{ alignSelf: 'flex-start', mt: 'auto', borderColor: BRAND.border, color: '#37474F', '&:hover': { borderColor: '#37474F' } }}
+          >
+            Full scorecard
           </Button>
-        </Stack>
+        </>
       ) : (
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-          <ShieldMoonOutlinedIcon sx={{ color: BRAND.textLight }} />
-          <Typography sx={{ color: BRAND.textLight, flexGrow: 1 }}>Not enough follow-up data yet - approve and close work orders to measure prevention impact.</Typography>
-          <Button component={RouterLink} to="/prevention" variant="outlined" endIcon={<ArrowForwardRoundedIcon />} sx={{ borderColor: BRAND.border, color: '#37474F' }}>Open scorecard</Button>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexGrow: 1 }}>
+          <ShieldMoonOutlinedIcon sx={{ color: BRAND.textLight, fontSize: 32 }} />
+          <Box>
+            <Typography sx={{ fontSize: 13, color: BRAND.textLight, lineHeight: 1.4 }}>
+              Not enough data yet. Close out work orders to start measuring impact.
+            </Typography>
+            <Button
+              component={RouterLink}
+              to="/prevention"
+              size="small"
+              sx={{ mt: 1, p: 0, color: BRAND.primary, fontWeight: 600 }}
+            >
+              Open scorecard →
+            </Button>
+          </Box>
         </Stack>
       )}
     </Card>
   );
 }
 
+// Tabbed detail panel — replaces the two stacked full-width cards (CategoryBar + BlocksRanked)
+// by nesting them in tabs so they occupy the same vertical space
+function DetailTabs({ casesByCategory, sightingsByBlock, hotspots }) {
+  const [tab, setTab] = useState(0);
+  return (
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ borderBottom: `1px solid ${BRAND.border}`, px: 1.5, pt: 1 }}>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          sx={{
+            minHeight: 40,
+            '& .MuiTab-root': { minHeight: 40, fontSize: 13, fontWeight: 600, textTransform: 'none', py: 0 },
+          }}
+        >
+          <Tab label="Cases by type" />
+          <Tab label="Activity by block" />
+        </Tabs>
+      </Box>
+      <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+        {tab === 0 && (
+          <CategoryBar casesByCategory={casesByCategory} embedded />
+        )}
+        {tab === 1 && (
+          <BlocksRanked sightingsByBlock={sightingsByBlock} hotspots={hotspots} embedded />
+        )}
+      </Box>
+    </Card>
+  );
+}
+
+// Loading skeleton mirrors the actual grid layout
+function DashboardSkeleton() {
+  return (
+    <Stack spacing={2.5}>
+      {/* Hero card */}
+      <Card sx={{ borderRadius: '16px' }}>
+        <CardContent sx={{ p: { xs: 3, md: 4 } }}>
+          <Skeleton variant="text" width={140} height={20} />
+          <Skeleton variant="text" width={100} height={68} sx={{ mt: 0.5 }} />
+          <Skeleton variant="rounded" height={10} sx={{ mt: 1.5, borderRadius: '5px' }} />
+        </CardContent>
+      </Card>
+
+      {/* 4 KPI tiles */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2 }}>
+        {[0, 1, 2, 3].map(i => (
+          <Card key={i} sx={{ p: 2 }}>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
+              <Skeleton variant="rounded" width={28} height={28} sx={{ borderRadius: '8px' }} />
+              <Skeleton variant="text" width={80} />
+            </Stack>
+            <Skeleton variant="text" width={56} height={40} />
+            <Skeleton variant="text" width={72} />
+          </Card>
+        ))}
+      </Box>
+
+      {/* Main 2-col grid */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.3fr 1fr' }, gap: 2.5 }}>
+        <Skeleton variant="rounded" height={280} sx={{ borderRadius: '12px' }} />
+        <Stack spacing={2}>
+          <Skeleton variant="rounded" height={130} sx={{ borderRadius: '12px' }} />
+          <Skeleton variant="rounded" height={130} sx={{ borderRadius: '12px' }} />
+        </Stack>
+      </Box>
+    </Stack>
+  );
+}
+
 export default function Dashboard() {
   const { user } = useUser();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { metrics, loading, error, updatedAt, reload } = useDashboardMetrics();
   const syncedAgo = useSyncedAgo(updatedAt);
 
@@ -209,7 +300,6 @@ export default function Dashboard() {
 
   const kpis = useMemo(() => buildKpis(metrics), [metrics]);
 
-  // prevention headline for the bento tile - best-effort, non-blocking
   useEffect(() => {
     http.get('/api/scorecard').then(r => setScorecard(r.data)).catch(() => {});
   }, []);
@@ -230,11 +320,10 @@ export default function Dashboard() {
 
   if (error && !metrics) {
     return (
-      <Box sx={{ maxWidth: 640, mx: 'auto', px: 3, py: 8, textAlign: 'center' }}>
+      <Box sx={{ maxWidth: 560, mx: 'auto', px: 3, py: 10, textAlign: 'center' }}>
         <Alert
           severity="error"
           action={<Button color="inherit" size="small" onClick={reload}>Retry</Button>}
-          sx={{ justifyContent: 'center' }}
         >
           {error}
         </Alert>
@@ -243,55 +332,97 @@ export default function Dashboard() {
   }
 
   return (
-    <Box component="main" sx={{ width: '100%', px: { xs: 0, md: 1 }, py: 4 }} aria-busy={loading}>
-      {/* header */}
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={2}
-        sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" component="h1" sx={{ color: BRAND.heading }}>
-            Command Centre
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.75 }}>
-            <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0ca30c', boxShadow: '0 0 0 3px rgba(12,163,12,.18)', flexShrink: 0 }} />
-            <Typography variant="body2" sx={{ color: BRAND.textLight }} aria-live="polite">
-              Live estate feed{syncedAgo && ` · synced ${syncedAgo}`}
-            </Typography>
-            <IconButton onClick={reload} disabled={loading} size="small" aria-label="Refresh metrics" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}>
-              <RefreshRoundedIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Stack>
-        </Box>
-        {user?.role === 'admin' && (
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={triggerSummary}
-            disabled={sending}
-            startIcon={<EmailOutlinedIcon />}
-            sx={{ py: 1.25, fontSize: 15, whiteSpace: 'nowrap', flexShrink: 0, borderColor: '#37474F', color: '#37474F', '&:hover': { borderColor: '#263238', bgcolor: 'rgba(55,71,79,.04)' } }}
-          >
-            {sending ? 'Sending…' : 'Send Weekly Summary'}
-          </Button>
-        )}
-      </Stack>
+    <Box component="main" sx={{ width: '100%', px: { xs: 0, md: 1 }, pb: 6 }} aria-busy={loading}>
 
-      {/* weekly-summary result */}
-      <Box role="status" aria-live="polite">
+      {/* thin reload progress bar at top of page */}
+      {loading && metrics && (
+        <LinearProgress sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1400, height: 2 }} />
+      )}
+
+      {/* ── Page header ─────────────────────────────────── */}
+      <Box
+        sx={{
+          position: 'sticky', top: 0, zIndex: 100,
+          bgcolor: 'rgba(255,255,255,0.82)',
+          backdropFilter: 'blur(10px)',
+          borderBottom: `1px solid ${BRAND.border}`,
+          px: { xs: 2, md: 1 }, py: 1.5, mb: 3,
+          mx: { xs: -2, md: -1 },
+        }}
+      >
+        <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography variant="h6" component="h1" sx={{ fontWeight: 800, color: BRAND.heading, lineHeight: 1.1 }}>
+              Command Centre
+            </Typography>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mt: 0.25 }}>
+              <Box
+                aria-hidden
+                sx={{
+                  width: 7, height: 7, borderRadius: '50%', bgcolor: '#0ca30c', flexShrink: 0,
+                  '@keyframes liveDot': {
+                    '0%': { boxShadow: '0 0 0 0 rgba(12,163,12,.4)' },
+                    '70%': { boxShadow: '0 0 0 5px rgba(12,163,12,0)' },
+                    '100%': { boxShadow: '0 0 0 0 rgba(12,163,12,0)' },
+                  },
+                  animation: 'liveDot 2s ease-in-out infinite',
+                }}
+              />
+              <Typography variant="body2" sx={{ color: BRAND.textLight, fontSize: 12 }} aria-live="polite">
+                Live{syncedAgo && ` · ${syncedAgo}`}
+              </Typography>
+              <IconButton
+                onClick={reload}
+                disabled={loading}
+                size="small"
+                aria-label="Refresh"
+                sx={{ color: BRAND.textLight, p: 0.25, '&:hover': { color: BRAND.primary } }}
+              >
+                <RefreshRoundedIcon sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Stack>
+          </Box>
+
+          {user?.role === 'admin' && (
+            isMobile ? (
+              <IconButton
+                onClick={triggerSummary}
+                disabled={sending}
+                aria-label="Send Weekly Summary"
+                sx={{ border: `1px solid #37474F`, borderRadius: '8px', color: '#37474F' }}
+              >
+                <EmailOutlinedIcon fontSize="small" />
+              </IconButton>
+            ) : (
+              <Button
+                variant="outlined"
+                onClick={triggerSummary}
+                disabled={sending}
+                startIcon={<EmailOutlinedIcon />}
+                size="small"
+                sx={{ whiteSpace: 'nowrap', borderColor: '#37474F', color: '#37474F', '&:hover': { borderColor: '#263238', bgcolor: 'rgba(55,71,79,.04)' } }}
+              >
+                {sending ? 'Sending…' : 'Send Weekly Summary'}
+              </Button>
+            )
+          )}
+        </Stack>
+      </Box>
+
+      {/* weekly summary alert */}
+      <Box role="status" aria-live="polite" sx={{ mb: summaryResult ? 2.5 : 0 }}>
         {summaryResult && (
-          <Alert severity={summaryResult.ok ? 'success' : 'error'} sx={{ mb: 2.5, borderRadius: '10px' }}>
+          <Alert severity={summaryResult.ok ? 'success' : 'error'} sx={{ borderRadius: '10px' }}>
             {summaryResult.ok ? (
               <Box>
                 <Typography variant="body2" fontWeight={600}>
-                  Summary sent to {summaryResult.recipientCount} recipient(s) · generated by {summaryResult.generatedBy}
+                  Sent to {summaryResult.recipientCount} recipient(s) · {summaryResult.generatedBy}
                 </Typography>
                 <Button size="small" onClick={() => setShowPreview(p => !p)} sx={{ mt: 0.5, p: 0, color: BRAND.primary }}>
                   {showPreview ? 'Hide preview' : 'Show preview'}
                 </Button>
                 <Collapse in={showPreview}>
-                  <Box component="pre" sx={{ mt: 1.5, p: 2, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', bgcolor: 'rgba(255,255,255,0.6)', borderRadius: '8px', fontFamily: 'inherit', color: BRAND.text }}>
+                  <Box component="pre" sx={{ mt: 1.5, p: 2, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', bgcolor: 'rgba(255,255,255,0.6)', borderRadius: '8px', fontFamily: 'inherit', color: BRAND.text }}>
                     {summaryResult.preview}
                   </Box>
                 </Collapse>
@@ -301,58 +432,48 @@ export default function Dashboard() {
         )}
       </Box>
 
-      {/* Storyline: the page reads top-to-bottom as the estate's narrative -
-          Verdict (where we stand) -> Why (the drivers) -> Act (what to do now)
-          -> Impact (did it work). That mirrors detect -> act -> measure. */}
+      {/* ── Content ─────────────────────────────────────── */}
       {loading && !metrics ? (
-        <Stack spacing={2.5}>
-          <Card sx={{ borderRadius: '16px' }}><CardContent sx={{ p: 4 }}><Skeleton variant="text" width={160} height={24} /><Skeleton variant="text" width={120} height={72} /><Skeleton variant="rounded" height={56} sx={{ mt: 1 }} /></CardContent></Card>
-          <Card><CardContent sx={{ p: 3 }}><Skeleton variant="rounded" height={220} /></CardContent></Card>
-          <Card><CardContent sx={{ p: 3 }}><Skeleton variant="rounded" height={72} /></CardContent></Card>
-          <Card><CardContent sx={{ p: 3 }}><Skeleton variant="rounded" height={72} /></CardContent></Card>
-        </Stack>
+        <DashboardSkeleton />
       ) : metrics && (
-        <Stack spacing={4}>
-          {/* Band 1 - Verdict */}
-          <Box>
-            <BandHeader n={1} title="The verdict" blurb="Where the estate stands right now" />
-            <EstateHealthHero
-              estateHealth={metrics.estateHealth}
-              history={metrics.history || []}
-              tiedBlocks={(metrics.sightingsByBlock || [])
-                .filter(b => b.count === metrics.sightingsByBlock?.[0]?.count)
-                .map(b => b.block_number)}
-              loading={loading}
+        <Stack spacing={2.5}>
+
+          {/* Row 1: Hero card — full width */}
+          <EstateHealthHero
+            estateHealth={metrics.estateHealth}
+            history={metrics.history || []}
+            tiedBlocks={(metrics.sightingsByBlock || [])
+              .filter(b => b.count === metrics.sightingsByBlock?.[0]?.count)
+              .map(b => b.block_number)}
+            loading={loading}
+          />
+
+          {/* Row 2: 4 KPI tiles */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2 }}>
+            {kpis.map(kpi => <KpiCard key={kpi.label} {...kpi} loading={loading} />)}
+          </Box>
+
+          {/* Row 3: Activity chart + tabbed detail panel (side by side) */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr' }, gap: 2.5, alignItems: 'stretch' }}>
+            <ActivityChart history={metrics.history} />
+            <DetailTabs
+              casesByCategory={metrics.casesByCategory}
+              sightingsByBlock={metrics.sightingsByBlock || []}
+              hotspots={metrics.hotspots || []}
             />
           </Box>
 
-          {/* Band 2 - Why (the drivers) */}
-          <Box>
-            <BandHeader n={2} title="Why - the drivers" blurb="What's pushing the risk index, and where" />
+          {/* Row 4: Behavioural Diagnosis (tall, left) + stacked Act banner & Impact
+              (right). Top-aligned + content-height so the two short cards don't
+              stretch to the tall one and leave a void. */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr' }, gap: 2.5, alignItems: 'start' }}>
+            <FeedingRodentCorrelation />
             <Stack spacing={2.5}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, alignItems: 'stretch' }}>
-                {kpis.map(kpi => <KpiCard key={kpi.label} {...kpi} loading={loading} />)}
-              </Box>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2.5, alignItems: 'stretch' }}>
-                <Box sx={{ display: 'flex', '& > *': { width: '100%' } }}><CategoryBar casesByCategory={metrics.casesByCategory} /></Box>
-                <Box sx={{ display: 'flex', '& > *': { width: '100%' } }}><BlocksRanked sightingsByBlock={metrics.sightingsByBlock || []} hotspots={metrics.hotspots || []} /></Box>
-              </Box>
-              <ActivityChart history={metrics.history} />
-              <FeedingRodentCorrelation />
+              <ActBanner count={metrics.pendingEscalations || 0} blocks={metrics.pendingEscalationBlocks || 0} />
+              <ImpactCard scorecard={scorecard} />
             </Stack>
           </Box>
 
-          {/* Band 3 - Act (what to do now) */}
-          <Box>
-            <BandHeader n={3} title="Act - what to do now" blurb="Human-approved before any contractor cost" />
-            <ActBand count={metrics.pendingEscalations || 0} blocks={metrics.pendingEscalationBlocks || 0} />
-          </Box>
-
-          {/* Band 4 - Impact (did it work) */}
-          <Box>
-            <BandHeader n={4} title="Impact - did it work" blurb="Repeat-risk reduction from past interventions" />
-            <ImpactBand scorecard={scorecard} />
-          </Box>
         </Stack>
       )}
     </Box>

@@ -1,22 +1,50 @@
+import { useState, useEffect } from 'react';
 import { Box, Typography, Card, Stack, Chip, Tooltip } from '@mui/material';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { BRAND, HEALTH_META, TREND, GAUGE_ZONES } from '../../theme';
 
-// Thresholds match riskStatus() in estateStats.js: <25 healthy, 25-59 watch, 60+
-// critical. The gauge uses HARD STOPS because those thresholds are discrete, not
-// a continuous gradient.
 const HEALTHY_MAX = 25;
 const WATCH_MAX = 60;
-
-// Darker muted gray than MUTED: the hero's labels sit on the coloured
-// risk-tint band, where #6b7280 drops to 4.2:1. This clears WCAG AA (4.5:1) on
-// the tint and on white.
 const MUTED = '#4B5563';
 
-// A score of 0 with no data is NOT "healthy" - it means we know nothing. Rendering
-// an unknown estate as a green needle at 0 would actively mislead, so the no-data
-// case gets its own visual state.
+function useCountUp(target, duration = 800) {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    let startTimestamp = null;
+    const startVal = 0;
+    const endVal = target;
+    let animationFrameId;
+
+    const step = (timestamp) => {
+      if (!startTimestamp) startTimestamp = timestamp;
+      const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      const currentVal = Math.round(startVal + easeProgress * (endVal - startVal));
+      
+      setCount(currentVal);
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(step);
+      } else {
+        setCount(endVal);
+      }
+    };
+
+    animationFrameId = requestAnimationFrame(step);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [target, duration]);
+
+  return count;
+}
+
 function GaugeUnknown() {
   return (
     <Box sx={{ mt: 2 }}>
@@ -32,7 +60,6 @@ function RiskGauge({ score }) {
   const pct = Math.max(0, Math.min(100, score));
   return (
     <Box sx={{ mt: 2 }}>
-      {/* hard stops: three discrete zones, no gradient blending */}
       <Box sx={{ position: 'relative', height: 10, borderRadius: '5px', overflow: 'hidden', display: 'flex' }}>
         <Box sx={{ width: `${HEALTHY_MAX}%`, bgcolor: GAUGE_ZONES.healthy.fill }} />
         <Box sx={{ width: `${WATCH_MAX - HEALTHY_MAX}%`, bgcolor: GAUGE_ZONES.watch.fill }} />
@@ -44,10 +71,10 @@ function RiskGauge({ score }) {
           sx={{
             position: 'absolute', top: -13, left: `${pct}%`, transform: 'translateX(-50%)',
             width: 3, height: 16, bgcolor: BRAND.heading, borderRadius: '2px', boxShadow: '0 0 0 2px #fff',
+            transition: 'left 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)',
           }}
         />
       </Box>
-      {/* zone labels so the number explains itself without the chip */}
       <Box sx={{ display: 'flex', mt: 0.75 }}>
         <Typography sx={{ width: `${HEALTHY_MAX}%`, fontSize: 9.5, color: MUTED, textAlign: 'left' }}>
           {GAUGE_ZONES.healthy.label}
@@ -63,8 +90,6 @@ function RiskGauge({ score }) {
   );
 }
 
-// A line with direction but no magnitude is decoration. Labelling start and end
-// turns it into a sentence: "76, down from 84".
 function ScoreSparkline({ scores }) {
   if (!scores || scores.length < 2) return null;
   const w = 200, h = 40;
@@ -74,12 +99,15 @@ function ScoreSparkline({ scores }) {
   const pts = scores.map((s, i) => [(i / (scores.length - 1)) * w, h - ((s - min) / range) * (h - 6) - 3]);
   const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
   const end = pts[pts.length - 1];
-  const rising = last >= first; // rising risk is bad
+  const rising = last >= first;
   const lineColor = rising ? TREND.bad : TREND.good;
   const delta = last - first;
   const summary = delta === 0
     ? `Risk index steady at ${last} over the last ${scores.length} days.`
     : `Risk index ${last}, ${rising ? 'up' : 'down'} from ${first} over the last ${scores.length} days.`;
+
+  // Area fill path: go to bottom-right, bottom-left, close
+  const areaD = `${d} L ${w},${h} L 0,${h} Z`;
 
   return (
     <Box sx={{ mt: 2.5 }}>
@@ -87,21 +115,19 @@ function ScoreSparkline({ scores }) {
         <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
           Risk trend ({scores.length}d)
         </Typography>
-        {/* magnitude, not just direction */}
         <Typography sx={{ fontSize: 12, fontWeight: 600, color: lineColor }}>
           {delta === 0 ? `steady at ${last}` : `${last}, ${rising ? 'up' : 'down'} from ${first}`}
         </Typography>
       </Stack>
       <Box role="img" aria-label={summary}>
         <Box component="svg" viewBox={`0 0 ${w} ${h}`} sx={{ display: 'block', width: '100%', height: 40, mt: 0.5 }} preserveAspectRatio="none">
+          {/* area fill */}
+          <path d={areaD} fill={lineColor} fillOpacity={0.12} stroke="none" />
+          {/* line */}
           <path d={d} fill="none" stroke={lineColor} strokeWidth={2} vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
           <circle cx={end[0]} cy={end[1]} r={3} fill={lineColor} />
         </Box>
       </Box>
-      {/* visually hidden table for screen readers. Wrapped in an overflow:hidden
-          1px box - a bare <table> ignores width:1px (table-layout auto sizes to
-          content) and clip only hides painting, so the unclipped layout box was
-          overflowing the page; the wrapper clips it out of layout entirely. */}
       <Box sx={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clipPath: 'inset(50%)', whiteSpace: 'nowrap' }}>
         <table>
           <caption>{summary}</caption>
@@ -117,11 +143,12 @@ function ScoreSparkline({ scores }) {
 
 export default function EstateHealthHero({ estateHealth, history = [], loading, tiedBlocks = [] }) {
   const meta = HEALTH_META[estateHealth?.status] || HEALTH_META.watch;
-  // distinguish "no data" from "scored zero" - they must never look the same
   const hasScore = estateHealth != null && typeof estateHealth.score === 'number';
   const score = hasScore ? estateHealth.score : null;
   const { highestRiskBlock, lastIncident } = estateHealth || {};
   const scores = history.map(h => h.riskScore).filter(v => typeof v === 'number');
+
+  const animatedScore = useCountUp(score ?? 0, 800);
 
   return (
     <Card
@@ -148,13 +175,25 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
 
           {hasScore ? (
             <>
-              {/* baseline-aligned: both sit on the same alignItems: 'baseline' row */}
               <Stack direction="row" spacing={1.5} sx={{ alignItems: 'baseline', mt: 1 }}>
                 <Typography sx={{ fontSize: 76, fontWeight: 800, lineHeight: 1, color: meta.color, letterSpacing: '-2px', fontVariantNumeric: 'tabular-nums' }}>
-                  {score}
+                  {animatedScore}
                 </Typography>
                 <Typography sx={{ color: MUTED, fontSize: 20, fontWeight: 600 }}>/ 100</Typography>
-                <Chip label={meta.label} size="small" sx={{ bgcolor: meta.color, color: '#fff', fontWeight: 700, borderRadius: '8px', alignSelf: 'center' }} />
+                <Chip 
+                  label={meta.label} 
+                  size="medium" 
+                  sx={{ 
+                    bgcolor: meta.color, 
+                    color: '#fff', 
+                    fontWeight: 700, 
+                    borderRadius: '8px', 
+                    alignSelf: 'center',
+                    fontSize: 13,
+                    px: 1.5,
+                    letterSpacing: '0.3px'
+                  }} 
+                />
               </Stack>
               <RiskGauge score={score} />
               <ScoreSparkline scores={scores} />
@@ -173,22 +212,23 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
 
         <Box sx={{ p: { xs: 3, md: 4 }, bgcolor: BRAND.section, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2.75 }}>
           <Box>
-            <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
+            <Typography variant="overline" sx={{ display: 'block', color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
               Highest-Risk Block
             </Typography>
             {highestRiskBlock ? (
               <>
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
-                  <PlaceOutlinedIcon sx={{ color: BRAND.primary, fontSize: 22 }} />
-                  <Typography sx={{ fontSize: 22, fontWeight: 700, color: BRAND.heading }}>{highestRiskBlock}</Typography>
-                </Stack>
-                {/* data trust: if blocks tie, say so rather than contradicting the
-                    Activity by Block card, which shows them level */}
-                <Typography variant="body2" sx={{ color: MUTED, mt: 0.25 }}>
-                  {tiedBlocks.length > 1
-                    ? `most sightings this period — tied with ${tiedBlocks.filter(b => b !== highestRiskBlock).join(', ')}`
-                    : 'most sightings this period'}
-                </Typography>
+                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.5, bgcolor: '#FDECEA', borderRadius: '10px', border: '1px solid #F5C2C2', mt: 1 }}>
+                  <PlaceOutlinedIcon sx={{ color: BRAND.primary, fontSize: 20 }} />
+                  <Typography sx={{ fontSize: 18, fontWeight: 700, color: BRAND.heading }}>{highestRiskBlock}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.75 }}>
+                  <InfoOutlinedIcon sx={{ fontSize: 14, color: MUTED }} />
+                  <Typography variant="body2" sx={{ color: MUTED }}>
+                    {tiedBlocks.length > 1
+                      ? `most sightings this period — tied with ${tiedBlocks.filter(b => b !== highestRiskBlock).join(', ')}`
+                      : 'most sightings this period'}
+                  </Typography>
+                </Box>
               </>
             ) : (
               <Typography sx={{ mt: 0.5, color: MUTED }}>No active hotspots</Typography>
@@ -198,14 +238,24 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
           <Box sx={{ height: '1px', bgcolor: BRAND.border }} />
 
           <Box>
-            <Typography variant="overline" sx={{ color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
+            <Typography variant="overline" sx={{ display: 'block', color: MUTED, fontWeight: 700, letterSpacing: '0.8px' }}>
               Latest Incident
             </Typography>
             {lastIncident ? (
-              <Typography sx={{ mt: 0.5, color: BRAND.text, fontSize: 15 }}>
-                <Box component="span" sx={{ fontWeight: 600, color: BRAND.heading }}>{lastIncident.title}</Box>
-                {lastIncident.block_number ? ` · ${lastIncident.block_number}` : ''}
-              </Typography>
+              <Box sx={{ mt: 0.75, p: 1.5, bgcolor: '#fff', border: '1px solid ' + BRAND.border, borderRadius: '10px' }}>
+                <Typography sx={{ fontSize: 14, fontWeight: 600, color: BRAND.heading, lineHeight: 1.3 }}>{lastIncident.title}</Typography>
+                {lastIncident.block_number && (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, mt: 0.75, px: 1, py: 0.25, bgcolor: BRAND.section, borderRadius: '6px', border: `1px solid ${BRAND.border}` }}>
+                    <PlaceOutlinedIcon sx={{ fontSize: 12, color: BRAND.textLight }} />
+                    <Typography sx={{ fontSize: 11, color: BRAND.textLight, fontWeight: 600 }}>{lastIncident.block_number}</Typography>
+                  </Box>
+                )}
+                {lastIncident.at && (
+                  <Typography sx={{ fontSize: 11, color: MUTED, mt: 0.5 }}>
+                    {new Date(lastIncident.at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </Typography>
+                )}
+              </Box>
             ) : (
               <Typography sx={{ mt: 0.5, color: MUTED }}>No recent incidents</Typography>
             )}
