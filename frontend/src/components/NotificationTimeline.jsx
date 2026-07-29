@@ -50,7 +50,7 @@ function DispatchTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
   return (
-    <Box sx={{ bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 8px 24px rgba(16,24,40,.12)', px: 1.5, py: 1 }}>
+    <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 8px 24px rgba(16,24,40,.12)', px: 1.5, py: 1 }}>
       <Typography sx={{ fontSize: 11, color: BRAND.textLight, mb: 0.5 }}>{fmtDayFull(row.t)}</Typography>
       <Typography sx={{ fontSize: 12.5, color: SENT, fontWeight: 600 }}>{row.sent} sent</Typography>
       {row.failed > 0 && (

@@ -83,7 +83,7 @@ function HeadlineReduction({ value }) {
 
 function StatTile({ label, value, sub, tip }) {
   return (
-    <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '12px' }}>
+    <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '12px' }}>
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
         <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</Typography>
         {tip && (
@@ -153,7 +153,7 @@ export default function PreventionScorecard() {
     <Box sx={{ p: 3 }}>
       <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
         <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Prevention Scorecard</Typography>
-        <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}>
+        <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent } }}>
           <RefreshRoundedIcon sx={{ fontSize: 20 }} />
         </IconButton>
       </Stack>
@@ -164,7 +164,7 @@ export default function PreventionScorecard() {
       {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
       {loading ? (
-        <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress sx={{ color: BRAND.primary }} /></Box>
+        <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress sx={{ color: BRAND.accent }} /></Box>
       ) : !s ? null : (
         <>
           {/* headline row */}

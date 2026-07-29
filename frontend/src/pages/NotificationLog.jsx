@@ -34,7 +34,7 @@ const CHANNEL_ICON = { email: EmailOutlinedIcon, sms: SmsOutlinedIcon, both: Ema
 function StatTile({ label, value, sub, tone }) {
   const valueColor = tone === 'bad' ? FAILED_RED : tone === 'good' ? '#1E6023' : BRAND.heading;
   return (
-    <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
+    <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
       <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</Typography>
       <Typography sx={{ fontSize: 26, fontWeight: 800, color: valueColor, lineHeight: 1.15, mt: 0.25 }}>{value}</Typography>
       {sub && <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>{sub}</Typography>}
@@ -383,7 +383,7 @@ export default function NotificationLog() {
 
       <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '10px', overflow: 'hidden' }}>
         {/* scrolls inside the card on narrow screens instead of widening the page */}
-        <Box tabIndex={0} role="region" aria-label="Dispatch log (scrollable)" sx={{ overflowX: 'auto', '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' } }}>
+        <Box tabIndex={0} role="region" aria-label="Dispatch log (scrollable)" sx={{ overflowX: 'auto', '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: '-2px' } }}>
         <Table size="small" sx={{ minWidth: 560 }}>
           <TableHead>
             <TableRow sx={{ bgcolor: BRAND.section }}>
@@ -435,7 +435,7 @@ export default function NotificationLog() {
                           width: '100%', minHeight: 44, textAlign: 'left', font: 'inherit',
                           border: 'none', background: 'transparent', cursor: 'pointer', p: 0,
                           display: 'flex', alignItems: 'center', gap: 1.5,
-                          '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: 2 },
+                          '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
                         }}
                       >
                         <Chip label={`${run.length} failed attempts`} size="small" sx={{ bgcolor: FAILED_RED, color: '#fff', fontWeight: 700, borderRadius: '6px' }} />
@@ -483,7 +483,7 @@ export default function NotificationLog() {
                                 key={r.id}
                                 size="small"
                                 label={`${n + 1} · ${formatTime(r.createdAt)}`}
-                                sx={{ height: 22, fontSize: 11.5, bgcolor: '#fff', border: `1px solid ${BRAND.border}`, color: BRAND.text, borderRadius: '6px' }}
+                                sx={{ height: 22, fontSize: 11.5, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, color: BRAND.text, borderRadius: '6px' }}
                               />
                             ))}
                           </Box>
@@ -500,7 +500,7 @@ export default function NotificationLog() {
               return (
                 <TableRow key={log.id} hover sx={{ bgcolor: failed ? '#FDECEA' : 'inherit' }}>
                   {/* Time only - the day is in the header (#4) */}
-                  <TableCell sx={{ whiteSpace: 'nowrap', borderLeft: failed ? `3px solid ${BRAND.primary}` : '3px solid transparent' }}>
+                  <TableCell sx={{ whiteSpace: 'nowrap', borderLeft: failed ? `3px solid ${BRAND.accent}` : '3px solid transparent' }}>
                     <Tooltip title={formatExact(log.createdAt)} arrow placement="top">
                       <Typography variant="body2" sx={{ color: BRAND.heading, cursor: 'default' }}>{formatTime(log.createdAt)}</Typography>
                     </Tooltip>
@@ -580,7 +580,7 @@ export default function NotificationLog() {
         </Box>
       </Paper>
 
-      {loading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}><CircularProgress size={24} sx={{ color: BRAND.primary }} /></Box>}
+      {loading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}><CircularProgress size={24} sx={{ color: BRAND.accent }} /></Box>}
       {logs.length < total && !loading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
           {/* neutral, not red (#7) - red is reserved for failures */}

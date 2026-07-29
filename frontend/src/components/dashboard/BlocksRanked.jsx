@@ -82,7 +82,7 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                     cursor: 'pointer',
                     transition: 'background .12s',
                     '&:hover': { bgcolor: BRAND.section },
-                    '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: 2 },
+                    '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
                   }}
                 >
                   {/* block label + hotspot badge */}
@@ -92,7 +92,7 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                       {b.block_number}
                     </Typography>
                     {isHotspot && (
-                      <Box sx={{ bgcolor: '#FDECEA', color: BRAND.primary, fontSize: 9, fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '5px', flexShrink: 0, lineHeight: 1.6 }}>
+                      <Box sx={{ bgcolor: '#FDECEA', color: BRAND.accent, fontSize: 9, fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '5px', flexShrink: 0, lineHeight: 1.6 }}>
                         HOT
                       </Box>
                     )}
@@ -120,7 +120,7 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                 </Stack>
 
                 <Collapse in={isOpen} unmountOnExit>
-                  <Box sx={{ ml: embedded ? '120px' : '140px', mr: 1, mb: 1, bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '10px', p: 1.5 }}>
+                  <Box sx={{ ml: embedded ? '120px' : '140px', mr: 1, mb: 1, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '10px', p: 1.5 }}>
                     {detail ? (
                       <Stack
                         direction="row"
@@ -141,7 +141,7 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                             </Typography>
                             <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.4 }}>
                               {detail.animals.map(a => (
-                                <Chip key={a} label={a} size="small" sx={{ height: 18, fontSize: 10, textTransform: 'capitalize', bgcolor: '#fff', border: `1px solid ${BRAND.border}` }} />
+                                <Chip key={a} label={a} size="small" sx={{ height: 18, fontSize: 10, textTransform: 'capitalize', bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}` }} />
                               ))}
                             </Stack>
                           </Box>

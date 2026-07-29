@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Link as RouterLink, useLocation } from 'react-router-dom'
-import { AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Card, Stack } from '@mui/material'
+import { AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Card, Stack, Avatar, Tooltip, ListItemIcon } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
+import PersonOutlineRoundedIcon from '@mui/icons-material/PersonOutlineRounded'
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined'
+import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
+import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined'
+import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined'
+import NotificationsNoneRoundedIcon from '@mui/icons-material/NotificationsNoneRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined'
@@ -10,6 +16,7 @@ import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined'
 import PetsOutlinedIcon from '@mui/icons-material/PetsOutlined'
 import PestControlOutlinedIcon from '@mui/icons-material/PestControlOutlined'
 import { UserProvider, useUser } from './contexts/UserContext'
+import { useThemeMode } from './contexts/ThemeModeContext'
 import { useDashboardMetrics } from './hooks/useDashboardMetrics'
 import { BRAND } from './theme'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -35,6 +42,8 @@ import FaunaLogSighting from './pages/FaunaLogSighting'
 import FaunaSightingDetail from './pages/FaunaSightingDetail'
 import FaunaHotspots from './pages/FaunaHotspots'
 import RodentRiskMap from './components/dashboard/RodentRiskMap'
+import Profile from './pages/Profile'
+import Settings from './pages/Settings'
 
 // Grouped navigation. `any` shows for every logged-in user; `staff` groups only
 // for staff/admin. Shared by the desktop top-nav dropdowns, the mobile drawer,
@@ -88,8 +97,8 @@ function BrandMark({ size = 30, fontSize = 15 }) {
 // ---- Home: hero -> at-a-glance stats (staff) -> service cards --------------
 function Hero({ user, isStaff }) {
   return (
-    <Box sx={{ mt: 3, mb: 4, p: { xs: 3, md: 5 }, borderRadius: '18px', border: `1px solid ${BRAND.border}`, background: `linear-gradient(120deg, #fff 0%, ${BRAND.section} 100%)` }}>
-      <Typography sx={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: BRAND.primary, mb: 1 }}>
+    <Box sx={{ mt: 3, mb: 4, p: { xs: 3, md: 5 }, borderRadius: '18px', border: `1px solid ${BRAND.border}`, background: `linear-gradient(120deg, ${BRAND.surface} 0%, ${BRAND.section} 100%)` }}>
+      <Typography sx={{ fontSize: 12.5, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: BRAND.accent, mb: 1 }}>
         EM Services · Township Management
       </Typography>
       <Typography component="h1" sx={{ fontSize: { xs: 28, md: 40 }, fontWeight: 800, letterSpacing: '-0.8px', color: BRAND.heading, lineHeight: 1.1, maxWidth: 720 }}>
@@ -161,7 +170,7 @@ function ServiceCard({ group }) {
     <Card sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mb: 1.25 }}>
         <Box sx={{ width: 44, height: 44, borderRadius: '12px', bgcolor: BRAND.section, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon sx={{ color: BRAND.primary, fontSize: 24 }} />
+          <Icon sx={{ color: BRAND.accent, fontSize: 24 }} />
         </Box>
         <Box>
           <Typography sx={{ fontSize: 16, fontWeight: 800, color: BRAND.heading }}>{key}</Typography>
@@ -171,7 +180,7 @@ function ServiceCard({ group }) {
       <Stack spacing={0.25} sx={{ mt: 'auto' }}>
         {group.items.map(item => (
           <Button key={item.to} component={RouterLink} to={item.to} endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />}
-            sx={{ justifyContent: 'space-between', textTransform: 'none', fontWeight: 600, color: BRAND.text, px: 1, '&:hover': { color: BRAND.primary, bgcolor: BRAND.section } }}>
+            sx={{ justifyContent: 'space-between', textTransform: 'none', fontWeight: 600, color: BRAND.text, px: 1, '&:hover': { color: BRAND.accent, bgcolor: BRAND.section } }}>
             {item.label}
           </Button>
         ))}
@@ -224,7 +233,7 @@ function NavDrawer({ open, onClose, isStaff }) {
             dense
             subheader={g.header ? (
               <ListSubheader disableSticky sx={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'text.secondary', lineHeight: 2.4, bgcolor: 'transparent' }}>
-                {g.header}
+        {g.header}
               </ListSubheader>
             ) : undefined}
             sx={{ py: 0.5 }}
@@ -232,7 +241,7 @@ function NavDrawer({ open, onClose, isStaff }) {
             {g.items.map(item => {
               const active = location.pathname === item.to
               return (
-                <ListItemButton
+        <ListItemButton
                   key={item.to}
                   component={RouterLink}
                   to={item.to}
@@ -246,7 +255,7 @@ function NavDrawer({ open, onClose, isStaff }) {
                     primary={item.label}
                     sx={{ '& .MuiListItemText-primary': { fontWeight: active ? 700 : 500, color: active ? 'primary.main' : 'text.primary' } }}
                   />
-                </ListItemButton>
+        </ListItemButton>
               )
             })}
           </List>
@@ -304,6 +313,94 @@ function HorizontalNav({ isStaff }) {
   )
 }
 
+// Initials for the account avatar, from the real display name.
+function initialsOf(name = '') {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return '?'
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
+// Account menu: identity, profile, admin-only settings, then logout. Replaces the
+// bare name/role/Logout trio so account actions live in one predictable place.
+function AccountMenu({ user, onLogout }) {
+  const [anchor, setAnchor] = useState(null)
+  const close = () => setAnchor(null)
+  const isAdmin = user.role === 'admin'
+  return (
+    <>
+      <Box
+        component="button"
+        type="button"
+        onClick={e => setAnchor(e.currentTarget)}
+        aria-haspopup="menu"
+        aria-expanded={Boolean(anchor)}
+        aria-label={`Account menu for ${user.name}`}
+        sx={{
+          display: 'flex', alignItems: 'center', gap: 1, p: 0.5, pr: { xs: 0.5, sm: 1 },
+          bgcolor: 'transparent', border: 'none', borderRadius: '999px', cursor: 'pointer',
+          '&:hover': { bgcolor: 'rgba(120,130,145,0.12)' },
+          '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
+        }}
+      >
+        <Avatar sx={{ width: 32, height: 32, bgcolor: BRAND.navy, color: '#fff', fontSize: 13, fontWeight: 800 }}>
+          {initialsOf(user.name)}
+        </Avatar>
+        <Box sx={{ textAlign: 'left', lineHeight: 1.2, display: { xs: 'none', sm: 'block' } }}>
+          <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'text.primary' }}>{user.name}</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>{user.role}</Typography>
+        </Box>
+      </Box>
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={close}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 220 } } }}
+      >
+        <Box sx={{ px: 2, py: 1.25 }}>
+          <Typography sx={{ fontSize: 14, fontWeight: 700, color: 'text.primary' }}>{user.name}</Typography>
+          <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>{user.role}</Typography>
+        </Box>
+        <Divider />
+        <MenuItem component={RouterLink} to="/profile" onClick={close}>
+          <ListItemIcon><PersonOutlineRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primaryTypographyProps={{ fontSize: 14 }}>My profile</ListItemText>
+        </MenuItem>
+        {isAdmin && (
+          <MenuItem component={RouterLink} to="/settings" onClick={close}>
+            <ListItemIcon><SettingsOutlinedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primaryTypographyProps={{ fontSize: 14 }}>Estate settings</ListItemText>
+          </MenuItem>
+        )}
+        <Divider />
+        <MenuItem onClick={() => { close(); onLogout() }}>
+          <ListItemIcon><LogoutRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primaryTypographyProps={{ fontSize: 14 }}>Log out</ListItemText>
+        </MenuItem>
+      </Menu>
+    </>
+  )
+}
+
+// One-tap light/dark switch. The full three-way choice (incl. "system") lives on
+// the profile and settings pages; this is the shortcut.
+function ThemeToggleButton() {
+  const { resolvedMode, toggleMode } = useThemeMode()
+  const dark = resolvedMode === 'dark'
+  return (
+    <Tooltip title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+      <IconButton
+        onClick={toggleMode}
+        aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+        sx={{ color: 'text.secondary', '&:hover': { color: BRAND.accent } }}
+      >
+        {dark ? <LightModeOutlinedIcon sx={{ fontSize: 20 }} /> : <DarkModeOutlinedIcon sx={{ fontSize: 20 }} />}
+      </IconButton>
+    </Tooltip>
+  )
+}
+
 function NavBar() {
   const { user, setUser } = useUser()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -333,17 +430,25 @@ function NavBar() {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {user && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box sx={{ textAlign: 'right', lineHeight: 1.2, display: { xs: 'none', sm: 'block' } }}>
-                <Typography sx={{ fontWeight: 600, fontSize: 14, color: 'text.primary' }}>{user.name}</Typography>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', textTransform: 'capitalize' }}>{user.role}</Typography>
-              </Box>
-              <Button onClick={logout} variant="outlined" size="small" color="primary" disableRipple sx={{ borderRadius: 2 }}>
-                Logout
-              </Button>
-            </Box>
-          )}
+          {/* Global chrome: notifications + appearance + identity. These live here
+              ONLY - page headers must not repeat them, or the dashboard ends up with
+              two avatars stacked above one another. */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            {isStaff && (
+              <Tooltip title="Notification log">
+                <IconButton
+                  component={RouterLink}
+                  to="/notif-log"
+                  aria-label="Open notification log"
+                  sx={{ color: 'text.secondary', '&:hover': { color: BRAND.accent } }}
+                >
+                  <NotificationsNoneRoundedIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+            <ThemeToggleButton />
+            {user && <AccountMenu user={user} onLogout={logout} />}
+          </Box>
         </Toolbar>
       </AppBar>
       {user && <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isStaff={isStaff} />}
@@ -355,7 +460,7 @@ function NavBar() {
 function SiteFooter() {
   const year = new Date().getFullYear()
   return (
-    <Box component="footer" sx={{ mt: 6, borderTop: `1px solid ${BRAND.border}`, bgcolor: '#fff' }}>
+    <Box component="footer" sx={{ mt: 6, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface }}>
       <Container maxWidth="xl" sx={{ py: 4 }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr 1fr' }, gap: 3 }}>
           <Box>
@@ -373,9 +478,9 @@ function SiteFooter() {
             <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1 }}>Quick links</Typography>
             <Stack spacing={0.5}>
               {[{ to: '/', label: 'Home' }, { to: '/submit-report', label: 'Submit a report' }, { to: '/reports', label: 'My reports' }, { to: '/dashboard', label: 'Command Centre' }].map(l => (
-                <Box key={l.to} component={RouterLink} to={l.to} sx={{ fontSize: 13.5, color: BRAND.text, textDecoration: 'none', '&:hover': { color: BRAND.primary } }}>
+        <Box key={l.to} component={RouterLink} to={l.to} sx={{ fontSize: 13.5, color: BRAND.text, textDecoration: 'none', '&:hover': { color: BRAND.accent } }}>
                   {l.label}
-                </Box>
+        </Box>
               ))}
             </Stack>
           </Box>
@@ -384,7 +489,7 @@ function SiteFooter() {
             <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1 }}>Contact</Typography>
             <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.6 }}>201 Kim Tian Road, Singapore</Typography>
             <Box component="a" href="https://www.emservices.com.sg" target="_blank" rel="noopener noreferrer"
-              sx={{ fontSize: 13.5, color: BRAND.primary, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+              sx={{ fontSize: 13.5, color: BRAND.accent, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
               emservices.com.sg
             </Box>
           </Box>
@@ -406,47 +511,71 @@ function RouteBoundary({ children }) {
   return <ErrorBoundary key={location.pathname}>{children}</ErrorBoundary>
 }
 
+// Routes that own the whole viewport (map dashboards): rendered edge-to-edge with
+// no Container, no footer and no page scroll - the viewport is locked and any
+// scrolling happens inside the page's own panels.
+const FULL_BLEED_PATHS = new Set(['/rodent-heatmap'])
+
+function AppFrame() {
+  const location = useLocation()
+  const fullBleed = FULL_BLEED_PATHS.has(location.pathname)
+  const routed = (
+    <RouteBoundary>
+      <Routes>
+        {/* public */}
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* any logged-in user (residents included) */}
+        <Route path="/submit-report" element={<ProtectedRoute><SubmitReport /></ProtectedRoute>} />
+        <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
+        <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
+
+        {/* staff + admin only */}
+        <Route path="/all-reports" element={<ProtectedRoute roles={['staff', 'admin']}><AllReports /></ProtectedRoute>} />
+        <Route path="/flora" element={<ProtectedRoute roles={['staff', 'admin']}><FloraList /></ProtectedRoute>} />
+        <Route path="/flora/add" element={<ProtectedRoute roles={['staff', 'admin']}><AddFlora /></ProtectedRoute>} />
+        <Route path="/flora/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FloraDetail /></ProtectedRoute>} />
+        <Route path="/handbook" element={<ProtectedRoute roles={['staff', 'admin']}><HorticultureHandbook /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<ProtectedRoute roles={['staff', 'admin']}><Dashboard /></ProtectedRoute>} />
+        <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
+        <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
+        <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
+        <Route path="/rodent-heatmap" element={<ProtectedRoute roles={['staff', 'admin']}><RodentRiskMap /></ProtectedRoute>} />
+        <Route path="/action-queue" element={<ProtectedRoute roles={['staff', 'admin']}><ActionQueue /></ProtectedRoute>} />
+        <Route path="/prevention" element={<ProtectedRoute roles={['staff', 'admin']}><PreventionScorecard /></ProtectedRoute>} />
+        <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
+        <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
+        <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
+        <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
+
+        {/* account: profile is any logged-in user; settings is admin only */}
+        <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute roles={['admin']}><Settings /></ProtectedRoute>} />
+      </Routes>
+    </RouteBoundary>
+  )
+  return (
+    /* overflowX: clip stops any stray element from forcing a horizontal
+       scrollbar; unlike 'hidden' it doesn't create a scroll container, so the
+       sticky AppBar keeps working. Full-bleed routes instead lock the viewport
+       outright: fixed height, overflow hidden, no footer - the map owns the rest. */
+    <Box sx={{ display: 'flex', flexDirection: 'column', ...(fullBleed ? { height: '100dvh', overflow: 'hidden' } : { minHeight: '100vh', overflowX: 'clip' }) }}>
+      <NavBar />
+      {fullBleed
+        ? <Box component="main" sx={{ flexGrow: 1, minHeight: 0 }}>{routed}</Box>
+        : <Container maxWidth="xl" sx={{ flexGrow: 1 }}>{routed}</Container>}
+      {!fullBleed && <SiteFooter />}
+    </Box>
+  )
+}
+
 function App() {
   return (
     <UserProvider>
       <BrowserRouter>
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <NavBar />
-          <Container maxWidth="xl" sx={{ flexGrow: 1 }}>
-            <RouteBoundary>
-              <Routes>
-                {/* public */}
-                <Route path="/" element={<Home />} />
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-
-                {/* any logged-in user (residents included) */}
-                <Route path="/submit-report" element={<ProtectedRoute><SubmitReport /></ProtectedRoute>} />
-                <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
-                <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
-
-                {/* staff + admin only */}
-                <Route path="/all-reports" element={<ProtectedRoute roles={['staff', 'admin']}><AllReports /></ProtectedRoute>} />
-                <Route path="/flora" element={<ProtectedRoute roles={['staff', 'admin']}><FloraList /></ProtectedRoute>} />
-                <Route path="/flora/add" element={<ProtectedRoute roles={['staff', 'admin']}><AddFlora /></ProtectedRoute>} />
-                <Route path="/flora/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FloraDetail /></ProtectedRoute>} />
-                <Route path="/handbook" element={<ProtectedRoute roles={['staff', 'admin']}><HorticultureHandbook /></ProtectedRoute>} />
-                <Route path="/dashboard" element={<ProtectedRoute roles={['staff', 'admin']}><Dashboard /></ProtectedRoute>} />
-                <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
-                <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
-                <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
-                <Route path="/rodent-heatmap" element={<ProtectedRoute roles={['staff', 'admin']}><Box sx={{ py: 4 }}><RodentRiskMap /></Box></ProtectedRoute>} />
-                <Route path="/action-queue" element={<ProtectedRoute roles={['staff', 'admin']}><ActionQueue /></ProtectedRoute>} />
-                <Route path="/prevention" element={<ProtectedRoute roles={['staff', 'admin']}><PreventionScorecard /></ProtectedRoute>} />
-                <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
-                <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
-                <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
-                <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
-              </Routes>
-            </RouteBoundary>
-          </Container>
-          <SiteFooter />
-        </Box>
+        <AppFrame />
       </BrowserRouter>
     </UserProvider>
   )

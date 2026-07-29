@@ -71,7 +71,7 @@ function ClusterCard({ cluster, onApprove, onDismiss }) {
       <CardContent sx={{ p: 2.5 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' } }}>
           <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <PlaceOutlinedIcon sx={{ color: BRAND.primary, fontSize: 20, flexShrink: 0 }} />
+            <PlaceOutlinedIcon sx={{ color: BRAND.accent, fontSize: 20, flexShrink: 0 }} />
             <Typography sx={{ fontSize: 17, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap' }}>{cluster.block}</Typography>
             {riskChip(cluster.risk_level)}
             <Chip
@@ -114,7 +114,7 @@ function ClusterCard({ cluster, onApprove, onDismiss }) {
                   size="small"
                   checked={selected.has(a.id)}
                   onChange={() => toggle(a.id)}
-                  sx={{ p: 0.25, mt: 0.1, color: BRAND.textLight, '&.Mui-checked': { color: BRAND.primary } }}
+                  sx={{ p: 0.25, mt: 0.1, color: BRAND.textLight, '&.Mui-checked': { color: BRAND.accent } }}
                 />
                 {a.image_url && (
                   <Box component="img" src={a.image_url} alt="" sx={{ width: 44, height: 44, borderRadius: '6px', objectFit: 'cover', border: `1px solid ${BRAND.border}`, flexShrink: 0 }} />
@@ -142,7 +142,7 @@ function ClusterCard({ cluster, onApprove, onDismiss }) {
             variant="contained"
             onClick={() => setApproveOpen(true)}
             disabled={ids.length === 0}
-            sx={{ bgcolor: BRAND.primary, '&:hover': { bgcolor: BRAND.primaryHover } }}
+            sx={{ bgcolor: BRAND.accent, '&:hover': { bgcolor: BRAND.accentHover } }}
           >
             Approve &amp; raise work order
           </Button>
@@ -166,13 +166,13 @@ function ClusterCard({ cluster, onApprove, onDismiss }) {
             size="small" fullWidth multiline rows={2} sx={{ mb: 1 }}
           />
           <FormControlLabel
-            control={<Checkbox checked={dispatch} onChange={e => setDispatch(e.target.checked)} sx={{ '&.Mui-checked': { color: BRAND.primary } }} />}
+            control={<Checkbox checked={dispatch} onChange={e => setDispatch(e.target.checked)} sx={{ '&.Mui-checked': { color: BRAND.accent } }} />}
             label={<Typography sx={{ fontSize: 14 }}>Email the contractor now</Typography>}
           />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setApproveOpen(false)} disabled={busy} sx={{ color: BRAND.textLight }}>Cancel</Button>
-          <Button onClick={confirmApprove} disabled={busy} variant="contained" sx={{ bgcolor: BRAND.primary, '&:hover': { bgcolor: BRAND.primaryHover } }}>
+          <Button onClick={confirmApprove} disabled={busy} variant="contained" sx={{ bgcolor: BRAND.accent, '&:hover': { bgcolor: BRAND.accentHover } }}>
             {busy ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : 'Approve'}
           </Button>
         </DialogActions>
@@ -204,7 +204,7 @@ function ClusterCard({ cluster, onApprove, onDismiss }) {
 
 function StatTile({ label, value, sub }) {
   return (
-    <Box sx={{ flex: 1, minWidth: 130, p: 2, bgcolor: '#fff', border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
+    <Box sx={{ flex: 1, minWidth: 130, p: 2, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
       <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</Typography>
       <Typography sx={{ fontSize: 28, fontWeight: 800, color: BRAND.heading, lineHeight: 1.1, mt: 0.25 }}>{value}</Typography>
       {sub && <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>{sub}</Typography>}
@@ -312,7 +312,7 @@ export default function ActionQueue() {
     <Box sx={{ p: 3 }}>
       <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
         <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Action Queue</Typography>
-        <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.primary } }}>
+        <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent } }}>
           <RefreshRoundedIcon sx={{ fontSize: 20 }} />
         </IconButton>
       </Stack>
@@ -324,7 +324,7 @@ export default function ActionQueue() {
       {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
 
       {loading ? (
-        <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress sx={{ color: BRAND.primary }} /></Box>
+        <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress sx={{ color: BRAND.accent }} /></Box>
       ) : (
         <>
           {/* consolidation impact strip */}

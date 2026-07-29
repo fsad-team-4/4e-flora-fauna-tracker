@@ -9,7 +9,7 @@ const POLL_INTERVAL_MS = 60_000;
  * - Distinguishes permission errors from generic failures.
  * - Exposes `reload` for manual refresh / retry.
  */
-export function useDashboardMetrics() {
+export function useDashboardMetrics(windowDays) {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,7 +17,11 @@ export function useDashboardMetrics() {
 
   const load = useCallback(async () => {
     try {
-      const { data } = await http.get('/api/dashboard/metrics');
+      // windowDays governs the history/trend series only; omitted callers keep the
+      // server default, so the shared StatBand needs no change.
+      const { data } = await http.get('/api/dashboard/metrics', {
+        params: windowDays ? { windowDays } : undefined,
+      });
       setMetrics(data);
       setUpdatedAt(new Date());
       setError(null);
@@ -31,7 +35,7 @@ export function useDashboardMetrics() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [windowDays]);
 
   useEffect(() => {
     // Fetching on mount is the sanctioned use of an effect; state updates happen

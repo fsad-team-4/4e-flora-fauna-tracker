@@ -59,7 +59,7 @@ export default function BlockHeatMap({ sightingsByBlock = [], hotspotThreshold =
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        outline: isHotspot ? `2px solid ${BRAND.primary}` : '1px solid transparent',
+                        outline: isHotspot ? `2px solid ${BRAND.accent}` : '1px solid transparent',
                         outlineOffset: '-2px',
                         transition: 'transform .12s',
                         cursor: 'default',
@@ -86,7 +86,7 @@ export default function BlockHeatMap({ sightingsByBlock = [], hotspotThreshold =
               <Typography variant="caption" sx={{ color: BRAND.textLight }}>More</Typography>
               <Box sx={{ flexGrow: 1 }} />
               <Stack direction="row" alignItems="center" spacing={0.75}>
-                <Box sx={{ width: 12, height: 12, borderRadius: '3px', outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' }} />
+                <Box sx={{ width: 12, height: 12, borderRadius: '3px', outline: `2px solid ${BRAND.accent}`, outlineOffset: '-2px' }} />
                 <Typography variant="caption" sx={{ color: BRAND.textLight }}>Hotspot</Typography>
               </Stack>
             </Stack>

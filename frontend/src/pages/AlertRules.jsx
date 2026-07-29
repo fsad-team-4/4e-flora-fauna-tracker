@@ -132,8 +132,8 @@ function RowMenu({ onEdit, onDelete }) {
           <ListItemIcon><EditOutlinedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Edit</ListItemText>
         </MenuItem>
-        <MenuItem onClick={() => { setAnchor(null); onDelete(); }} sx={{ color: BRAND.primary }}>
-          <ListItemIcon><DeleteOutlineRoundedIcon fontSize="small" sx={{ color: BRAND.primary }} /></ListItemIcon>
+        <MenuItem onClick={() => { setAnchor(null); onDelete(); }} sx={{ color: BRAND.accent }}>
+          <ListItemIcon><DeleteOutlineRoundedIcon fontSize="small" sx={{ color: BRAND.accent }} /></ListItemIcon>
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>

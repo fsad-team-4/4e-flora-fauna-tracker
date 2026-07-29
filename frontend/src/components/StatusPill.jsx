@@ -18,10 +18,14 @@ export default function StatusPill({ status, size = 'small' }) {
       sx={{
         bgcolor: meta.bg,
         color: meta.color,
-        fontWeight: 600,
+        // minimal: pale tint + dark ink of the same hue, no border. A hairline made
+        // it read as a boxed container rather than a pill.
+        border: 'none',
+        fontWeight: 700,
         fontSize: 12,
-        borderRadius: '6px',
-        px: 0.5,
+        // fully rounded: reads as a status pill rather than a boxed label
+        borderRadius: '999px',
+        px: 0.75,
       }}
     />
   );

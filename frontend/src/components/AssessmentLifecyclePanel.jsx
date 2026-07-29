@@ -118,7 +118,7 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
         // lighter scrim so the assessments table stays visible for comparison
         backdrop: { sx: { backgroundColor: 'rgba(16,24,40,0.24)' } },
       }}>
-      <Box sx={{ p: 2.5, borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, bgcolor: '#fff', zIndex: 1 }}>
+      <Box sx={{ p: 2.5, borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, bgcolor: BRAND.surface, zIndex: 1 }}>
         <Typography component="h2" sx={{ fontSize: 16, fontWeight: 700, color: BRAND.heading }}>Report lifecycle</Typography>
         <IconButton onClick={onClose} aria-label="Close panel" sx={{ color: BRAND.textLight }}><CloseRoundedIcon /></IconButton>
       </Box>
@@ -141,7 +141,7 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
               <Field label="Floor / area">{orNR(a.floor_level)}</Field>
               <Field label="Location">
                 {hasLoc
-                  ? <>{lat.toFixed(5)}, {lng.toFixed(5)} · <Box component={RouterLink} to="/rodent-heatmap" onClick={onClose} sx={{ color: BRAND.primary, textDecoration: 'none', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}>View on risk map →</Box></>
+                  ? <>{lat.toFixed(5)}, {lng.toFixed(5)} · <Box component={RouterLink} to="/rodent-heatmap" onClick={onClose} sx={{ color: BRAND.accent, textDecoration: 'none', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}>View on risk map →</Box></>
                   : <NotRecorded />}
               </Field>
               <Field label="Officer's observation">{orNR(a.observations)}</Field>

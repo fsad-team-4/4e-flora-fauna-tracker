@@ -1,12 +1,23 @@
-import { useEffect, useState } from 'react';
-import { Card, CardContent, Box, Stack, Typography, Chip, Skeleton, Divider } from '@mui/material';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Card, CardContent, Box, Stack, Typography, Skeleton, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TableSortLabel, IconButton, Collapse, Tooltip,
+} from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
-import { BRAND, CATEGORY_COLORS } from '../../theme';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import { BRAND } from '../../theme';
 import http from '../../http';
 
-const FEEDING_INK = CATEGORY_COLORS.community_cat; // navy - the feeding (food-source) signal
-const RODENT_INK = CATEGORY_COLORS.pest;           // magenta - the rodent signal
+// Deepened variants of the feeding/rodent signal hues. The categorical set is tuned
+// for fills on white; these digits sit on a tinted zebra row, so they need the extra
+// depth to stay well clear of AA (10.5:1 and 8.4:1 respectively).
+const FEEDING_INK = '#1E3A5F'; // navy - the feeding (food-source) signal
+const RODENT_INK = '#8E1038';  // deep crimson - the rodent signal
+
+// Below this many records the pattern is not statistically meaningful; the table
+// says so in its own column rather than burying it in prose.
+const SMALL_SAMPLE = 10;
 
 function fmtDate(iso) {
   if (!iso) return null;
@@ -15,85 +26,189 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 }
 
-// One evidence figure: a big count + label, inked to its signal.
-function Count({ value, label, color }) {
-  return (
-    <Box>
-      <Typography sx={{ fontSize: 22, fontWeight: 800, color, lineHeight: 1.1 }}>{value}</Typography>
-      <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>{label}</Typography>
+// Ordering honesty: feeding logged AFTER the rodent reports cannot support feeding
+// as a driver. Computed per block so the table can flag it in the status column.
+function orderingFlag(block) {
+  const feedTime = new Date(block.firstFeedingDate).getTime();
+  const rodentTime = new Date(block.firstRodentDate).getTime();
+  return !Number.isNaN(feedTime) && !Number.isNaN(rodentTime) && feedTime > rodentTime;
+}
+
+// A pill is reserved for genuine STATUS. The ordering caveat is one (it changes how
+// the row must be interpreted); a record count is not, so that renders as plain
+// styled text below rather than looking like a button that cannot be pressed.
+function StatusBadge({ children, title }) {
+  const badge = (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-block', px: 0.85, py: '2px', borderRadius: '6px',
+        bgcolor: '#FFF8EC', color: '#7C4A03', border: '1px solid #F0E2C4',
+        fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
     </Box>
+  );
+  return title ? <Tooltip title={title}>{badge}</Tooltip> : badge;
+}
+
+/**
+ * Count cell. Semantic colour applied directly to a heavily weighted figure - no
+ * background block behind it, which read as disconnected from the number.
+ *
+ * The inks are deliberately DEEPER than the signal hues used elsewhere, because
+ * these digits sit on a tinted zebra row: navy #1E3A5F measures 10.5:1 and deep
+ * crimson #8E1038 measures 8.4:1 against the striped background, where the original
+ * mid-blue/magenta pair was only ~5.4:1. Right-aligned so digits stack.
+ */
+function NumCell({ value, color, dim = false }) {
+  const flat = dim || !value;
+  return (
+    <TableCell align="right" sx={{ py: 1.25 }}>
+      <Typography
+        component="span"
+        sx={{
+          fontSize: 15.5, fontWeight: 800,
+          color: flat ? BRAND.textLight : color,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value}
+      </Typography>
+    </TableCell>
   );
 }
 
-function BlockRow({ block }) {
+// Explicit widths summing to 100%, so the table fills its container instead of
+// collapsing to content width and leaving dead space to the right.
+const COLUMNS = [
+  { id: 'block_number', label: 'Estate Block', align: 'left', width: '24%' },
+  { id: 'feedingCount', label: 'Feed Sightings', align: 'right', width: '15%' },
+  { id: 'rodentAssessmentCount', label: 'Rodent Reports', align: 'right', width: '15%' },
+  { id: 'elevatedRodentCount', label: 'At-Risk Cases', align: 'right', width: '15%' },
+  { id: 'sampleSize', label: 'Significance', align: 'left', width: '25%' },
+];
+// trailing expand column - not sortable, so it is not part of COLUMNS
+const EXPAND_COL_WIDTH = '6%';
+const COL_COUNT = COLUMNS.length + 1;
+
+function BlockRow({ block, index }) {
+  const [open, setOpen] = useState(false);
   const feedDate = fmtDate(block.firstFeedingDate);
   const rodentDate = fmtDate(block.firstRodentDate);
-  // Ordering honesty: if feeding was first logged AFTER the rodent reports, the
-  // sequence cannot support feeding as a driver - say so plainly.
-  const feedTime = new Date(block.firstFeedingDate).getTime();
-  const rodentTime = new Date(block.firstRodentDate).getTime();
-  const feedingAfterRodent =
-    !Number.isNaN(feedTime) && !Number.isNaN(rodentTime) && feedTime > rodentTime;
+  const small = block.sampleSize < SMALL_SAMPLE;
+  const flagged = orderingFlag(block);
 
   return (
-    <Box sx={{ py: 1.75 }}>
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
-        <Typography sx={{ fontSize: 15, fontWeight: 700, color: BRAND.heading }}>
-          {block.block_number}
-        </Typography>
-        <Chip
-          label={`${block.sampleSize} record${block.sampleSize === 1 ? '' : 's'}`}
-          size="small"
-          sx={{ height: 20, fontSize: 11, bgcolor: BRAND.section, color: BRAND.textLight, fontWeight: 600 }}
-        />
-        {block.sampleSize < 10 && (
-          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, fontStyle: 'italic' }}>
-            small sample - not statistically significant
+    <>
+      {/* Zebra striping keyed off the row index, so the eye can track a single row
+          across five columns. Kept subtle enough not to fight the hover state. */}
+      <TableRow
+        hover
+        sx={{
+          '& > td': { borderBottom: open ? 'none' : `1px solid ${BRAND.border}` },
+          cursor: 'pointer',
+          bgcolor: index % 2 === 1 ? BRAND.section : 'transparent',
+          // explicit hover wins over the zebra tint, so the eye can still track a
+          // row across all five columns on a striped table
+          '&:hover': { bgcolor: BRAND.navySoft },
+        }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <TableCell sx={{ py: 1.25 }}>
+          <Typography component="span" sx={{ fontSize: 14, fontWeight: 700, color: BRAND.heading }}>
+            {block.block_number}
           </Typography>
-        )}
-      </Stack>
+        </TableCell>
+        <NumCell value={block.feedingCount} color={FEEDING_INK} />
+        <NumCell value={block.rodentAssessmentCount} color={RODENT_INK} />
+        <NumCell value={block.elevatedRodentCount} color={RODENT_INK} dim={block.elevatedRodentCount === 0} />
+        <TableCell sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+            <Tooltip
+              title={small
+                ? `Only ${block.sampleSize} record${block.sampleSize === 1 ? '' : 's'} - below the ${SMALL_SAMPLE}-record bar for a meaningful pattern.`
+                : `${block.sampleSize} records - large enough to be worth acting on.`}
+            >
+              <Typography
+                component="span"
+                sx={{ fontSize: 12.5, fontWeight: small ? 500 : 600, color: small ? BRAND.textLight : BRAND.text, fontStyle: small ? 'italic' : 'normal', whiteSpace: 'nowrap', cursor: 'help' }}
+              >
+                {small ? `Small sample · ${block.sampleSize}` : `${block.sampleSize} records`}
+              </Typography>
+            </Tooltip>
+            {flagged && (
+              <StatusBadge title="Feeding was first logged after the rodent reports here, so the ordering does not support feeding as a driver - treat as co-occurrence only.">
+                Ordering caveat
+              </StatusBadge>
+            )}
+          </Stack>
+        </TableCell>
+        {/* Expand control at the END of the row: the eye scans Block -> counts ->
+            significance -> action, so the interaction belongs where that journey
+            finishes, not before it starts. */}
+        <TableCell align="right" sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
+          <IconButton
+            size="small"
+            aria-label={open ? `Hide detail for ${block.block_number}` : `Show detail for ${block.block_number}`}
+            aria-expanded={open}
+            onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+            sx={{
+              p: 0.5, color: open ? BRAND.heading : BRAND.text,
+              bgcolor: open ? BRAND.navySoft : 'transparent',
+              '&:hover': { bgcolor: BRAND.navySoft },
+            }}
+          >
+            <KeyboardArrowDownRoundedIcon sx={{ fontSize: 20, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          </IconButton>
+        </TableCell>
+      </TableRow>
 
-      {/* The two raw counts, side by side, as the evidence for the co-occurrence. */}
-      <Stack direction="row" spacing={4} sx={{ flexWrap: 'wrap', rowGap: 1.5, mb: 1 }}>
-        <Count value={block.feedingCount} label="feeding sightings" color={FEEDING_INK} />
-        <Count value={block.rodentAssessmentCount} label="rodent reports" color={RODENT_INK} />
-        <Count
-          value={block.elevatedRodentCount}
-          label="at elevated risk"
-          color={block.elevatedRodentCount > 0 ? RODENT_INK : BRAND.textLight}
-        />
-      </Stack>
-
-      {/* Timeline of the two signals, plus the ordering caveat when it applies. */}
-      {(feedDate || rodentDate) && (
-        <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>
-          Feeding first seen {feedDate || 'n/a'} · rodent reports from {rodentDate || 'n/a'}
-        </Typography>
-      )}
-      {feedingAfterRodent && (
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start', mt: 0.75 }}>
-          <WarningAmberRoundedIcon sx={{ fontSize: 16, color: '#8A5200', mt: '1px', flexShrink: 0 }} />
-          <Typography sx={{ fontSize: 12.5, color: '#8A5200' }}>
-            Feeding was first logged after the rodent reports here, so the ordering does not
-            support feeding as a driver - treat as co-occurrence only.
-          </Typography>
-        </Stack>
-      )}
-    </Box>
+      {/* Expandable detail: the prose that used to crowd the card lives here. */}
+      <TableRow>
+        <TableCell colSpan={COL_COUNT} sx={{ py: 0, borderBottom: `1px solid ${BRAND.border}` }}>
+          <Collapse in={open} unmountOnExit>
+            <Box sx={{ py: 1.5, pl: 1, pr: 1 }}>
+              <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, lineHeight: 1.6 }}>
+                Feeding first seen {feedDate || 'n/a'} · rodent reports from {rodentDate || 'n/a'}
+              </Typography>
+              {flagged && (
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start', mt: 0.75 }}>
+                  <WarningAmberRoundedIcon sx={{ fontSize: 16, color: '#8A5200', mt: '1px', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 12.5, color: '#8A5200', lineHeight: 1.6 }}>
+                    Feeding was first logged after the rodent reports here, so the ordering does not
+                    support feeding as a driver - treat as co-occurrence only.
+                  </Typography>
+                </Stack>
+              )}
+              {block.sampleSize < SMALL_SAMPLE && (
+                <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.75, fontStyle: 'italic' }}>
+                  Small sample - not statistically significant.
+                </Typography>
+              )}
+            </Box>
+          </Collapse>
+        </TableCell>
+      </TableRow>
+    </>
   );
 }
 
 /**
- * Behavioural Diagnosis card. Shows blocks where feeding activity co-occurs with
- * rodent risk - the cross-domain pattern that hints at food waste as a root cause.
+ * Behavioural Diagnosis. Blocks where feeding activity co-occurs with rodent risk -
+ * the cross-domain pattern that hints at food waste as a root cause.
  *
- * Honesty is built in, not decorative: the card says "co-occurs with" (never
+ * Presented as a sortable table so blocks are directly comparable; the honesty
+ * guarantees are unchanged, just relocated. It still says "co-occurs with" (never
  * "causes"), shows the raw counts as the evidence (no synthesised confidence
- * score), flags small samples, and surfaces signal ordering. It fetches its own
- * endpoint so the whole cross-domain widget stays self-contained.
+ * score), flags small samples and signal ordering in the Significance column, and
+ * keeps the standing caveat under the table.
  */
 export default function FeedingRodentCorrelation() {
   const [state, setState] = useState({ loading: true, error: false, windowDays: 30, blocks: [] });
+  const [orderBy, setOrderBy] = useState('rodentAssessmentCount');
+  const [order, setOrder] = useState('desc');
 
   useEffect(() => {
     let alive = true;
@@ -103,12 +218,37 @@ export default function FeedingRodentCorrelation() {
     return () => { alive = false; };
   }, []);
 
+  const sorted = useMemo(() => {
+    const dir = order === 'asc' ? 1 : -1;
+    return [...state.blocks].sort((a, b) => {
+      const av = a[orderBy], bv = b[orderBy];
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv), undefined, { numeric: true }) * dir;
+    });
+  }, [state.blocks, orderBy, order]);
+
+  const sortBy = id => {
+    if (orderBy === id) setOrder(o => (o === 'asc' ? 'desc' : 'asc'));
+    else { setOrderBy(id); setOrder(id === 'block_number' ? 'asc' : 'desc'); }
+  };
+
   return (
-    <Card>
+    <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
-          Behavioural Diagnosis
-        </Typography>
+        {/* The standing "association, not proof" caveat used to be a grey box nested
+            under the table. It is now an (i) beside the title: same guarantee, none
+            of the vertical cost, and it reads before the data rather than after it. */}
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
+            Behavioural Diagnosis
+          </Typography>
+          <Tooltip
+            arrow
+            title="These blocks show feeding and rodent signals together; that is co-occurrence, not proven cause. The counts are the raw evidence - confirm on the ground before acting, and prefer a feeding advisory over another pest call-out where food waste is plausible."
+          >
+            <InfoOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight, cursor: 'help' }} />
+          </Tooltip>
+        </Stack>
         <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2 }}>
           Blocks where feeding activity co-occurs with rodent risk over the last {state.windowDays} days -
           worth investigating for food waste as a root cause
@@ -116,8 +256,9 @@ export default function FeedingRodentCorrelation() {
 
         {state.loading ? (
           <Stack spacing={1.5}>
-            <Skeleton variant="rounded" height={72} />
-            <Skeleton variant="rounded" height={72} />
+            <Skeleton variant="rounded" height={40} />
+            <Skeleton variant="rounded" height={40} />
+            <Skeleton variant="rounded" height={40} />
           </Stack>
         ) : state.error ? (
           <Typography variant="body2" sx={{ color: BRAND.textLight, py: 4, textAlign: 'center' }}>
@@ -129,22 +270,44 @@ export default function FeedingRodentCorrelation() {
           </Typography>
         ) : (
           <>
-            <Stack divider={<Divider flexItem />} sx={{ mb: 2 }}>
-              {state.blocks.map(b => <BlockRow key={b.block_number} block={b} />)}
-            </Stack>
-            {/* Standing caveat: this is association, not proof. */}
-            <Stack
-              direction="row"
-              spacing={1}
-              sx={{ alignItems: 'flex-start', p: 1.5, bgcolor: BRAND.section, borderRadius: '8px' }}
-            >
-              <InfoOutlinedIcon sx={{ fontSize: 18, color: BRAND.textLight, mt: '1px', flexShrink: 0 }} />
-              <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, lineHeight: 1.5 }}>
-                These blocks show the two signals together; that is co-occurrence, not proven cause.
-                The counts above are the raw evidence - confirm on the ground before acting, and prefer
-                a feeding advisory over another pest call-out where food waste is plausible.
-              </Typography>
-            </Stack>
+            {/* Wide table scrolls inside its own container - the page never does.
+                width 100% + explicit column widths stop it collapsing to content
+                width and leaving dead space on the right. */}
+            {/* capped height + stickyHeader: the column labels stay put while long
+                block lists scroll, so context is never lost mid-table */}
+            <TableContainer sx={{ overflowX: 'auto', maxHeight: 460 }}>
+              <Table stickyHeader size="small" sx={{ minWidth: 560, width: '100%', tableLayout: 'fixed' }}>
+                <TableHead>
+                  <TableRow>
+                    {COLUMNS.map(c => (
+                      <TableCell
+                        key={c.id}
+                        align={c.align}
+                        width={c.width}
+                        sortDirection={orderBy === c.id ? order : false}
+                        sx={{ py: 1, borderBottom: `2px solid ${BRAND.border}`, bgcolor: BRAND.section }}
+                      >
+                        <TableSortLabel
+                          active={orderBy === c.id}
+                          direction={orderBy === c.id ? order : 'asc'}
+                          onClick={() => sortBy(c.id)}
+                          // bolder + wider tracking, and BRAND.text not textLight, so
+                          // the header row clearly outranks the data beneath it
+                          sx={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.8px', color: BRAND.text, '&.Mui-active': { color: BRAND.heading } }}
+                        >
+                          {c.label}
+                        </TableSortLabel>
+                      </TableCell>
+                    ))}
+                    <TableCell width={EXPAND_COL_WIDTH} sx={{ borderBottom: `2px solid ${BRAND.border}`, bgcolor: BRAND.section }} />
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {sorted.map((b, i) => <BlockRow key={b.block_number} block={b} index={i} />)}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
           </>
         )}
       </CardContent>

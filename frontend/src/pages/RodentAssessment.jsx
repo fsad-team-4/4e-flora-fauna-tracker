@@ -590,7 +590,7 @@ export default function RodentAssessment() {
       </Stack>
 
       {loadingHistory ? (
-        <CircularProgress size={24} sx={{ color: BRAND.primary }} />
+        <CircularProgress size={24} sx={{ color: BRAND.accent }} />
       ) : history.length === 0 ? (
         <Typography sx={{ color: BRAND.textLight }}>
           {filtersActive ? 'No assessments match these filters.' : 'No assessments logged yet.'}
@@ -598,7 +598,7 @@ export default function RodentAssessment() {
       ) : (
         <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '10px', overflow: 'hidden' }}>
           {/* the 6-column history scrolls inside its card on narrow screens rather than widening the page */}
-          <Box tabIndex={0} role="region" aria-label="Recent assessments (scrollable)" sx={{ overflowX: 'auto', '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' } }}>
+          <Box tabIndex={0} role="region" aria-label="Recent assessments (scrollable)" sx={{ overflowX: 'auto', '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: '-2px' } }}>
           <Table size="small" sx={{ minWidth: 680 }}>
             <TableHead>
               <TableRow sx={{ bgcolor: BRAND.section }}>
@@ -634,7 +634,7 @@ export default function RodentAssessment() {
                       bgcolor: isOpen ? '#EAF1FB' : (i % 2 ? BRAND.section : 'inherit'),
                       '& > td': { py: 1.25 }, // ensures a >=44px target
                       '&:hover': { bgcolor: isOpen ? '#EAF1FB' : '#EEF1F4' },
-                      '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: '-2px' },
+                      '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: '-2px' },
                     }}
                   >
                     <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{new Date(h.createdAt).toLocaleDateString('en-SG')}</TableCell>

@@ -92,6 +92,10 @@ async function getHistory(days = 11) {
     sightings: r.total_sightings,
     hotspots: r.active_hotspots,
     riskScore: r.risk_score,
+    // already snapshotted daily - exposed so each KPI card can draw a real
+    // trend line instead of only the headline number.
+    criticalFlora: r.critical_flora,
+    atRiskFlora: r.at_risk_flora,
   }));
 }
 

@@ -23,7 +23,7 @@ export default class ErrorBoundary extends Component {
     if (!this.state.hasError) return this.props.children;
     return (
       <Box sx={{ maxWidth: 520, mx: 'auto', textAlign: 'center', py: 10, px: 3 }}>
-        <ReportProblemOutlinedIcon sx={{ fontSize: 44, color: BRAND.primary, mb: 1.5 }} />
+        <ReportProblemOutlinedIcon sx={{ fontSize: 44, color: BRAND.accent, mb: 1.5 }} />
         <Typography variant="h6" sx={{ fontWeight: 700, color: BRAND.heading, mb: 0.5 }}>
           Something went wrong on this page
         </Typography>

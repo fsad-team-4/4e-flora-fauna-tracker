@@ -1,6 +1,6 @@
 // angelyn
 const express = require('express');
-const { Op } = require('sequelize');
+const { Op, fn, col, literal } = require('sequelize');
 const { NotificationLog, RodentAssessment } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const mock = require('../services/mockDataService');
@@ -22,13 +22,42 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
 
     const m = computeEstateMetrics({ flora, sightings, cases });
 
-    const week = 7 * 24 * 60 * 60 * 1000;
+    // The dashboard's global time picker. Bounded so a hand-crafted query can't
+    // ask for an unbounded scan; the point-in-time metrics (open cases, critical
+    // flora) are "now" regardless - this governs the trend/history series.
+    const windowDays = Math.min(90, Math.max(2, Number(req.query.windowDays) || 12));
+
+    const day = 24 * 60 * 60 * 1000;
+    const week = 7 * day;
     const since = new Date(Date.now() - week);
     const prevSince = new Date(Date.now() - 2 * week);
     const notifCount = await NotificationLog.count({ where: { createdAt: { [Op.gte]: since } } });
     // previous 7-day window, so the frontend can show a real week-over-week delta
     const notifPrevCount = await NotificationLog.count({
       where: { createdAt: { [Op.gte]: prevSince, [Op.lt]: since } },
+    });
+
+    // Same figures over the selected window, so the alerts KPI tracks the picker
+    // rather than being permanently stuck at 7 days.
+    const winSince = new Date(Date.now() - windowDays * day);
+    const winPrevSince = new Date(Date.now() - 2 * windowDays * day);
+    const notifWindow = await NotificationLog.count({ where: { createdAt: { [Op.gte]: winSince } } });
+    const notifPrevWindow = await NotificationLog.count({
+      where: { createdAt: { [Op.gte]: winPrevSince, [Op.lt]: winSince } },
+    });
+
+    // Daily send counts for the alerts sparkline. Grouped in SQL, then densified
+    // below so days with no sends read as 0 instead of dropping out of the series.
+    const notifRows = await NotificationLog.findAll({
+      where: { createdAt: { [Op.gte]: winSince } },
+      attributes: [[fn('date', col('createdAt')), 'day'], [fn('COUNT', literal('*')), 'count']],
+      group: [fn('date', col('createdAt'))],
+      raw: true,
+    });
+    const notifByDayMap = new Map(notifRows.map(r => [String(r.day), Number(r.count)]));
+    const notificationsByDay = Array.from({ length: windowDays }, (_, i) => {
+      const key = dayKey(new Date(Date.now() - (windowDays - 1 - i) * day));
+      return { date: key, count: notifByDayMap.get(key) || 0 };
     });
 
     // rodent escalations the AI has recommended but no officer has actioned yet -
@@ -46,8 +75,16 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
     const trends = await getTrends(m);
 
     // time series for the activity chart: stored history + today's live point
-    const history = await getHistory(11);
-    history.push({ date: dayKey(), openCases: m.openCases, sightings: m.totalSightings, hotspots: m.activeHotspots, riskScore: m.riskScore });
+    const history = await getHistory(windowDays - 1);
+    history.push({
+      date: dayKey(),
+      openCases: m.openCases,
+      sightings: m.totalSightings,
+      hotspots: m.activeHotspots,
+      riskScore: m.riskScore,
+      criticalFlora: m.criticalFlora,
+      atRiskFlora: m.atRiskFlora,
+    });
 
     const recentCases = [...cases]
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -72,8 +109,12 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
       trends,
       history,
       criticalFloraSpecies: flora.filter(f => f.health_status === 'critical').map(f => f.species),
+      windowDays,
       notificationsLast7Days: notifCount,
       notificationsPrev7Days: notifPrevCount,
+      notificationsWindow: notifWindow,
+      notificationsPrevWindow: notifPrevWindow,
+      notificationsByDay,
       pendingEscalations,
       pendingEscalationBlocks,
       recentCases,
