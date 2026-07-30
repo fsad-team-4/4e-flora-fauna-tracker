@@ -92,6 +92,7 @@ export default function FloraList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [healthFilter, setHealthFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('default');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -104,6 +105,7 @@ export default function FloraList() {
   useEffect(() => {
     const params = {};
     if (healthFilter) params.health_status = healthFilter;
+    if (locationFilter) params.location = locationFilter;
 
     http
       .get('/api/flora', { params })
@@ -119,7 +121,7 @@ export default function FloraList() {
         }
       })
       .finally(() => setLoading(false));
-  }, [healthFilter, refreshKey]);
+  }, [healthFilter, locationFilter, refreshKey]);
 
   const handleUpload = () => {
     if (!csvFile) return;
@@ -192,7 +194,7 @@ export default function FloraList() {
     return result;
   }, [plants, searchQuery, sortBy]);
 
-  const filtersActive = Boolean(searchQuery || healthFilter);
+  const filtersActive = Boolean(searchQuery || healthFilter || locationFilter);
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
@@ -416,6 +418,20 @@ export default function FloraList() {
                 startAdornment: (
                   <InputAdornment position="start">
                     <SearchIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              placeholder="Filter by location"
+              size="small"
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              sx={{ minWidth: 200 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LocationOnOutlinedIcon fontSize="small" color="action" />
                   </InputAdornment>
                 ),
               }}
