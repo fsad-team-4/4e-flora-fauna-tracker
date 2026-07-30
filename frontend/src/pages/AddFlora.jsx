@@ -30,6 +30,7 @@ const validationSchema = yup.object({
 
 const makeLocation = (key) => ({
   key,
+  location: '',
   location_zone: '',
   health_status: 'healthy',
   health_notes: '',
@@ -249,6 +250,7 @@ export default function AddFlora() {
         locations.map((loc) =>
           http.post('/api/flora', {
             ...values,
+            location: loc.location,
             location_zone: loc.location_zone,
             health_status: loc.health_status,
             health_notes: loc.health_notes,
@@ -425,6 +427,13 @@ export default function AddFlora() {
                     <Alert severity="error" sx={{ mb: 2 }}>{loc.submitError}</Alert>
                   )}
 
+                  <TextField
+                    fullWidth
+                    margin="normal"
+                    label="Location"
+                    value={loc.location}
+                    onChange={(e) => updateLocationField(loc.key, 'location', e.target.value)}
+                  />
                   <TextField
                     fullWidth
                     margin="normal"
