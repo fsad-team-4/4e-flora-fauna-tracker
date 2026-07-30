@@ -4,7 +4,7 @@ import { useFormik } from 'formik';
 import * as yup from 'yup';
 import {
   Box, TextField, Button, Typography, Alert, MenuItem, Stack, Card,
-  CardContent, Divider, Chip,
+  CardContent, Divider, Chip, Autocomplete,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
@@ -14,6 +14,7 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import http from '../http';
 import { HEALTH_STATUS_OPTIONS, HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
+import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
@@ -427,12 +428,16 @@ export default function AddFlora() {
                     <Alert severity="error" sx={{ mb: 2 }}>{loc.submitError}</Alert>
                   )}
 
-                  <TextField
+                  <Autocomplete
+                    freeSolo
                     fullWidth
-                    margin="normal"
-                    label="Location"
+                    options={SINGAPORE_LOCATIONS}
                     value={loc.location}
-                    onChange={(e) => updateLocationField(loc.key, 'location', e.target.value)}
+                    onChange={(e, newValue) => updateLocationField(loc.key, 'location', newValue || '')}
+                    onInputChange={(e, newInputValue) => updateLocationField(loc.key, 'location', newInputValue)}
+                    renderInput={(params) => (
+                      <TextField {...params} margin="normal" label="Location" />
+                    )}
                   />
                   <TextField
                     fullWidth
