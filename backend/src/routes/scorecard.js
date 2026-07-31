@@ -19,12 +19,16 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 
     // let a reviewer widen/narrow the follow-up window, clamped to something sane
     const windowDays = Math.min(60, Math.max(3, parseInt(req.query.windowDays) || 14));
+    // the weekly trend horizon the scorecard page's selector drives. computeScorecard
+    // already accepted this; it just was not reachable from the query before.
+    const trendWeeks = Math.min(26, Math.max(4, parseInt(req.query.trendWeeks) || 8));
 
     const scorecard = computeScorecard({
       assessments: assessments.map(a => a.toJSON()),
       workOrders: workOrders.map(w => w.toJSON()),
       now: Date.now(),
       windowDays,
+      trendWeeks,
     });
     res.json(scorecard);
   } catch (err) {

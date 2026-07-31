@@ -188,3 +188,123 @@ describe('DELETE /api/alert-rules/:id (soft delete)', () => {
     expect(list.body.find(r => r.id === ruleId)).toBeUndefined();
   });
 });
+// ---------------------------------------------------------------------------
+// GET /api/alert-rules/activity
+//
+// Firing counts are derived from the dispatch log (NotificationLog.rule_id), not
+// from a counter column, so these tests seed log rows directly and assert the
+// derivation - including the two cases that are easy to get wrong: a dispatch with
+// no rule_id, and a rule whose last fire is older than the window.
+// ---------------------------------------------------------------------------
+describe('GET /api/alert-rules/activity', () => {
+  const { NotificationLog } = require('../../src/models');
+  let ruleA, ruleB;
+  const HOUR = 3600 * 1000;
+
+  beforeAll(async () => {
+    const a = await request(app).post('/api/alert-rules')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...validRule, name: 'Activity Rule A' });
+    const b = await request(app).post('/api/alert-rules')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...validRule, name: 'Activity Rule B' });
+    ruleA = a.body.id;
+    ruleB = b.body.id;
+
+    const now = Date.now();
+    const seed = (rule_id, status, agoMs, retry_of = null) => NotificationLog.create({
+      rule_id, channel: 'email', recipient: 'ops@test.com', status,
+      message_preview: 'x', retry_of, createdAt: new Date(now - agoMs),
+    });   // no { silent: true } - it makes Sequelize reject the createdAt override
+
+    // rule A: 2 sent + 1 failed inside the 24h window
+    await seed(ruleA, 'sent', 1 * HOUR);
+    await seed(ruleA, 'sent', 2 * HOUR);
+    const failedRow = await seed(ruleA, 'failed', 3 * HOUR);
+    // a staff resend of the failed dispatch - same rule_id, but NOT a new trigger
+    await seed(ruleA, 'sent', 0.5 * HOUR, failedRow.id);
+    // rule B: nothing recent, one fire 100h ago (outside even the previous window)
+    await seed(ruleB, 'sent', 100 * HOUR);
+    // a dispatch with no rule behind it (work order / manual send)
+    await seed(null, 'sent', 4 * HOUR);
+    // previous-window traffic, for the trend denominator
+    await seed(ruleA, 'sent', 30 * HOUR);
+    await seed(ruleA, 'sent', 40 * HOUR);
+  });
+
+  test('staff can read activity', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${staffToken}`);
+    expect(res.status).toBe(200);
+  });
+
+  test('resident is denied', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${residentToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  test('counts only the window, and keeps failures inside the count', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.windowHours).toBe(24);
+    // 3 for rule A + 1 unattributed = 4 in the last 24h; the resend row is
+    // excluded everywhere, or one fire + two resend clicks would read as 3 fires
+    expect(res.body.total).toBe(4);
+    expect(res.body.failed).toBe(1);
+    expect(res.body.unattributed).toBe(1);
+    expect(res.body.rules[ruleA].count).toBe(3);
+    expect(res.body.rules[ruleA].failed).toBe(1);
+  });
+
+  test('prevTotal covers the preceding window of equal length', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    // the two rule-A rows at 30h and 40h fall in the 24-48h window
+    expect(res.body.prevTotal).toBe(2);
+  });
+
+  test('a rule dormant longer than the window still reports its last fire', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body.rules[ruleB].count).toBe(0);
+    expect(res.body.rules[ruleB].lastTriggeredAt).toBeTruthy();
+  });
+
+  test('lastTriggeredAt is ISO in every environment, and a resend does not move it', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    const lastA = res.body.rules[ruleA].lastTriggeredAt;
+    // raw MAX(createdAt) would leak SQLite's 'YYYY-MM-DD HH:MM:SS +00:00' string
+    // while Postgres serializes ISO - the route must normalize
+    expect(new Date(lastA).toISOString()).toBe(lastA);
+    // the resend at 0.5h ago must not read as the rule's latest fire (1h ago)
+    expect(Date.now() - new Date(lastA).getTime()).toBeGreaterThan(0.9 * HOUR);
+  });
+
+  test('hours is clamped to 1..720', async () => {
+    const lo = await request(app).get('/api/alert-rules/activity?hours=0')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(lo.body.windowHours).toBe(24); // 0 is falsy -> default
+    const hi = await request(app).get('/api/alert-rules/activity?hours=99999')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(hi.body.windowHours).toBe(720);
+    const neg = await request(app).get('/api/alert-rules/activity?hours=-5')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(neg.body.windowHours).toBe(1);
+  });
+
+  test('a wider window absorbs the previous-window rows', async () => {
+    const res = await request(app).get('/api/alert-rules/activity?hours=48')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body.rules[ruleA].count).toBe(5);
+  });
+
+  test('"activity" is not swallowed by the /:id route', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body).toHaveProperty('rules');
+    expect(res.body).not.toHaveProperty('trigger_type');
+  });
+});

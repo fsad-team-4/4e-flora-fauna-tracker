@@ -1,4 +1,5 @@
 import { Box, Typography, Card, CardContent, Stack, Tooltip } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { BRAND, CHART } from '../../theme';
 
 // Manager's consolidated overview: fauna sighting intensity across ALL animal
@@ -7,15 +8,21 @@ import { BRAND, CHART } from '../../theme';
 // with the rest of the dashboard's "amount" encodings.
 
 // map a count to a ramp step + readable text colour
-function cell(count, max) {
+function cell(count, max, mode) {
   if (!count) return { bg: BRAND.section, fg: BRAND.textLight };
+  const ramp = CHART[mode].ramp;
   const t = max > 0 ? count / max : 0;
-  const idx = Math.min(CHART.ramp.length - 1, Math.floor(t * CHART.ramp.length));
-  const fg = idx >= 3 ? '#FFFFFF' : BRAND.heading;
-  return { bg: CHART.ramp[idx], fg };
+  const idx = Math.min(ramp.length - 1, Math.floor(t * ramp.length));
+  // light ramp runs pale -> deep (high steps carry white text); dark ramp runs
+  // dim -> bright (high steps need a dark ink instead)
+  const fg = mode === 'dark'
+    ? (idx >= 3 ? '#0F172A' : '#FFFFFF')
+    : (idx >= 3 ? '#FFFFFF' : BRAND.heading);
+  return { bg: ramp[idx], fg };
 }
 
 export default function BlockHeatMap({ sightingsByBlock = [], hotspotThreshold = 3 }) {
+  const mode = useTheme().palette.mode;
   const blocks = [...sightingsByBlock].sort((a, b) =>
     String(a.block_number).localeCompare(String(b.block_number), undefined, { numeric: true })
   );
@@ -42,7 +49,7 @@ export default function BlockHeatMap({ sightingsByBlock = [], hotspotThreshold =
           <>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))', gap: 1 }}>
               {blocks.map(b => {
-                const { bg, fg } = cell(b.count, max);
+                const { bg, fg } = cell(b.count, max, mode);
                 const isHotspot = b.count >= hotspotThreshold;
                 return (
                   <Tooltip
@@ -79,7 +86,7 @@ export default function BlockHeatMap({ sightingsByBlock = [], hotspotThreshold =
             <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mt: 2.5, flexWrap: 'wrap', rowGap: 1 }}>
               <Typography variant="caption" sx={{ color: BRAND.textLight }}>Fewer</Typography>
               <Box sx={{ display: 'flex', gap: 0.5 }}>
-                {CHART.ramp.map(c => (
+                {CHART[mode].ramp.map(c => (
                   <Box key={c} sx={{ width: 20, height: 12, borderRadius: '3px', bgcolor: c }} />
                 ))}
               </Box>

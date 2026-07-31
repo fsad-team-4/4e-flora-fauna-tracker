@@ -204,7 +204,7 @@ export default function Profile() {
                 onChange={e => setName(e.target.value)}
                 disabled={state.loading || savingDetails}
                 fullWidth
-                inputProps={{ minLength: 2 }}
+                slotProps={{ htmlInput: { minLength: 2 } }}
               />
               <TextField
                 label="Email"

@@ -11,7 +11,7 @@ const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment } = require('../../src/models');
 
-let staffToken, residentToken;
+let staffToken, residentToken, adminToken;
 
 async function registerAndLogin(name, email, role) {
   await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
@@ -34,6 +34,8 @@ const detail = (id, token) => request(app).get(`/api/rodent-assessments/${id}`).
 beforeAll(async () => {
   await sequelize.sync({ force: true });
   staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'staff');
+  // raising a work order commits money, so it is admin-only
+  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'admin');
   residentToken = await registerAndLogin('Resident', 'ad-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });
@@ -44,7 +46,7 @@ describe('GET /:id resolves the work order via work_order_id', () => {
     const a2 = await makeAssessment({ block_number: 'Block 210', risk_level: 'medium' });
 
     const raised = await request(app).post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ assessment_ids: [a1.id, a2.id], target_agency: 'Pest Control Contractor' });
     expect(raised.status).toBe(201);
 
@@ -56,10 +58,10 @@ describe('GET /:id resolves the work order via work_order_id', () => {
     expect(res.body.work_order).toMatchObject({
       id: raised.body.id,
       target_agency: 'Pest Control Contractor',
-      approved_by_name: 'Staff',
+      approved_by_name: 'Admin',
       consolidated_count: 2,
       risk_level: 'high',
-      status: 'open',
+      status: 'raised', // first pipeline stage; replaces the old 'open'
     });
     expect(res.body.work_order.createdAt).toBeTruthy(); // approval time
   });
@@ -68,7 +70,7 @@ describe('GET /:id resolves the work order via work_order_id', () => {
     const a1 = await makeAssessment({ block_number: 'Block 220' });
     const a2 = await makeAssessment({ block_number: 'Block 220' });
     const raised = await request(app).post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`).send({ assessment_ids: [a1.id, a2.id] });
+      .set('Authorization', `Bearer ${adminToken}`).send({ assessment_ids: [a1.id, a2.id] });
 
     const [d1, d2] = await Promise.all([detail(a1.id, staffToken), detail(a2.id, staffToken)]);
     expect(d1.body.work_order.id).toBe(raised.body.id);
@@ -79,7 +81,7 @@ describe('GET /:id resolves the work order via work_order_id', () => {
   test('dispatch surfaces dispatched_at + email_status on the detail', async () => {
     const a = await makeAssessment({ block_number: 'Block 230', risk_level: 'critical' });
     await request(app).post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ assessment_ids: [a.id], dispatch: true });
     const res = await detail(a.id, staffToken);
     expect(res.body.work_order.email_status).toBe('sent');

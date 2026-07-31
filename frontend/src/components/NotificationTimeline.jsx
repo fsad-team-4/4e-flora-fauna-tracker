@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Box, Card, CardContent, Stack, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceArea,
 } from 'recharts';
-import { BRAND, CHART } from '../theme';
+import { BRAND, CHART, SVG_ACCENT } from '../theme';
 
-const SENT = '#2E67B5';   // dispatched OK - slate-navy, matching the dashboard data palette
-const FAILED = '#d03b3b'; // status: critical
+// Series colours are SVG strokes/fills (var() cannot resolve there), so they are
+// mode-indexed literals: sent = the scheme's line accent, failed = its danger.
 
 const dayKey = t => {
   const d = new Date(t);
@@ -47,8 +48,11 @@ function useDailyBuckets(logs) {
 }
 
 function DispatchTooltip({ active, payload }) {
+  const mode = useTheme().palette.mode;
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
+  const SENT = SVG_ACCENT[mode].line;
+  const FAILED = SVG_ACCENT[mode].danger;
   return (
     <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 8px 24px rgba(16,24,40,.12)', px: 1.5, py: 1 }}>
       <Typography sx={{ fontSize: 11, color: BRAND.textLight, mb: 0.5 }}>{fmtDayFull(row.t)}</Typography>
@@ -66,6 +70,9 @@ const DAY = 86400000;
 // onSelect(fromMs, toMs) lets the parent filter the table to a day or a dragged
 // range. selectedRange { from, to } (YYYY-MM-DD) renders as a shaded band.
 export default function NotificationTimeline({ logs = [], onSelect, selectedRange = null }) {
+  const mode = useTheme().palette.mode;
+  const SENT = SVG_ACCENT[mode].line;
+  const FAILED = SVG_ACCENT[mode].danger;
   const [refLeft, setRefLeft] = useState(null);
   const [refRight, setRefRight] = useState(null);
   const [dragging, setDragging] = useState(false);
@@ -144,18 +151,18 @@ export default function NotificationTimeline({ logs = [], onSelect, selectedRang
                 <stop offset="100%" stopColor={FAILED} stopOpacity={0.04} />
               </linearGradient>
             </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" stroke={CHART[mode].grid} vertical={false} />
             <XAxis
               dataKey="t"
               type="number"
               scale="time"
               domain={['dataMin', 'dataMax']}
               tickFormatter={fmtTick}
-              tick={{ fontSize: 11, fill: CHART.axis }}
+              tick={{ fontSize: 11, fill: CHART[mode].axis }}
               minTickGap={30}
             />
-            <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: CHART.axis }} width={32} domain={[0, niceMax]} ticks={yTicks} />
-            <Tooltip content={<DispatchTooltip />} cursor={{ stroke: BRAND.textLight, strokeWidth: 1, strokeDasharray: '4 4' }} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: CHART[mode].axis }} width={32} domain={[0, niceMax]} ticks={yTicks} />
+            <Tooltip content={<DispatchTooltip />} cursor={{ stroke: SVG_ACCENT[mode].line, strokeWidth: 1, strokeDasharray: '4 4' }} />
             {/* committed selection - a soft brand band, not a hard line */}
             {selFrom != null && (
               <ReferenceArea x1={selFrom - HALF} x2={selTo + HALF} fill={BRAND.primary} fillOpacity={0.1} stroke={BRAND.primary} strokeOpacity={0.4} ifOverflow="extendDomain" />

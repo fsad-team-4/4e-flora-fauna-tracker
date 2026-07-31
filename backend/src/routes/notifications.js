@@ -13,10 +13,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const isDay = s => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
 // shared where-clause: status + a date range (from/to inclusive), with `date` kept
-// as a single-day shorthand for backward compatibility.
-function buildWhere({ status, date, from, to }) {
+// as a single-day shorthand for backward compatibility. rule_id scopes the log to
+// one alert rule (the rule detail pane's activity feed).
+function buildWhere({ status, date, from, to, rule_id }) {
   const where = {};
   if (status && ['sent', 'failed'].includes(status)) where.status = status;
+  if (rule_id != null && /^\d+$/.test(String(rule_id))) where.rule_id = parseInt(rule_id);
   const range = {};
   const lo = isDay(from) ? from : (isDay(date) ? date : null);
   const hi = isDay(to) ? to : (isDay(date) ? date : null);

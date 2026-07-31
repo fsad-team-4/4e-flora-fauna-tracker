@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Card, CardContent, Box, Stack, Typography, Collapse, Chip, Divider } from '@mui/material';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import SearchOffOutlined from '@mui/icons-material/SearchOffOutlined';
-import { BRAND, CHART } from '../../theme';
+import { useTheme } from '@mui/material/styles';
+import { BRAND, CHART, INTENT } from '../../theme';
 
 const NEUTRAL_BAR = '#2E67B5';
 
@@ -15,6 +16,7 @@ function fmtWhen(iso) {
 
 // `embedded` = true when rendered inside a tab panel — strips the outer Card
 export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hotspotThreshold = 3, embedded = false }) {
+  const mode = useTheme().palette.mode;
   const [openBlock, setOpenBlock] = useState(null);
   const total = sightingsByBlock.reduce((s, b) => s + b.count, 0);
   const hotspotByBlock = Object.fromEntries(hotspots.map(h => [h.block_number, h]));
@@ -52,7 +54,7 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
             const widthPct = total ? (b.count / total) * 100 : 0;
             // magnitude stays on the blue ramp (never semantic red); the text "HOT"
             // badge below carries the attention signal instead
-            const barColor = isHotspot ? CHART.ramp[4] : NEUTRAL_BAR;
+            const barColor = isHotspot ? CHART[mode].ramp[4] : NEUTRAL_BAR;
             const isOpen = openBlock === b.block_number;
             const detail = hotspotByBlock[b.block_number];
             const when = fmtWhen(detail?.lastSeen);
@@ -88,11 +90,11 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                   {/* block label + hotspot badge */}
                   <Box sx={{ width: embedded ? 120 : 140, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <ExpandMoreRoundedIcon sx={{ fontSize: 17, color: BRAND.textLight, transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
-                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: isHotspot ? BRAND.primary : BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: isHotspot ? BRAND.accent : BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {b.block_number}
                     </Typography>
                     {isHotspot && (
-                      <Box sx={{ bgcolor: '#FDECEA', color: BRAND.accent, fontSize: 9, fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '5px', flexShrink: 0, lineHeight: 1.6 }}>
+                      <Box sx={{ bgcolor: INTENT.danger.bg, color: INTENT.danger.ink, fontSize: 9, fontWeight: 700, px: 0.6, py: 0.1, borderRadius: '5px', flexShrink: 0, lineHeight: 1.6 }}>
                         HOT
                       </Box>
                     )}
@@ -113,8 +115,8 @@ export default function BlocksRanked({ sightingsByBlock = [], hotspots = [], hot
                         }}
                       />
                     </Box>
-                    <Box sx={{ minWidth: 30, height: 20, px: 0.75, borderRadius: '100px', bgcolor: isHotspot ? '#FDECEA' : BRAND.section, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-                      <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: isHotspot ? BRAND.primary : BRAND.heading }}>{b.count}</Typography>
+                    <Box sx={{ minWidth: 30, height: 20, px: 0.75, borderRadius: '100px', bgcolor: isHotspot ? INTENT.danger.bg : BRAND.section, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: isHotspot ? INTENT.danger.ink : BRAND.heading }}>{b.count}</Typography>
                     </Box>
                   </Box>
                 </Stack>

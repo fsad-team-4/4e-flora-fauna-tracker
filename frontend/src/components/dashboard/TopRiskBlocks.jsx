@@ -1,18 +1,23 @@
 import { Box, Card, CardContent, Stack, Typography, Tooltip } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { BRAND } from '../../theme';
 
 // The estate's own hotspot rule (backend computeHotspots uses minCount = 3), so the
 // banding here is the same threshold the rest of the app already acts on rather
 // than an arbitrary cut.
 const HOTSPOT_MIN = 3;
-const TOP_N = 5;
+const TOP_N = 3; // a leaderboard, not a chart - the top offenders only
 
-// Blue heat scale: darkest for the highest volume, fading out as counts drop, so
+// Blue heat scale: strongest for the highest volume, fading out as counts drop, so
 // intensity is carried by depth of colour as well as by bar length. Red is spent on
 // nothing but the single worst breaching block - rows of red bars read as an alarm
-// and stop meaning anything.
-const BREACH_INK = '#B3261E';
-const HEAT = ['#1E3A5F', '#2C5687', '#4A7CB0', '#7C9DBF', '#A9BDD1'];
+// and stop meaning anything. Per scheme: light runs darkest-first; dark runs
+// brightest-first so the worst bar is the most visible on the dark track.
+const BREACH_INK = { light: '#B3261E', dark: '#F08A8F' };
+const HEAT = {
+  light: ['#1E3A5F', '#2C5687', '#4A7CB0', '#7C9DBF', '#A9BDD1'],
+  dark: ['#A9C7E8', '#8FB3D9', '#6E96C2', '#54789F', '#3F5D7E'],
+};
 
 function bandLabel(count) {
   if (!count) return 'No recorded activity';
@@ -32,6 +37,8 @@ function bandLabel(count) {
 // `embedded` = rendered inside the Block Performance widget's toggle, so the Card
 // wrapper and title are supplied by the parent instead.
 export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, limit = TOP_N, embedded = false }) {
+  const mode = useTheme().palette.mode;
+  const heat = HEAT[mode] || HEAT.light;
   const ranked = [...sightingsByBlock]
     .filter(b => b.count > 0)
     .sort((a, b) => b.count - a.count || String(a.block_number).localeCompare(String(b.block_number), undefined, { numeric: true }));
@@ -63,7 +70,7 @@ export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, 
                 const over = b.count >= HOTSPOT_MIN;
                 const isTop = topBlock != null && b.block_number === topBlock;
                 // only the worst breaching block earns red; the rest ride the heat scale
-                const ink = isTop && over ? BREACH_INK : HEAT[Math.min(i, HEAT.length - 1)];
+                const ink = isTop && over ? (BREACH_INK[mode] || BREACH_INK.light) : heat[Math.min(i, heat.length - 1)];
                 const pct = max ? (b.count / max) * 100 : 0;
                 return (
                   <Tooltip
@@ -106,18 +113,6 @@ export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, 
               })}
             </Stack>
 
-            <Stack direction="row" spacing={2} sx={{ mt: 2.5, flexWrap: 'wrap', rowGap: 0.75, alignItems: 'center' }}>
-              {[
-                [BREACH_INK, 'Worst block - breached'],
-                [HEAT[0], 'Higher volume'],
-                [HEAT[HEAT.length - 1], 'Lower volume'],
-              ].map(([c, l]) => (
-                <Stack key={l} direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
-                  <Box aria-hidden sx={{ width: 10, height: 10, borderRadius: '2px', bgcolor: c, flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 12, color: BRAND.text }}>{l}</Typography>
-                </Stack>
-              ))}
-            </Stack>
             {hidden > 0 && (
               <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 1 }}>
                 {hidden} further block{hidden === 1 ? '' : 's'} with activity not shown.

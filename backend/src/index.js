@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const { sequelize } = require('./models');
 
+const { ensureWorkOrderColumns } = require('./services/workOrderSchema');
 const { startCronJobs } = require('./cron');
 
 if (!process.env.JWT_SECRET) {
@@ -16,7 +17,9 @@ const app = express();
 // 10mb: rodent assessments can carry a base64 field photo in the JSON body
 // (the express default of 100kb rejects any real photo before it reaches the route).
 app.use(express.json({ limit: '10mb' }));
-app.use(cors());
+// exposedHeaders: browsers strip non-safelisted response headers cross-origin,
+// and the frontend reads X-Total-Count for list totals
+app.use(cors({ exposedHeaders: ['X-Total-Count'] }));
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -36,6 +39,9 @@ app.use('/api/work-orders', require('./routes/workOrders'));
 app.use('/api/scorecard', require('./routes/scorecard'));
 app.use('/api/block-diagnosis', require('./routes/blockDiagnosis'));
 app.use('/api/rodent-riskmap', require('./routes/rodentRiskMap'));
+// SIMULATED sensor surface - kept a separate endpoint from the real risk map on
+// purpose, so the two data kinds can never be served in one merged shape
+app.use('/api/sensor-surface', require('./routes/sensorSurface'));
 
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {
@@ -47,6 +53,10 @@ const PORT = process.env.PORT || 3000;
 
 async function start() {
   await sequelize.sync();
+  // sync() creates missing tables but never adds columns to existing ones, so an
+  // established dev database.sqlite needs the work order pipeline columns added.
+  // Idempotent, SQLite-only, and scoped to the WorkOrders table.
+  await ensureWorkOrderColumns();
   app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
   });

@@ -36,6 +36,35 @@ beforeAll(async () => {
 });
 afterAll(async () => { await sequelize.close(); });
 
+describe('GET /api/notifications?rule_id=', () => {
+  test('scopes the log to one rule and ignores junk ids', async () => {
+    // rule_id is a real FK - create two rules to attribute log rows to
+    const { AlertRule } = require('../../src/models');
+    const mkRule = name => AlertRule.create({
+      name, trigger_type: 'flora_critical', recipients: 'ops@test.com', channel: 'email', is_active: true,
+    });
+    const ruleA = await mkRule('Scope rule A');
+    const ruleB = await mkRule('Scope rule B');
+    const a = await mkFailed({ rule_id: ruleA.id });
+    await mkFailed({ rule_id: ruleB.id });
+    await mkFailed({ rule_id: null });
+
+    const res = await request(app).get(`/api/notifications?rule_id=${ruleA.id}`)
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body.logs.length).toBe(1);
+    expect(res.body.logs[0].id).toBe(a.id);
+
+    // a non-numeric rule_id must not filter (and must not 500)
+    const junk = await request(app).get('/api/notifications?rule_id=abc')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(junk.status).toBe(200);
+    expect(junk.body.logs.length).toBeGreaterThanOrEqual(3);
+
+    await NotificationLog.destroy({ where: {} }); // leave the shared table clean
+  });
+});
+
 describe('GET /api/notifications/stats', () => {
   test('staff gets reliability metrics', async () => {
     await NotificationLog.create({ channel: 'email', recipient: 'a@test.com', status: 'sent', body: 'ok' });

@@ -42,11 +42,49 @@ const WorkOrder = sequelize.define('WorkOrder', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  // Current pipeline stage. Every value here is backed by a WorkOrderEvent row
+  // with a real timestamp and actor - see STAGES in services/workOrderStages.js.
+  // Replaces the old open/closed pair; 'raised' is the former 'open'.
   status: {
-    // 'open' once approved/raised, 'closed' once the contractor has completed
     type: DataTypes.STRING,
-    defaultValue: 'open',
-    validate: { isIn: [['open', 'closed']] },
+    defaultValue: 'raised',
+    validate: { isIn: [['raised', 'dispatched', 'scheduled', 'in_progress', 'resolved', 'closed']] },
+  },
+  // Contractor attendance date. NEVER estimated, predicted or defaulted - it is
+  // only ever written from a human's input or a contractor's reply. Null means
+  // "date not yet confirmed", which is what the UI must say.
+  scheduled_for: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  // Which town council owns this item. Free text, nullable: a row with no
+  // recorded council renders as "not recorded" rather than defaulting to one.
+  town_council: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  // Optional link back to Klemens' resident reports (M3). Nullable by design -
+  // the rodent path has no resident on it, so an unlinked order simply sends no
+  // resident email rather than inventing a recipient.
+  resident_report_ids: {
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
+  // Cloudinary secure_urls for site evidence. Uploaded server-side only.
+  photo_urls: {
+    type: DataTypes.JSON,
+    allowNull: false,
+    defaultValue: [],
+  },
+  // AI-drafted contractor briefing. Stored as a DRAFT: a human reviews and sends,
+  // nothing is auto-dispatched from this field.
+  vendor_briefing: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
+  vendor_briefing_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
   },
   notes: {
     type: DataTypes.TEXT,
@@ -70,6 +108,53 @@ const WorkOrder = sequelize.define('WorkOrder', {
   },
   dispatched_at: {
     type: DataTypes.DATE,
+    allowNull: true,
+  },
+  dispatched_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  dispatched_by_name: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  // scheduled / in_progress / resolved stage cache. Each pairs a timestamp with
+  // the actor who recorded it; a null timestamp renders as "not yet", never as
+  // done and never inferred from a later stage having a value.
+  scheduled_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  scheduled_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  scheduled_by_name: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  in_progress_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  in_progress_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  in_progress_by_name: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  resolved_at: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  resolved_by: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  resolved_by_name: {
+    type: DataTypes.STRING,
     allowNull: true,
   },
   email_status: {

@@ -13,7 +13,7 @@
 // Run with:  npm run seed   (from backend/)
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { sequelize, AlertRule, NotificationLog, User, MetricSnapshot, FaunaSighting, RodentAssessment } = require('./models');
+const { sequelize, SensorReading, AlertRule, NotificationLog, User, MetricSnapshot, FaunaSighting, RodentAssessment } = require('./models');
 const mock = require('./services/mockDataService');
 const { computeEstateMetrics, computeRiskScore } = require('./services/estateStats');
 
@@ -123,6 +123,155 @@ const LOGS = [
 // Each fixture carries days_ago inline (destructured out before insert) so adding
 // or removing a row can't desync a parallel date array.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// REAL LAYER, spread beyond the anchor estate.
+//
+// The Ang Mo Kio cluster above (blocks 122-128) is the demo's co-occurrence
+// story and is left exactly as it was. These add genuine officer-reported points
+// in three more town councils so the real layer is a spread of discrete reports
+// rather than one dot - WITHOUT inventing positions for the ~35 existing
+// assessments that were filed without one. Those stay unmapped and counted.
+// Coordinates are HDB town centres, i.e. where an officer plausibly stood.
+// ---------------------------------------------------------------------------
+const RODENT_FIXTURES_REGIONAL = [
+  // Bishan-Toa Payoh TC
+  { block_number: 'Blk 165 Bishan St 13', floor_level: 'L1', days_ago: 11, gps_lat: 1.34640, gps_lng: 103.84870, risk_level: 'medium',
+    observations: 'Droppings around the bin centre behind the coffee shop.',
+    likely_cause: 'Food waste from the adjoining F&B units.', signs_identified: ['Rodent droppings'],
+    immediate_actions: [{ title: 'Clear Waste', detail: 'Tighten the F&B refuse clearing schedule.' }],
+    escalate_to_contractor: false, escalation_reason: null },
+  { block_number: 'Blk 79 Toa Payoh Lor 4', floor_level: 'L1', days_ago: 6, gps_lat: 1.33410, gps_lng: 103.85020, risk_level: 'high',
+    observations: 'Live sighting at the refuse chute, plus fresh gnaw marks.',
+    likely_cause: 'Established harbourage beside a continuous food source.', signs_identified: ['Live sighting', 'Gnaw marks'],
+    immediate_actions: [{ title: 'Escalate', detail: 'Raise a pest control call-out for the chute area.' }],
+    escalate_to_contractor: true, escalation_reason: 'Live sighting at a refuse chute' },
+  { block_number: 'Blk 190 Lor 6 Toa Payoh', floor_level: 'L2', days_ago: 15, gps_lat: 1.33720, gps_lng: 103.85440, risk_level: 'low',
+    observations: 'Isolated droppings on the second-storey corridor.',
+    likely_cause: 'Occasional transit, no food source identified.', signs_identified: ['Rodent droppings'],
+    immediate_actions: [{ title: 'Monitor', detail: 'Re-inspect at the next routine round.' }],
+    escalate_to_contractor: false, escalation_reason: null },
+
+  // Nee Soon TC
+  { block_number: 'Blk 846 Yishun Ring Rd', floor_level: 'L1', days_ago: 9, gps_lat: 1.42970, gps_lng: 103.83600, risk_level: 'high',
+    observations: 'Burrow opening by the bin centre, droppings across the surround.',
+    likely_cause: 'Harbourage established next to an uncleared refuse point.', signs_identified: ['Burrow', 'Rodent droppings'],
+    immediate_actions: [{ title: 'Seal Burrow', detail: 'Seal the burrow and reinstate the surround.' }],
+    escalate_to_contractor: true, escalation_reason: 'Active burrow at a refuse point' },
+  { block_number: 'Blk 290 Yishun St 22', floor_level: 'L1', days_ago: 4, gps_lat: 1.43220, gps_lng: 103.83890, risk_level: 'medium',
+    observations: 'Gnaw marks on the bin lids at the void deck.',
+    likely_cause: 'Damaged bin seals allowing access.', signs_identified: ['Gnaw marks'],
+    immediate_actions: [{ title: 'Repair Bins', detail: 'Replace the damaged lids.' }],
+    escalate_to_contractor: false, escalation_reason: null },
+
+  // Sembawang TC
+  { block_number: 'Blk 355 Sembawang Way', floor_level: 'L1', days_ago: 13, gps_lat: 1.44860, gps_lng: 103.81820, risk_level: 'medium',
+    observations: 'Droppings near the coffee shop bin bay.',
+    likely_cause: 'F&B waste held overnight in the open bay.', signs_identified: ['Rodent droppings'],
+    immediate_actions: [{ title: 'Inspect Bins', detail: 'Check the bay is cleared before close.' }],
+    escalate_to_contractor: false, escalation_reason: null },
+  { block_number: 'Blk 411 Canberra Rd', floor_level: 'L1', days_ago: 2, gps_lat: 1.45080, gps_lng: 103.82330, risk_level: 'low',
+    observations: 'A few droppings by the void deck seating, no live sighting.',
+    likely_cause: 'Residents feeding birds at the seating area.', signs_identified: ['Rodent droppings'],
+    immediate_actions: [{ title: 'Advisory', detail: 'Issue a feeding advisory notice.' }],
+    escalate_to_contractor: false, escalation_reason: null },
+];
+
+
+// ===========================================================================
+// SIMULATED RATSENSE SENSOR DEPLOYMENT - NOT REAL READINGS
+//
+// The client's brief describes an existing pilot with smart sensors and cameras
+// monitoring rodent activity. Nothing below came from that pilot: these rows
+// MODEL what such a deployment would emit, so the regional surface has a
+// genuinely continuous field to interpolate. Officer-reported assessments are
+// discrete events and are never interpolated; only this layer is.
+//
+// Every row is written with is_simulated: true, the API pins that flag in its
+// WHERE clause, and the UI labels the layer from it. No service that computes a
+// real metric reads this table - asserted by tests/angelyn/simulatedDataIsolation.
+//
+// Placement models a real deployment: sensors sit at refuse chutes, bin centres,
+// F&B units and void decks - the places rodents are actually monitored - not on
+// a uniform grid. Baselines CORRELATE with the real assessment fixtures, so the
+// two layers tell one coherent story: the Ang Mo Kio blocks carrying high-risk
+// reports (123/128) sit under the hottest simulated readings, and the Toa Payoh
+// and Yishun escalations show as secondary peaks.
+// ===========================================================================
+const SENSOR_DEPLOYMENT = [
+  // --- Ang Mo Kio TC: the anchor estate, hottest (matches blocks 123/128) ----
+  { id: 'AMK-RC-001', lat: 1.36780, lng: 103.84660, type: 'refuse_chute', tc: 'Ang Mo Kio Town Council', base: 8.4 },
+  { id: 'AMK-BC-002', lat: 1.36792, lng: 103.84648, type: 'bin_centre',   tc: 'Ang Mo Kio Town Council', base: 7.9 },
+  { id: 'AMK-VD-003', lat: 1.36810, lng: 103.84700, type: 'void_deck',    tc: 'Ang Mo Kio Town Council', base: 5.2 },
+  { id: 'AMK-RC-004', lat: 1.36925, lng: 103.84521, type: 'refuse_chute', tc: 'Ang Mo Kio Town Council', base: 7.1 },
+  { id: 'AMK-BC-005', lat: 1.36910, lng: 103.84540, type: 'bin_centre',   tc: 'Ang Mo Kio Town Council', base: 6.6 },
+  { id: 'AMK-FB-006', lat: 1.36960, lng: 103.84610, type: 'fnb_unit',     tc: 'Ang Mo Kio Town Council', base: 6.0 },
+  { id: 'AMK-VD-007', lat: 1.37010, lng: 103.84500, type: 'void_deck',    tc: 'Ang Mo Kio Town Council', base: 3.4 },
+  { id: 'AMK-BC-008', lat: 1.36850, lng: 103.84480, type: 'bin_centre',   tc: 'Ang Mo Kio Town Council', base: 4.1 },
+  { id: 'AMK-FB-009', lat: 1.37180, lng: 103.84760, type: 'fnb_unit',     tc: 'Ang Mo Kio Town Council', base: 5.5 },
+  { id: 'AMK-VD-010', lat: 1.37320, lng: 103.84410, type: 'void_deck',    tc: 'Ang Mo Kio Town Council', base: 2.2 },
+  { id: 'AMK-RC-011', lat: 1.36640, lng: 103.85010, type: 'refuse_chute', tc: 'Ang Mo Kio Town Council', base: 3.8 },
+  { id: 'AMK-BC-012', lat: 1.37480, lng: 103.84980, type: 'bin_centre',   tc: 'Ang Mo Kio Town Council', base: 2.9 },
+
+  // --- Bishan-Toa Payoh TC: secondary peak at the Lor 4 escalation ----------
+  { id: 'BTP-RC-001', lat: 1.33410, lng: 103.85020, type: 'refuse_chute', tc: 'Bishan-Toa Payoh Town Council', base: 7.6 },
+  { id: 'BTP-FB-002', lat: 1.33470, lng: 103.84960, type: 'fnb_unit',     tc: 'Bishan-Toa Payoh Town Council', base: 6.3 },
+  { id: 'BTP-BC-003', lat: 1.33720, lng: 103.85440, type: 'bin_centre',   tc: 'Bishan-Toa Payoh Town Council', base: 3.1 },
+  { id: 'BTP-BC-004', lat: 1.34640, lng: 103.84870, type: 'bin_centre',   tc: 'Bishan-Toa Payoh Town Council', base: 5.4 },
+  { id: 'BTP-FB-005', lat: 1.34700, lng: 103.84800, type: 'fnb_unit',     tc: 'Bishan-Toa Payoh Town Council', base: 4.8 },
+  { id: 'BTP-VD-006', lat: 1.35080, lng: 103.84520, type: 'void_deck',    tc: 'Bishan-Toa Payoh Town Council', base: 2.0 },
+  { id: 'BTP-RC-007', lat: 1.33180, lng: 103.85700, type: 'refuse_chute', tc: 'Bishan-Toa Payoh Town Council', base: 3.6 },
+  { id: 'BTP-VD-008', lat: 1.35510, lng: 103.83900, type: 'void_deck',    tc: 'Bishan-Toa Payoh Town Council', base: 1.7 },
+
+  // --- Nee Soon TC: burrow escalation at Yishun Ring Rd --------------------
+  { id: 'NSN-BC-001', lat: 1.42970, lng: 103.83600, type: 'bin_centre',   tc: 'Nee Soon Town Council', base: 7.8 },
+  { id: 'NSN-RC-002', lat: 1.43030, lng: 103.83540, type: 'refuse_chute', tc: 'Nee Soon Town Council', base: 6.9 },
+  { id: 'NSN-VD-003', lat: 1.43220, lng: 103.83890, type: 'void_deck',    tc: 'Nee Soon Town Council', base: 4.6 },
+  { id: 'NSN-FB-004', lat: 1.42760, lng: 103.83530, type: 'fnb_unit',     tc: 'Nee Soon Town Council', base: 5.1 },
+  { id: 'NSN-BC-005', lat: 1.43610, lng: 103.84150, type: 'bin_centre',   tc: 'Nee Soon Town Council', base: 2.8 },
+  { id: 'NSN-VD-006', lat: 1.42280, lng: 103.83180, type: 'void_deck',    tc: 'Nee Soon Town Council', base: 1.9 },
+  { id: 'NSN-RC-007', lat: 1.44050, lng: 103.83760, type: 'refuse_chute', tc: 'Nee Soon Town Council', base: 3.3 },
+
+  // --- Sembawang TC: quietest, matching the low/medium reports there -------
+  { id: 'SMB-BC-001', lat: 1.44860, lng: 103.81820, type: 'bin_centre',   tc: 'Sembawang Town Council', base: 4.4 },
+  { id: 'SMB-FB-002', lat: 1.44910, lng: 103.81760, type: 'fnb_unit',     tc: 'Sembawang Town Council', base: 3.9 },
+  { id: 'SMB-VD-003', lat: 1.45080, lng: 103.82330, type: 'void_deck',    tc: 'Sembawang Town Council', base: 2.1 },
+  { id: 'SMB-RC-004', lat: 1.44620, lng: 103.82040, type: 'refuse_chute', tc: 'Sembawang Town Council', base: 2.6 },
+  { id: 'SMB-BC-005', lat: 1.45330, lng: 103.81530, type: 'bin_centre',   tc: 'Sembawang Town Council', base: 1.8 },
+  { id: 'SMB-VD-006', lat: 1.44300, lng: 103.82580, type: 'void_deck',    tc: 'Sembawang Town Council', base: 1.4 },
+];
+
+// Deterministic pseudo-noise: a seeded run must reproduce the same surface, so
+// Math.random() is deliberately avoided.
+function sensorNoise(i, day) {
+  return (Math.sin(i * 12.9898 + day * 78.233) * 43758.5453) % 1;
+}
+
+// One reading per sensor every ~2 days over the window, with a mild upward drift
+// on the hot sensors so the "as of" scrubber shows a story rather than noise.
+function buildSensorReadings(days = 30, stepDays = 2) {
+  const rows = [];
+  SENSOR_DEPLOYMENT.forEach((s, i) => {
+    for (let d = days; d >= 0; d -= stepDays) {
+      const progress = (days - d) / days;              // 0 at oldest -> 1 at newest
+      const drift = s.base >= 6 ? progress * 1.8 : progress * 0.3;
+      const wobble = sensorNoise(i, d) * 1.1;
+      const level = Math.max(0, Math.round((s.base + drift + wobble) * 10) / 10);
+      rows.push({
+        sensor_id: s.id,
+        lat: s.lat,
+        lng: s.lng,
+        location_type: s.type,
+        town_council: s.tc,
+        activity_level: level,
+        recorded_at: daysAgo(d, 6 + (i % 12)),
+        is_simulated: true,   // never anything else in seed data
+      });
+    }
+  });
+  return rows;
+}
+
 const FEEDING_FIXTURES = [
   // near Block 123 - co-occurs with the 123 rodent cluster
   { species: 'cat',    block_number: '123', floor_level: '1', behaviour_tags: ['feeding'], status: 'open', days_ago: 25, gps_lat: 1.36912, gps_lng: 103.84545, notes: 'Food bowls left at the void deck' },
@@ -321,8 +470,9 @@ async function seed() {
     { silent: true }
   );
 
+  await RodentAssessment.destroy({ where: { observations: RODENT_FIXTURES_REGIONAL.map(r => r.observations) } });
   await RodentAssessment.bulkCreate(
-    RODENT_FIXTURES.map(({ days_ago, ...r }, i) => ({
+    [...RODENT_FIXTURES, ...RODENT_FIXTURES_REGIONAL].map(({ days_ago, ...r }, i) => ({
       ...r,
       assessed_by: adminId,
       createdAt: daysAgo(days_ago, 9 + (i % 8)),
@@ -330,6 +480,12 @@ async function seed() {
     })),
     { silent: true }
   );
+
+  // SIMULATED sensor layer. Replaced wholesale each seed so a re-run does not
+  // stack duplicate readings on the same sensors.
+  await SensorReading.destroy({ where: {} });
+  const sensorRows = buildSensorReadings();
+  await SensorReading.bulkCreate(sensorRows, { silent: true });
 
   // sanity output so the demo runner can confirm the numbers before presenting
   const since = daysAgo(7, 0);
@@ -343,6 +499,7 @@ async function seed() {
   const rodentMapped = RODENT_FIXTURES.filter(r => r.gps_lat != null && r.gps_lng != null).length;
   const feedingMapped = FEEDING_FIXTURES.filter(f => f.gps_lat != null && f.gps_lng != null).length;
   console.log(`Correlation fixture: ${FEEDING_FIXTURES.length} feeding sightings (${feedingMapped} mapped) and ${RODENT_FIXTURES.length} rodent reports (${rodentMapped} mapped) across an Ang Mo Kio estate; feeding clustered near blocks 123 and 128.`);
+  console.log(`SIMULATED RATSENSE layer: ${SENSOR_DEPLOYMENT.length} sensors, ${sensorRows.length} readings across 4 town councils - is_simulated=true, excluded from every computed metric.`);
   console.log(`Login: ${DEMO_USERS.map(u => u.email).join(', ')}  (password: set via DEMO_PASSWORD env var)`);
 
   await sequelize.close();

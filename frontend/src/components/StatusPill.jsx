@@ -7,8 +7,8 @@ import { STATUS_META } from '../theme';
  */
 export default function StatusPill({ status, size = 'small' }) {
   const meta = STATUS_META[status] || {
-    bg: '#F0F1F3',
-    color: '#4B5563',
+    bg: 'var(--em-neutral-bg)',
+    color: 'var(--em-neutral-ink)',
     label: String(status ?? 'Unknown').replace(/_/g, ' '),
   };
   return (

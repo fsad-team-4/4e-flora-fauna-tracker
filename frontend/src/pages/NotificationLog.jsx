@@ -16,7 +16,7 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
 import http from '../http';
-import { BRAND } from '../theme';
+import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import NotificationTimeline from '../components/NotificationTimeline';
 import UndoSnackbar from '../components/UndoSnackbar';
 
@@ -32,7 +32,7 @@ const SOURCE_LINK = {
 const CHANNEL_ICON = { email: EmailOutlinedIcon, sms: SmsOutlinedIcon, both: EmailOutlinedIcon };
 
 function StatTile({ label, value, sub, tone }) {
-  const valueColor = tone === 'bad' ? FAILED_RED : tone === 'good' ? '#1E6023' : BRAND.heading;
+  const valueColor = tone === 'bad' ? ON_SURFACE.danger : tone === 'good' ? INTENT.success.ink : BRAND.heading;
   return (
     <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '10px' }}>
       <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</Typography>
@@ -326,16 +326,16 @@ export default function NotificationLog() {
         <Paper
           sx={{
             display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.5, mb: 2.5,
-            border: `1px solid ${FAILED_RED}`, bgcolor: '#FDECEA', borderRadius: '10px', flexWrap: 'wrap',
+            border: `1px solid ${INTENT.danger.border}`, bgcolor: INTENT.danger.bg, borderRadius: '10px', flexWrap: 'wrap',
           }}
         >
-          <WarningAmberRoundedIcon sx={{ color: FAILED_RED }} />
+          <WarningAmberRoundedIcon sx={{ color: INTENT.danger.ink }} />
           <Box sx={{ minWidth: 180, flexGrow: 1 }}>
-            <Typography sx={{ color: FAILED_RED, fontWeight: 700, lineHeight: 1.3 }}>
+            <Typography sx={{ color: INTENT.danger.ink, fontWeight: 700, lineHeight: 1.3 }}>
               {failureSummary.count} {failureSummary.count === 1 ? 'notification' : 'notifications'} didn't reach {failureSummary.recipientCount > 1 ? `${failureSummary.recipientCount} recipients` : 'their recipient'}
               {failureSummary.span && ` · ${failureSummary.span}`}
             </Typography>
-            <Typography sx={{ color: FAILED_RED, fontSize: 12, opacity: 0.9 }}>
+            <Typography sx={{ color: INTENT.danger.ink, fontSize: 12, opacity: 0.9 }}>
               {failureSummary.channels.length === 1 && failureSummary.channels[0] === 'sms'
                 ? "The text messages couldn't be delivered. Use Resend to try again."
                 : failureSummary.channels.length === 1
@@ -355,7 +355,7 @@ export default function NotificationLog() {
             {resendingAll ? 'Resending…' : `Resend all (${failureSummary.count})`}
           </Button>
           {statusFilter !== 'failed' && (
-            <Button size="small" onClick={() => setStatusFilter('failed')} sx={{ color: FAILED_RED, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            <Button size="small" onClick={() => setStatusFilter('failed')} sx={{ color: INTENT.danger.ink, whiteSpace: 'nowrap', flexShrink: 0 }}>
               View failed
             </Button>
           )}
@@ -424,7 +424,7 @@ export default function NotificationLog() {
                 const ChI = CHANNEL_ICON[last.channel] || EmailOutlinedIcon;
                 const isOpen = openIncident === item.key;
                 return (
-                  <TableRow key={`inc-${item.key}`} sx={{ bgcolor: last.resolved_at ? BRAND.section : '#FDECEA' }}>
+                  <TableRow key={`inc-${item.key}`} sx={{ bgcolor: last.resolved_at ? BRAND.section : INTENT.danger.bg }}>
                     <TableCell colSpan={6} sx={{ borderLeft: `3px solid ${last.resolved_at ? BRAND.border : BRAND.primary}`, py: 1.25 }}>
                       <Box
                         component="button"
@@ -456,14 +456,14 @@ export default function NotificationLog() {
                       {/* one shared reason, stated once - every attempt in the run
                           carries the same one, so repeating it per line is noise */}
                       {last.message_preview && (
-                        <Typography sx={{ fontSize: 12.5, color: last.resolved_at ? BRAND.textLight : FAILED_RED, mt: 0.5 }}>
+                        <Typography sx={{ fontSize: 12.5, color: last.resolved_at ? BRAND.textLight : INTENT.danger.ink, mt: 0.5 }}>
                           {cleanReason(last.message_preview)}
                         </Typography>
                       )}
                       {/* resend the whole outage run (button lives outside the expand button) */}
                       <Box sx={{ mt: 0.75 }}>
                         {last.resolved_at ? (
-                          <Chip icon={<DoneRoundedIcon sx={{ fontSize: 15 }} />} label="Resolved by resend" size="small" sx={{ bgcolor: '#E7F4E8', color: '#1E6023', fontWeight: 600, borderRadius: '6px' }} />
+                          <Chip icon={<DoneRoundedIcon sx={{ fontSize: 15 }} />} label="Resolved by resend" size="small" sx={{ bgcolor: INTENT.success.bg, color: INTENT.success.ink, fontWeight: 600, borderRadius: '6px' }} />
                         ) : (
                           <Button size="small" startIcon={<ReplayRoundedIcon sx={{ fontSize: 16 }} />} onClick={() => resend(last.id)} disabled={busyId === last.id} sx={{ color: BRAND.slate }}>
                             {busyId === last.id ? 'Resending…' : 'Resend'}
@@ -498,7 +498,7 @@ export default function NotificationLog() {
               const failed = log.status === 'failed';
               const ChIcon = CHANNEL_ICON[log.channel] || EmailOutlinedIcon;
               return (
-                <TableRow key={log.id} hover sx={{ bgcolor: failed ? '#FDECEA' : 'inherit' }}>
+                <TableRow key={log.id} hover sx={{ bgcolor: failed ? INTENT.danger.bg : 'inherit' }}>
                   {/* Time only - the day is in the header (#4) */}
                   <TableCell sx={{ whiteSpace: 'nowrap', borderLeft: failed ? `3px solid ${BRAND.accent}` : '3px solid transparent' }}>
                     <Tooltip title={formatExact(log.createdAt)} arrow placement="top">
@@ -522,7 +522,7 @@ export default function NotificationLog() {
                       ? <Box component="span">{log.subject}</Box>
                       : <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic' }}>rule deleted</Box>)}
                     {failed && (log.error_reason || log.message_preview) && (
-                      <Typography sx={{ fontSize: 12, color: log.resolved_at ? BRAND.textLight : FAILED_RED, mt: 0.25 }}>
+                      <Typography sx={{ fontSize: 12, color: log.resolved_at ? BRAND.textLight : INTENT.danger.ink, mt: 0.25 }}>
                         {log.error_reason || log.message_preview}
                       </Typography>
                     )}
@@ -551,10 +551,10 @@ export default function NotificationLog() {
                   <TableCell align="right">
                     {failed ? (
                       log.resolved_at
-                        ? <Chip label="Resolved" size="small" sx={{ bgcolor: '#E7F4E8', color: '#1E6023', fontWeight: 700, borderRadius: '6px' }} />
+                        ? <Chip label="Resolved" size="small" sx={{ bgcolor: INTENT.success.bg, color: INTENT.success.ink, fontWeight: 700, borderRadius: '6px' }} />
                         : <Chip label="Failed" size="small" sx={{ bgcolor: FAILED_RED, color: '#fff', fontWeight: 700, borderRadius: '6px' }} />
                     ) : log.status === 'pending' ? (
-                      <Chip label="Pending" size="small" sx={{ bgcolor: '#FFF4E5', color: '#8A5200', fontWeight: 600, borderRadius: '6px' }} />
+                      <Chip label="Pending" size="small" sx={{ bgcolor: INTENT.warning.bg, color: INTENT.warning.ink, fontWeight: 600, borderRadius: '6px' }} />
                     ) : (
                       <Typography component="span" sx={{ fontSize: 12.5, color: BRAND.textLight }}>Sent</Typography>
                     )}
@@ -569,7 +569,7 @@ export default function NotificationLog() {
                     {log.status === 'sent' && (
                       log.acknowledged_at
                         ? <Tooltip title={`Acknowledged by ${log.acknowledged_by_name || 'staff'}`} arrow><Chip icon={<DoneRoundedIcon sx={{ fontSize: 14 }} />} label="Ack'd" size="small" sx={{ bgcolor: BRAND.section, color: BRAND.textLight, fontWeight: 600, borderRadius: '6px' }} /></Tooltip>
-                        : <Tooltip title="Mark as acknowledged / acted on" arrow><IconButton size="small" onClick={() => acknowledge(log.id)} disabled={busyId === log.id} aria-label="Mark acknowledged" sx={{ color: BRAND.textLight, '&:hover': { color: '#1E6023' } }}><CheckCircleOutlineRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
+                        : <Tooltip title="Mark as acknowledged / acted on" arrow><IconButton size="small" onClick={() => acknowledge(log.id)} disabled={busyId === log.id} aria-label="Mark acknowledged" sx={{ color: BRAND.textLight, '&:hover': { color: ON_SURFACE.ok } }}><CheckCircleOutlineRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
                     )}
                   </TableCell>
                 </TableRow>

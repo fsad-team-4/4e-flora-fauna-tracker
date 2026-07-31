@@ -9,15 +9,15 @@ import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded
 import DoNotDisturbAltOutlinedIcon from '@mui/icons-material/DoNotDisturbAltOutlined';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
-import { BRAND } from '../theme';
+import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import http from '../http';
 
 // Risk chip styling matches the RodentAssessment page + Action Queue (this surface
 // already uses the red/amber/green risk scale; the map is the surface that doesn't).
 const RISK_META = {
-  low: { label: 'Low', bg: '#E7F4E8', color: '#1E6023' },
-  medium: { label: 'Medium', bg: '#FFF4E5', color: '#8A5200' },
-  high: { label: 'High', bg: '#FDECEA', color: '#B3261E' },
+  low: { label: 'Low', bg: 'var(--em-ok-bg)', color: 'var(--em-ok-ink)' },
+  medium: { label: 'Medium', bg: 'var(--em-warn-bg)', color: 'var(--em-warn-ink)' },
+  high: { label: 'High', bg: 'var(--em-danger-bg)', color: 'var(--em-danger-ink)' },
   critical: { label: 'Critical', bg: '#B3261E', color: '#FFFFFF' },
 };
 
@@ -41,28 +41,43 @@ function normalizeAction(a) {
 // done = green (a completed step), pending = amber (in progress), neutral = slate,
 // future = hollow dashed (explicitly unbuilt). Kept off the risk red so a "done"
 // step never reads as "critical".
+// Scheme-aware: the old flat #ED9B00 was only 2.26:1 on a white card, under the
+// 3:1 a coloured dot needs to register as a graphic at all.
+// `ink` colours the icon + dot border; `tint` is the dot fill. Tints come from the
+// INTENT bg tokens (the inks are var() strings, so an alpha suffix like `${c}1A`
+// would produce invalid CSS); the future dot is "hollow" = the card colour.
 const TONE = {
-  done: '#2E7D32',
-  pending: '#ED9B00',
-  neutral: BRAND.slate,
-  future: BRAND.textLight,
+  done: { ink: ON_SURFACE.ok, tint: INTENT.success.bg },
+  pending: { ink: 'var(--em-prio-medium)', tint: INTENT.warning.bg },
+  neutral: { ink: 'var(--em-neutral-ink)', tint: INTENT.neutral.bg },
+  future: { ink: BRAND.textLight, tint: BRAND.surface },
 };
-function Stage({ label, icon, tone = 'neutral', last = false, badge, children }) {
-  const color = TONE[tone] || TONE.neutral;
+function Stage({ label, icon, tone = 'neutral', last = false, badge, tinted = false, children }) {
+  const { ink: color, tint } = TONE[tone] || TONE.neutral;
   return (
     <Box sx={{ display: 'flex', gap: 1.5 }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pt: 0.25 }}>
-        <Box aria-hidden sx={{ width: 26, height: 26, borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0, bgcolor: tone === 'future' ? '#fff' : `${color}1A`, border: `1.5px ${tone === 'future' ? 'dashed' : 'solid'} ${tone === 'future' ? BRAND.border : color}` }}>
+        <Box aria-hidden sx={{ width: 26, height: 26, borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0, bgcolor: tint, border: `1.5px ${tone === 'future' ? 'dashed' : 'solid'} ${tone === 'future' ? BRAND.border : color}` }}>
           {icon}
         </Box>
         {!last && <Box aria-hidden sx={{ flexGrow: 1, width: 2, bgcolor: BRAND.border, my: 0.5, minHeight: 12 }} />}
       </Box>
       <Box sx={{ pb: last ? 0 : 2.5, flexGrow: 1, minWidth: 0 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.75, flexWrap: 'wrap', rowGap: 0.5 }}>
-          <Typography sx={{ fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: BRAND.textLight }}>{label}</Typography>
+          {/* title is the scannable anchor, so it takes heading ink and weight;
+              the dates/coords inside Field() stay muted */}
+          <Typography sx={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: BRAND.heading }}>{label}</Typography>
           {badge}
         </Stack>
-        {children}
+        {/* `tinted` marks machine-generated content: an info-tinted well with its
+            own hairline, so AI output never reads as something a person wrote */}
+        {tinted
+          ? (
+            <Box sx={{ p: 1.5, borderRadius: '10px', bgcolor: INTENT.info?.bg || 'var(--em-info-bg)', border: `1px solid ${INTENT.info?.border || 'var(--em-info-border)'}` }}>
+              {children}
+            </Box>
+          )
+          : children}
       </Box>
     </Box>
   );
@@ -70,12 +85,12 @@ function Stage({ label, icon, tone = 'neutral', last = false, badge, children })
 function Field({ label, children }) {
   return (
     <Box sx={{ mb: 1 }}>
-      <Typography sx={{ fontSize: 11, color: BRAND.textLight, mb: 0.1 }}>{label}</Typography>
+      <Typography sx={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px', color: BRAND.textLight, mb: 0.1 }}>{label}</Typography>
       <Typography component="div" sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>{children}</Typography>
     </Box>
   );
 }
-const stageIcon = (Comp, tone) => <Comp sx={{ fontSize: 16, color: TONE[tone] || TONE.neutral }} />;
+const stageIcon = (Comp, tone) => <Comp sx={{ fontSize: 16, color: (TONE[tone] || TONE.neutral).ink }} />;
 
 /**
  * Assessment lifecycle side panel: "what happened to this report?" - reported ->
@@ -105,16 +120,20 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
   const a = ready && !fetched.error ? fetched.data : null;
 
   const wo = a?.work_order || null;
-  const lat = a ? Number(a.gps_lat) : NaN;
-  const lng = a ? Number(a.gps_lng) : NaN;
-  const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
+  // Number(null) is 0 and Number.isFinite(0) is true, so a report filed WITHOUT a
+  // position used to render "0.00000, 0.00000" plus a live "view on risk map" link
+  // pointing at the null island. Absent coordinates must read as absent.
+  const num = v => (v == null || v === '' ? NaN : Number(v));
+  const lat = a ? num(a.gps_lat) : NaN;
+  const lng = a ? num(a.gps_lng) : NaN;
+  const hasLoc = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
   const actions = (a?.immediate_actions || []).map(normalizeAction);
   const risk = a ? (RISK_META[a.risk_level] || { label: a.risk_level || 'Unknown', bg: BRAND.section, color: BRAND.text }) : null;
 
   return (
     <Drawer anchor="right" open={open} onClose={onClose}
       slotProps={{
-        paper: { sx: { width: { xs: '100%', sm: 420 }, maxWidth: '100%' } },
+        paper: { sx: { width: { xs: '100%', sm: 420 }, maxWidth: '100%', display: 'flex', flexDirection: 'column' } },
         // lighter scrim so the assessments table stays visible for comparison
         backdrop: { sx: { backgroundColor: 'rgba(16,24,40,0.24)' } },
       }}>
@@ -123,7 +142,8 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
         <IconButton onClick={onClose} aria-label="Close panel" sx={{ color: BRAND.textLight }}><CloseRoundedIcon /></IconButton>
       </Box>
 
-      <Box sx={{ p: 2.5, overflowY: 'auto' }}>
+      {/* flex column + scrolling middle, so the footer below can pin itself */}
+      <Box sx={{ p: 2.5, overflowY: 'auto', flexGrow: 1, minHeight: 0 }}>
         {loading ? (
           <Stack spacing={2}>
             <Skeleton variant="rounded" height={90} />
@@ -147,8 +167,10 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
               <Field label="Officer's observation">{orNR(a.observations)}</Field>
             </Stage>
 
-            {/* ASSESSED */}
-            <Stage label="Assessed by AI" tone="done" icon={stageIcon(AutoAwesomeOutlinedIcon, 'done')}>
+            {/* ASSESSED - wrapped in a tinted card so the AI's output is visibly
+                distinct from the officer's own reported facts above it */}
+            <Stage label="Assessed by AI" tone="done" icon={stageIcon(AutoAwesomeOutlinedIcon, 'done')} tinted>
+              <Box sx={{ p: 1.75, borderRadius: '10px', bgcolor: BRAND.navySoft, border: `1px solid ${BRAND.border}` }}>
               <Box sx={{ mb: 1 }}>
                 <Typography sx={{ fontSize: 11, color: BRAND.textLight, mb: 0.35 }}>Risk level</Typography>
                 {a.risk_level
@@ -166,7 +188,7 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
               </Box>
               <Field label="Escalation recommendation">
                 {a.escalate_to_contractor
-                  ? <>Recommended a contractor call-out{a.escalation_reason ? ` — ${a.escalation_reason}` : ''}.</>
+                  ? <>Recommended a contractor call-out{a.escalation_reason ? ` - ${a.escalation_reason}` : ''}.</>
                   : 'The AI did not recommend a contractor call-out.'}
               </Field>
               {a.image_url && (
@@ -190,6 +212,7 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
                   </Typography>
                 </Box>
               )}
+              </Box>
             </Stage>
 
             {/* OUTCOME - the lifecycle answer */}
@@ -198,7 +221,7 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
                 label="Escalated → work order"
                 tone={wo.status === 'closed' ? 'done' : 'pending'}
                 icon={stageIcon(LocalShippingOutlinedIcon, wo.status === 'closed' ? 'done' : 'pending')}
-                badge={<Chip label={wo.status === 'closed' ? 'Closed' : 'Open'} size="small" sx={{ height: 20, fontSize: 11, fontWeight: 700, borderRadius: '6px', bgcolor: wo.status === 'closed' ? '#E7F4E8' : '#FFF4E5', color: wo.status === 'closed' ? '#1E6023' : '#8A5200' }} />}
+                badge={<Chip label={wo.status === 'closed' ? 'Closed' : 'Open'} size="small" sx={{ height: 20, fontSize: 11, fontWeight: 700, borderRadius: '6px', bgcolor: wo.status === 'closed' ? 'var(--em-ok-bg)' : 'var(--em-warn-bg)', color: wo.status === 'closed' ? 'var(--em-ok-ink)' : 'var(--em-warn-ink)' }} />}
               >
                 <Field label="Target agency">{orNR(wo.target_agency)}</Field>
                 <Field label="Approved by">
@@ -230,13 +253,11 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
               </Stage>
             ) : a.escalate_to_contractor ? (
               <Stage label="Awaiting approval" tone="pending" icon={stageIcon(HourglassEmptyRoundedIcon, 'pending')}>
-                <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55, mb: 1 }}>
+                <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>
                   Escalation recommended, but no officer has approved a work order yet. It's waiting in the Action Queue.
                 </Typography>
-                <Button component={RouterLink} to="/action-queue" size="small" variant="outlined" onClick={onClose}
-                  sx={{ textTransform: 'none', color: BRAND.slate, borderColor: BRAND.border, '&:hover': { borderColor: BRAND.slate } }}>
-                  Open Action Queue
-                </Button>
+                {/* the button itself now lives in the sticky footer, so it stays
+                    reachable however long this panel scrolls */}
               </Stage>
             ) : (
               <Stage label="No escalation" tone="neutral" icon={stageIcon(CheckCircleOutlineRoundedIcon, 'neutral')}>
@@ -256,6 +277,40 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
           </>
         ) : null}
       </Box>
+
+      {/* Sticky action bar: the queue is where an awaiting-approval report is acted
+          on, so the way there must not depend on scrolling to the right stage. */}
+      {a && (
+        <Box
+          sx={{
+            p: 2, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface,
+            position: 'sticky', bottom: 0, flexShrink: 0,
+            boxShadow: '0 -2px 8px rgba(16,24,40,.06)',
+            // gradient fade above the bar: signals there is more content scrolled
+            // under it, which a hard border alone does not convey
+            '&::before': {
+              content: '""', position: 'absolute', left: 0, right: 0, top: -24, height: 24,
+              pointerEvents: 'none',
+              background: `linear-gradient(to top, ${BRAND.surface}, transparent)`,
+            },
+          }}
+        >
+          <Button
+            component={RouterLink}
+            to="/action-queue"
+            onClick={onClose}
+            fullWidth
+            variant={a.escalate_to_contractor && !a.work_order && a.escalation_status !== 'dismissed' ? 'contained' : 'outlined'}
+            sx={
+              a.escalate_to_contractor && !a.work_order && a.escalation_status !== 'dismissed'
+                ? { fontWeight: 700, bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }
+                : { fontWeight: 600, color: BRAND.text, borderColor: BRAND.border, '&:hover': { borderColor: BRAND.slate } }
+            }
+          >
+            Open Action Queue
+          </Button>
+        </Box>
+      )}
     </Drawer>
   );
 }

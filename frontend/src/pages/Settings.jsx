@@ -192,7 +192,7 @@ export default function Settings() {
                   variant="outlined"
                   size="small"
                   endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 16 }} />}
-                  sx={{ flexShrink: 0, borderColor: BRAND.border, color: BRAND.slate, '&:hover': { borderColor: BRAND.slate } }}
+                  sx={{ flexShrink: 0, borderColor: BRAND.border, color: BRAND.text, '&:hover': { borderColor: BRAND.textLight } }}
                 >
                   Open
                 </Button>

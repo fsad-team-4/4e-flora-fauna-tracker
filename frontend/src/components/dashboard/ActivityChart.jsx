@@ -5,7 +5,7 @@ import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { BRAND } from '../../theme';
+import { BRAND, SVG_ACCENT } from '../../theme';
 
 // Bar + line combo. The stacked area rendered as two near-flat bands, which said
 // almost nothing: rounded bars give fauna sightings a countable shape, and a bold
@@ -14,11 +14,13 @@ import { BRAND } from '../../theme';
 // LITERAL colours only. These are data, not CSS: they go to alpha() for the legend
 // tints and into recharts' SVG stroke/fill attributes. A var(--...) token makes
 // alpha() throw and never resolves in an SVG attribute, so BRAND.accent is banned
-// here - use BRAND.primary.
-const SERIES = [
-  { key: 'sightings', name: 'Fauna sightings', color: '#8CA3BD', mark: 'bar' },
-  { key: 'openCases', name: 'Open cases', color: BRAND.primary, mark: 'line' },
-];
+// here - the scheme is carried by the SVG_ACCENT literals, indexed by palette mode.
+function buildSeries(mode) {
+  return [
+    { key: 'sightings', name: 'Fauna sightings', color: '#8CA3BD', mark: 'bar' },
+    { key: 'openCases', name: 'Open cases', color: SVG_ACCENT[mode].danger, mark: 'line' },
+  ];
+}
 
 function fmtDay(iso) {
   const d = new Date(iso);
@@ -55,13 +57,13 @@ function LegendToggle({ color, label, mark, active, onClick }) {
 
 // No combined total here: the two series now sit on separate axes, so adding them
 // would produce a number that means nothing.
-function ChartTooltip({ active, payload, label }) {
+function ChartTooltip({ active, payload, label, series = [] }) {
   if (!active || !payload?.length) return null;
   return (
     <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 12px 32px rgba(16,24,40,.15)', px: 1.5, py: 1 }}>
       <Typography sx={{ fontSize: 12, color: BRAND.textLight, mb: 0.5, fontWeight: 600 }}>{fmtDay(label)}</Typography>
       {payload.map(p => {
-        const meta = SERIES.find(s => s.key === p.dataKey);
+        const meta = series.find(s => s.key === p.dataKey);
         return (
           <Stack key={p.dataKey} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <Box aria-hidden sx={{ width: 9, height: 9, bgcolor: p.color, borderRadius: meta?.mark === 'line' ? '50%' : '2px' }} />
@@ -84,6 +86,7 @@ export default function ActivityChart({ history = [] }) {
   const theme = useTheme();
   const gridInk = theme.palette.divider;
   const axisInk = theme.palette.text.secondary;
+  const SERIES = buildSeries(theme.palette.mode);
 
   const data = useMemo(() => history.map(h => ({ ...h, label: h.date })), [history]);
   const summary = data.length
@@ -170,7 +173,7 @@ export default function ActivityChart({ history = [] }) {
                 />
                 <Tooltip
                   cursor={{ stroke: axisInk, strokeWidth: 1, strokeDasharray: '3 3' }}
-                  content={<ChartTooltip />}
+                  content={<ChartTooltip series={SERIES} />}
                 />
                 {!hidden.sightings && (
                   <Bar
@@ -196,8 +199,8 @@ export default function ActivityChart({ history = [] }) {
                     stroke={SERIES[1].color}
                     strokeWidth={3}
                     strokeLinecap="round"
-                    dot={{ r: 3.5, fill: '#fff', stroke: SERIES[1].color, strokeWidth: 2 }}
-                    activeDot={{ r: 6, fill: SERIES[1].color, stroke: '#fff', strokeWidth: 2 }}
+                    dot={{ r: 3.5, fill: theme.palette.background.paper, stroke: SERIES[1].color, strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: SERIES[1].color, stroke: theme.palette.background.paper, strokeWidth: 2 }}
                     filter={`url(#${lineShadowId})`}
                     animationBegin={0}
                     animationDuration={800}

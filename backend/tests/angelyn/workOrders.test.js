@@ -89,14 +89,15 @@ describe('POST /api/work-orders (approve & consolidate)', () => {
 
     const res = await request(app)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ assessment_ids: ids });
     expect(res.status).toBe(201);
     expect(res.body.consolidated_count).toBe(3);
     expect(res.body.risk_level).toBe('high');
     expect(res.body.call_outs_avoided).toBe(2);
-    expect(res.body.approved_by_name).toBe('Staff');
-    expect(res.body.status).toBe('open');
+    expect(res.body.approved_by_name).toBe('Admin');
+    // 'raised' replaces the old 'open' as the first pipeline stage
+    expect(res.body.status).toBe('raised');
 
     const after = await request(app).get('/api/work-orders/queue').set('Authorization', `Bearer ${staffToken}`);
     expect(after.body.clusters.find(c => c.block === 'Block 100')).toBeUndefined();
@@ -106,7 +107,7 @@ describe('POST /api/work-orders (approve & consolidate)', () => {
   test('empty assessment_ids -> 400', async () => {
     const res = await request(app)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ assessment_ids: [] });
     expect(res.status).toBe(400);
   });
@@ -115,9 +116,18 @@ describe('POST /api/work-orders (approve & consolidate)', () => {
     const wo = await WorkOrder.findOne({ order: [['createdAt', 'DESC']] });
     const res = await request(app)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${staffToken}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({ assessment_ids: wo.assessment_ids });
     expect(res.status).toBe(400);
+  });
+
+  test('staff cannot approve - raising a work order commits money (admin only)', async () => {
+    const a = await makeAssessment({ block_number: 'Block 950' });
+    const res = await request(app)
+      .post('/api/work-orders')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .send({ assessment_ids: [a.id] });
+    expect(res.status).toBe(403);
   });
 
   test('resident cannot approve -> 403', async () => {
@@ -190,7 +200,7 @@ describe('POST /api/work-orders/dismiss (audit trail)', () => {
 
 describe('PATCH /api/work-orders/:id/close', () => {
   test('closing an open work order marks it closed with an audit stamp', async () => {
-    const wo = await WorkOrder.findOne({ where: { status: 'open' }, order: [['createdAt', 'ASC']] });
+    const wo = await WorkOrder.findOne({ where: { status: 'raised' }, order: [['createdAt', 'ASC']] });
     const res = await request(app)
       .patch(`/api/work-orders/${wo.id}/close`)
       .set('Authorization', `Bearer ${adminToken}`);

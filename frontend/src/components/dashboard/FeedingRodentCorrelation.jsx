@@ -6,14 +6,17 @@ import {
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import { BRAND } from '../../theme';
+import { useTheme } from '@mui/material/styles';
+import { BRAND, INTENT, ON_SURFACE } from '../../theme';
 import http from '../../http';
 
-// Deepened variants of the feeding/rodent signal hues. The categorical set is tuned
-// for fills on white; these digits sit on a tinted zebra row, so they need the extra
-// depth to stay well clear of AA (10.5:1 and 8.4:1 respectively).
-const FEEDING_INK = '#1E3A5F'; // navy - the feeding (food-source) signal
-const RODENT_INK = '#8E1038';  // deep crimson - the rodent signal
+// The feeding/rodent signal hues, per scheme. In light the inks are deepened
+// (navy 10.5:1, deep crimson 8.4:1 on the zebra stripe); in dark they are
+// lightened so the same digits stay well clear of AA on the dark card and stripe.
+const SIGNAL_INK = {
+  light: { feeding: '#1E3A5F', rodent: '#8E1038' }, // navy / deep crimson
+  dark: { feeding: '#8FB8E8', rodent: '#FF8FA8' },
+};
 
 // Below this many records the pattern is not statistically meaningful; the table
 // says so in its own column rather than burying it in prose.
@@ -43,7 +46,7 @@ function StatusBadge({ children, title }) {
       component="span"
       sx={{
         display: 'inline-block', px: 0.85, py: '2px', borderRadius: '6px',
-        bgcolor: '#FFF8EC', color: '#7C4A03', border: '1px solid #F0E2C4',
+        bgcolor: INTENT.warning.bg, color: INTENT.warning.ink, border: `1px solid ${INTENT.warning.border}`,
         fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
       }}
     >
@@ -57,25 +60,34 @@ function StatusBadge({ children, title }) {
  * Count cell. Semantic colour applied directly to a heavily weighted figure - no
  * background block behind it, which read as disconnected from the number.
  *
- * The inks are deliberately DEEPER than the signal hues used elsewhere, because
- * these digits sit on a tinted zebra row: navy #1E3A5F measures 10.5:1 and deep
- * crimson #8E1038 measures 8.4:1 against the striped background, where the original
- * mid-blue/magenta pair was only ~5.4:1. Right-aligned so digits stack.
+ * The inks come from SIGNAL_INK, tuned per scheme (see that constant's note), so
+ * the digits stay well clear of AA against the zebra rows in both schemes.
+ * Right-aligned so digits stack.
  */
-function NumCell({ value, color, dim = false }) {
+function NumCell({ value, color, dim = false, heat = false }) {
   const flat = dim || !value;
+  // heat dot: red at/above 5, amber at 3-4, none below. Communicates severity at a
+  // glance so the reader is not parsing integers to find the bad rows.
+  const dot = heat && value >= 3 ? (value >= 5 ? ON_SURFACE.danger : ON_SURFACE.warn) : null;
   return (
     <TableCell align="right" sx={{ py: 1.25 }}>
-      <Typography
-        component="span"
-        sx={{
-          fontSize: 15.5, fontWeight: 800,
-          color: flat ? BRAND.textLight : color,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {value}
-      </Typography>
+      <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
+        {dot && (
+          <Tooltip title={value >= 5 ? 'High volume' : 'Moderate volume'}>
+            <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dot, flexShrink: 0 }} />
+          </Tooltip>
+        )}
+        <Typography
+          component="span"
+          sx={{
+            fontSize: 15.5, fontWeight: 800,
+            color: flat ? BRAND.textLight : color,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {value}
+        </Typography>
+      </Stack>
     </TableCell>
   );
 }
@@ -83,17 +95,21 @@ function NumCell({ value, color, dim = false }) {
 // Explicit widths summing to 100%, so the table fills its container instead of
 // collapsing to content width and leaving dead space to the right.
 const COLUMNS = [
-  { id: 'block_number', label: 'Estate Block', align: 'left', width: '24%' },
-  { id: 'feedingCount', label: 'Feed Sightings', align: 'right', width: '15%' },
-  { id: 'rodentAssessmentCount', label: 'Rodent Reports', align: 'right', width: '15%' },
-  { id: 'elevatedRodentCount', label: 'At-Risk Cases', align: 'right', width: '15%' },
-  { id: 'sampleSize', label: 'Significance', align: 'left', width: '25%' },
+  { id: 'block_number', label: 'Estate Block', align: 'left', width: '17%' },
+  { id: 'feedingCount', label: 'Feed Sightings', align: 'right', width: '12%' },
+  { id: 'rodentAssessmentCount', label: 'Rodent Reports', align: 'right', width: '13%' },
+  { id: 'elevatedRodentCount', label: 'At-Risk Cases', align: 'right', width: '12%' },
+  // the first-seen ordering used to be reachable only by expanding a row; it is the
+  // single most useful sentence in the panel, so it gets a column of its own
+  { id: 'firstFeedingDate', label: 'Insights', align: 'left', width: '25%' },
+  { id: 'sampleSize', label: 'Significance', align: 'left', width: '15%' },
 ];
 // trailing expand column - not sortable, so it is not part of COLUMNS
 const EXPAND_COL_WIDTH = '6%';
 const COL_COUNT = COLUMNS.length + 1;
 
 function BlockRow({ block, index }) {
+  const ink = SIGNAL_INK[useTheme().palette.mode] || SIGNAL_INK.light;
   const [open, setOpen] = useState(false);
   const feedDate = fmtDate(block.firstFeedingDate);
   const rodentDate = fmtDate(block.firstRodentDate);
@@ -121,9 +137,17 @@ function BlockRow({ block, index }) {
             {block.block_number}
           </Typography>
         </TableCell>
-        <NumCell value={block.feedingCount} color={FEEDING_INK} />
-        <NumCell value={block.rodentAssessmentCount} color={RODENT_INK} />
-        <NumCell value={block.elevatedRodentCount} color={RODENT_INK} dim={block.elevatedRodentCount === 0} />
+        <NumCell value={block.feedingCount} color={ink.feeding} />
+        <NumCell value={block.rodentAssessmentCount} color={ink.rodent} heat />
+        <NumCell value={block.elevatedRodentCount} color={ink.rodent} dim={block.elevatedRodentCount === 0} />
+        <TableCell sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
+          <Typography sx={{ fontSize: 12.5, color: BRAND.text, lineHeight: 1.45 }}>
+            {feedDate ? `Feeding first seen ${feedDate}` : 'Feeding date not recorded'}
+          </Typography>
+          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.45 }}>
+            {rodentDate ? `rodent reports from ${rodentDate}` : 'rodent date not recorded'}
+          </Typography>
+        </TableCell>
         <TableCell sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
             <Tooltip
@@ -175,8 +199,8 @@ function BlockRow({ block, index }) {
               </Typography>
               {flagged && (
                 <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start', mt: 0.75 }}>
-                  <WarningAmberRoundedIcon sx={{ fontSize: 16, color: '#8A5200', mt: '1px', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 12.5, color: '#8A5200', lineHeight: 1.6 }}>
+                  <WarningAmberRoundedIcon sx={{ fontSize: 16, color: ON_SURFACE.warn, mt: '1px', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 12.5, color: ON_SURFACE.warn, lineHeight: 1.6 }}>
                     Feeding was first logged after the rodent reports here, so the ordering does not
                     support feeding as a driver - treat as co-occurrence only.
                   </Typography>

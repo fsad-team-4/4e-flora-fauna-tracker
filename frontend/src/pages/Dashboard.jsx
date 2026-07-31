@@ -17,7 +17,7 @@ import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useUser } from '../contexts/UserContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import { BRAND } from '../theme';
+import { BRAND, INTENT, ON_SURFACE, KPI_TONE } from '../theme';
 import http from '../http';
 import EstateHealthHero from '../components/dashboard/EstateHealthHero';
 import KpiCard from '../components/dashboard/KpiCard';
@@ -27,8 +27,6 @@ import FeedingRodentCorrelation from '../components/dashboard/FeedingRodentCorre
 import BlockPerformance from '../components/dashboard/BlockPerformance';
 import RecentActivity from '../components/dashboard/RecentActivity';
 
-// Shared secondary/tertiary hover wash - grey-100. Quieter than a border at rest.
-const SECONDARY_HOVER = '#F3F4F6';
 // Every content row hangs off one 12-column grid, so card edges line up down the
 // whole page instead of each row picking its own fractional split.
 const GRID_12 = { display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: 3, alignItems: 'start' };
@@ -45,35 +43,40 @@ function seriesOf(history, key) {
   return vals.every(v => typeof v === 'number' && Number.isFinite(v)) ? vals : null;
 }
 
-function buildKpis(m) {
+// `tone` supplies the icon ink and its tinted well per scheme. The ink also becomes
+// the sparkline's SVG stroke, which is why these are literals rather than var()
+// tokens - an SVG presentation attribute cannot resolve a CSS variable.
+function buildKpis(m, mode) {
   const t = m?.trends || {};
   const h = m?.history || [];
   const win = m?.windowDays ?? 7;
+  const tone = KPI_TONE[mode] || KPI_TONE.light;
   return [
     {
-      label: 'Open Cases', value: m?.openCases ?? 0, color: '#8A5200', tint: '#FFF4E5',
+      label: 'Open Cases', value: m?.openCases ?? 0, color: tone.warn.ink, tint: tone.warn.tint,
       icon: <FolderOpenOutlinedIcon />,
       trend: m ? { delta: t.open_cases?.sinceLastWeek ?? null, improve: 'down', base: m.openCases } : null,
       series: seriesOf(h, 'openCases'),
     },
     {
-      // literal, not BRAND.accent: KpiCard compares this against BRAND.primary to
-      // flag the critical state, and a var() token would never match. It also goes
-      // into the sparkline's SVG stroke, where var() would not resolve.
-      label: 'Critical Flora', value: m?.criticalFlora ?? 0, color: BRAND.primary, tint: '#FDECEA',
+      label: 'Critical Flora', value: m?.criticalFlora ?? 0, color: tone.danger.ink, tint: tone.danger.tint,
+      // explicit, rather than KpiCard inferring it by comparing the colour against
+      // BRAND.primary - that identity check silently broke the moment the hue
+      // became scheme-aware.
+      alarm: true,
       icon: <LocalFloristOutlinedIcon />,
       trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down', base: m.criticalFlora } : null,
       series: seriesOf(h, 'criticalFlora'),
     },
     {
-      label: 'Active Hotspots', value: m?.activeHotspots ?? 0, color: '#1565C0', tint: '#E8F1FB',
+      label: 'Active Hotspots', value: m?.activeHotspots ?? 0, color: tone.info.ink, tint: tone.info.tint,
       icon: <PlaceOutlinedIcon />,
       trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down', base: m.activeHotspots } : null,
       series: seriesOf(h, 'hotspots'),
     },
     {
       // tracks the picker: value, delta and sparkline all cover the same window
-      label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0, color: '#2E7D32', tint: '#E7F4E8',
+      label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0, color: tone.ok.ink, tint: tone.ok.tint,
       icon: <MarkEmailReadOutlinedIcon />,
       trend: m ? { delta: (m.notificationsWindow ?? 0) - (m.notificationsPrevWindow ?? 0), improve: null, base: m.notificationsWindow } : null,
       trendLabel: `vs prev ${win} days`,
@@ -155,6 +158,7 @@ function DashboardSkeleton() {
 export default function Dashboard() {
   const { user } = useUser();
   const theme = useTheme();
+  const mode = theme.palette.mode;
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   // Global time window: governs the history/trend series (charts + sparklines) and
   // the alerts KPI. Point-in-time counts are always "now" regardless.
@@ -168,7 +172,7 @@ export default function Dashboard() {
   const [scorecard, setScorecard] = useState(null);
   const [rangeAnchor, setRangeAnchor] = useState(null);
 
-  const kpis = useMemo(() => buildKpis(metrics), [metrics]);
+  const kpis = useMemo(() => buildKpis(metrics, mode), [metrics, mode]);
 
   // Mobile only: once the hero has scrolled off the top, the queue CTA re-appears
   // pinned to the bottom of the viewport, so the primary action is never more than
@@ -226,7 +230,7 @@ export default function Dashboard() {
   return (
     <Box
       component="main"
-      sx={{ width: '100%', maxWidth: 1440, mx: 'auto', px: { xs: 0, md: 1 }, pb: showStickyCta ? 12 : 6 }}
+      sx={{ width: '100%', px: { xs: 0, md: 1 }, pb: showStickyCta ? 12 : 6 }}
       aria-busy={loading}
     >
 
@@ -263,7 +267,7 @@ export default function Dashboard() {
             <Stack
               direction="row"
               spacing={0.75}
-              sx={{ alignItems: 'center', pl: 1, pr: 0.25, py: 0.25, borderRadius: '999px', bgcolor: '#F1F7F2', border: '1px solid #D6E7D9' }}
+              sx={{ alignItems: 'center', pl: 1, pr: 0.25, py: 0.25, borderRadius: '999px', bgcolor: INTENT.success.bg, border: `1px solid ${INTENT.success.border}` }}
             >
               <Box
                 aria-hidden
@@ -277,7 +281,7 @@ export default function Dashboard() {
                   animation: 'liveDot 2s ease-in-out infinite',
                 }}
               />
-              <Typography sx={{ color: '#1E6023', fontSize: 11.5, fontWeight: 700, letterSpacing: '0.3px' }}>LIVE</Typography>
+              <Typography sx={{ color: ON_SURFACE.ok, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.3px' }}>LIVE</Typography>
               <Typography sx={{ color: BRAND.textLight, fontSize: 11 }} aria-live="polite">
                 {syncedAgo || ''}
               </Typography>
@@ -307,7 +311,7 @@ export default function Dashboard() {
               sx={{
                 textTransform: 'none', fontWeight: 600, fontSize: 13.5, color: BRAND.text,
                 px: 1.25, py: 0.6, whiteSpace: 'nowrap',
-                '&:hover': { bgcolor: SECONDARY_HOVER, color: BRAND.heading },
+                '&:hover': { bgcolor: 'action.hover', color: BRAND.heading },
               }}
             >
               <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
@@ -341,7 +345,7 @@ export default function Dashboard() {
                   onClick={triggerSummary}
                   disabled={sending}
                   aria-label="Send weekly summary"
-                  sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent, bgcolor: SECONDARY_HOVER } }}
+                  sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent, bgcolor: 'action.hover' } }}
                 >
                   <EmailOutlinedIcon sx={{ fontSize: 19 }} />
                 </IconButton>
@@ -364,7 +368,7 @@ export default function Dashboard() {
                   {showPreview ? 'Hide preview' : 'Show preview'}
                 </Button>
                 <Collapse in={showPreview}>
-                  <Box component="pre" sx={{ mt: 1.5, p: 2, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', bgcolor: 'rgba(255,255,255,0.6)', borderRadius: '8px', fontFamily: 'inherit', color: BRAND.text }}>
+                  <Box component="pre" sx={{ mt: 1.5, p: 2, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', bgcolor: BRAND.surface, borderRadius: '8px', fontFamily: 'inherit', color: BRAND.text }}>
                     {summaryResult.preview}
                   </Box>
                 </Collapse>
@@ -400,16 +404,17 @@ export default function Dashboard() {
             </Box>
           ))}
 
-          {/* ZONE C — analytical deep dive on a strict 50/50 split, so both columns
-              share one vertical alignment. Risk-by-block and activity-by-block are
-              merged into one toggled Block Performance widget. */}
-          <Box sx={span(6)}>
+          {/* ZONE C - 60/40 asymmetric split. Left is the analytical "why" (case mix
+              and activity over time); right is the actionable "what" (specific recent
+              incidents, then the worst blocks). Risk-by-block and activity-by-block
+              stay merged into one toggled Block Performance widget. */}
+          <Box sx={span(7)}>
             <Stack spacing={3}>
               <CategoryBar casesByCategory={metrics.casesByCategory} />
               <ActivityChart history={metrics.history} />
             </Stack>
           </Box>
-          <Box sx={span(6)}>
+          <Box sx={span(5)}>
             <Stack spacing={3}>
               <RecentActivity cases={metrics.recentCases || []} />
               <BlockPerformance
@@ -436,7 +441,7 @@ export default function Dashboard() {
           sx={{
             position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1200,
             px: 2, pt: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))',
-            bgcolor: 'rgba(255,255,255,0.94)',
+            bgcolor: mode === 'dark' ? 'rgba(22,28,38,0.94)' : 'rgba(255,255,255,0.94)',
             backdropFilter: 'blur(8px)',
             borderTop: `1px solid ${BRAND.border}`,
           }}

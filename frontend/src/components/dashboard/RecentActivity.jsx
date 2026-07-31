@@ -6,6 +6,7 @@ import FlutterDashOutlinedIcon from '@mui/icons-material/FlutterDashOutlined';
 import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
 import PestControlRodentOutlinedIcon from '@mui/icons-material/PestControlRodentOutlined';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
+import { useTheme } from '@mui/material/styles';
 import { BRAND } from '../../theme';
 import { CATEGORY_LABELS } from '../../constants';
 import StatusPill from '../StatusPill';
@@ -20,17 +21,29 @@ const CATEGORY_ICON = {
   pest: PestControlRodentOutlinedIcon,
   other: HelpOutlineRoundedIcon,
 };
+// Per scheme: the dark inks are lightened so the glyph and its 8% tint well stay
+// visible on the dark card.
 const CATEGORY_INK = {
-  community_cat: '#1E3A5F',
-  pigeon: '#2C5687',
-  flora_health: '#0E8A8A',
-  pest: '#B3261E',
-  other: '#6E88A6',
+  light: {
+    community_cat: '#1E3A5F',
+    pigeon: '#2C5687',
+    flora_health: '#0E8A8A',
+    pest: '#B3261E',
+    other: '#6E88A6',
+  },
+  dark: {
+    community_cat: '#8FB8E8',
+    pigeon: '#9BB8D6',
+    flora_health: '#4FC3C3',
+    pest: '#F08A8F',
+    other: '#9DB0C6',
+  },
 };
 
 function CategoryGlyph({ category }) {
+  const inkMap = CATEGORY_INK[useTheme().palette.mode] || CATEGORY_INK.light;
   const Icon = CATEGORY_ICON[category] || HelpOutlineRoundedIcon;
-  const ink = CATEGORY_INK[category] || CATEGORY_INK.other;
+  const ink = inkMap[category] || inkMap.other;
   const label = CATEGORY_LABELS[category] || category || 'Uncategorised';
   return (
     <Tooltip title={label}>

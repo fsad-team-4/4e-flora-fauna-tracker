@@ -1,130 +1,395 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import {
-  Box, Typography, Card, CardContent, Stack, Chip, CircularProgress, Alert,
+  Box, Typography, Card, CardContent, Stack, Alert, Collapse,
   IconButton, Tooltip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Button,
+  TextField, InputAdornment, Menu, MenuItem, Chip, Skeleton,
 } from '@mui/material';
-import { LineChart, Line, XAxis, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, Tooltip as RTooltip, ResponsiveContainer,
+} from 'recharts';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import TrendingDownRoundedIcon from '@mui/icons-material/TrendingDownRounded';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
-import ArrowRightAltRoundedIcon from '@mui/icons-material/ArrowRightAltRounded';
-import { BRAND, TREND, CHART } from '../theme';
+import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
+import { useTheme } from '@mui/material/styles';
+import { BRAND, TREND, INTENT, SVG_ACCENT } from '../theme';
 import http from '../http';
 
 const pct = n => (n == null ? '—' : `${Math.round(n * 100)}%`);
 const money = n => `S$${(n || 0).toLocaleString('en-SG')}`;
 const shortDate = iso => new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 
-const OUTCOME_META = {
-  prevented: { label: 'Prevented', bg: '#E7F4E8', color: '#1E6023' },
-  recurred: { label: 'Recurred', bg: '#FDECEA', color: '#B3261E' },
-  monitoring: { label: 'Monitoring', bg: '#FFF4E5', color: '#8A5200' },
-  unmeasurable: { label: 'No block', bg: BRAND.section, color: BRAND.textLight },
-};
+const TREND_WEEKS = [4, 8, 12];
 
-// Impact-completion ring: closed vs total work orders, as a lightweight SVG donut
-// (matches the deck's completion gauge without pulling in a chart lib for one number).
-function Donut({ value, size = 132, stroke = 14, color = BRAND.primary }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const frac = value == null ? 0 : Math.max(0, Math.min(1, value));
+/**
+ * Outcome intent. STRICT semantics, matching the rest of the app: green = prevented,
+ * red = recurred, amber = still monitoring, neutral = unmeasurable. Outcome keeps the
+ * coloured pill; lifecycle status is demoted to muted text plus a dot, so the two
+ * stop competing as identical-looking badges in adjacent columns.
+ */
+const OUTCOME_META = {
+  prevented: { label: 'Prevented', intent: 'success' },
+  recurred: { label: 'Recurred', intent: 'danger' },
+  monitoring: { label: 'Monitoring', intent: 'warning' },
+  unmeasurable: { label: 'No block', intent: 'neutral' },
+};
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'prevented', label: 'Prevented' },
+  { key: 'recurred', label: 'Recurred' },
+  { key: 'monitoring', label: 'Monitoring' },
+];
+
+function OutcomePill({ outcome }) {
+  const m = OUTCOME_META[outcome] || OUTCOME_META.monitoring;
+  const t = INTENT[m.intent];
   return (
-    <Box sx={{ position: 'relative', width: size, height: size }}>
-      <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={BRAND.section} strokeWidth={stroke} />
-        <circle
-          cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-          strokeDasharray={`${c * frac} ${c}`} strokeLinecap="round"
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
-      <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-        <Typography sx={{ fontSize: 26, fontWeight: 800, color: BRAND.heading }}>{pct(value)}</Typography>
+    <Box component="span" sx={{ display: 'inline-block', px: 1, py: '2px', borderRadius: '999px', bgcolor: t.bg, color: t.ink, fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+      {m.label}
+    </Box>
+  );
+}
+
+// Status as muted text + dot, not a second pill.
+function StatusText({ status }) {
+  const closed = status === 'closed';
+  const ok = SVG_ACCENT[useTheme().palette.mode].ok;
+  return (
+    <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
+      <Box aria-hidden sx={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, bgcolor: closed ? ok : INTENT.neutral.solid }} />
+      <Typography sx={{ fontSize: 12.5, color: BRAND.text, whiteSpace: 'nowrap' }}>{closed ? 'Closed' : 'Open'}</Typography>
+    </Stack>
+  );
+}
+
+/**
+ * Reports before -> after, as a signed delta pill. "2 → 0" made the reader do the
+ * subtraction; "-2 reports" states the result. Green only when reports actually fell,
+ * red when they rose, neutral when flat or not yet judgeable.
+ */
+function DeltaPill({ before, after, outcome }) {
+  if (outcome === 'monitoring' || after == null) {
+    return <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, fontStyle: 'italic' }}>too recent</Typography>;
+  }
+  const delta = after - before;
+  const t = delta < 0 ? INTENT.success : delta > 0 ? INTENT.danger : INTENT.neutral;
+  const word = Math.abs(delta) === 1 ? 'report' : 'reports';
+  return (
+    <Tooltip title={`${before} report${before === 1 ? '' : 's'} before, ${after} after`}>
+      <Box component="span" sx={{ display: 'inline-block', px: 1, py: '2px', borderRadius: '999px', bgcolor: t.bg, color: t.ink, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', cursor: 'help' }}>
+        {delta === 0 ? `No change (${before})` : `${delta > 0 ? '+' : '−'}${Math.abs(delta)} ${word}`}
       </Box>
+    </Tooltip>
+  );
+}
+
+/**
+ * Impact completion as a semicircular gauge.
+ *
+ * The old full donut drew progress in BRAND red - red reads as failure or danger, not
+ * as "60% of work is done". Progress is emerald now, and the three work-order states
+ * are broken out underneath instead of being crammed into one grey sentence.
+ */
+function CompletionGauge({ value, closed, monitoring, open, total }) {
+  const theme = useTheme();
+  const ok = SVG_ACCENT[theme.palette.mode].ok;
+  const cx = 100, cy = 100, r = 76, stroke = 18;
+  const arc = `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
+  const len = Math.PI * r;
+  const frac = value == null ? 0 : Math.max(0, Math.min(1, value));
+
+  const legend = [
+    { n: closed, label: 'Closed', color: ok },
+    { n: monitoring, label: 'Monitoring', color: INTENT.warning.solid },
+    { n: open, label: 'Open', color: INTENT.neutral.solid },
+  ];
+
+  return (
+    <Box>
+      <Box sx={{ position: 'relative', maxWidth: 240, mx: 'auto' }}>
+        <Box component="svg" viewBox="0 0 200 112" sx={{ display: 'block', width: '100%' }}
+          role="img" aria-label={`${pct(value)} of work orders closed`}>
+          <path d={arc} fill="none" stroke={theme.palette.background.default} strokeWidth={stroke} strokeLinecap="round" />
+          <path
+            d={arc} fill="none" stroke={ok} strokeWidth={stroke} strokeLinecap="round"
+            strokeDasharray={`${len} ${len}`} strokeDashoffset={len * (1 - frac)}
+            style={{ transition: 'stroke-dashoffset .9s cubic-bezier(.34,1.2,.64,1)' }}
+          />
+        </Box>
+        <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 4, textAlign: 'center', pointerEvents: 'none' }}>
+          <Typography sx={{ fontSize: 40, fontWeight: 800, lineHeight: 1, color: BRAND.heading, letterSpacing: '-1.5px', fontVariantNumeric: 'tabular-nums' }}>
+            {pct(value)}
+          </Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 600, color: BRAND.text }}>Closed</Typography>
+        </Box>
+      </Box>
+
+      <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'center', flexWrap: 'wrap', rowGap: 1, mt: 1.5 }}>
+        {legend.map(l => (
+          <Stack key={l.label} direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
+            <Box aria-hidden sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 12.5, color: BRAND.text }}>
+              <Box component="span" sx={{ fontWeight: 800, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>{l.n ?? 0}</Box> {l.label}
+            </Typography>
+          </Stack>
+        ))}
+      </Stack>
+      <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, textAlign: 'center', mt: 0.75 }}>
+        {total} work order{total === 1 ? '' : 's'} total
+      </Typography>
     </Box>
   );
 }
 
 // The hero metric: how much repeat rodent activity fell after interventions.
-function HeadlineReduction({ value }) {
+function HeroReduction({ value, prevented, measured }) {
   const known = value != null;
   const improved = known && value > 0; // reports fell -> good
-  const color = !known ? BRAND.textLight : improved ? TREND.good : value < 0 ? TREND.bad : BRAND.textLight;
+  const trend = TREND[useTheme().palette.mode];
+  const color = !known ? BRAND.textLight : improved ? trend.good : value < 0 ? trend.bad : BRAND.textLight;
   const Icon = improved ? TrendingDownRoundedIcon : TrendingUpRoundedIcon;
   return (
-    <Card sx={{ borderRadius: '14px', border: `1px solid ${BRAND.border}`, bgcolor: improved ? '#F2FAF3' : '#fff' }}>
-      <CardContent sx={{ p: 3 }}>
+    <Card sx={{ height: '100%', bgcolor: BRAND.navySoft }}>
+      <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-          <Typography variant="overline" sx={{ color: BRAND.textLight, fontWeight: 700, letterSpacing: '0.8px' }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: BRAND.text }}>
             Repeat-risk reduction
           </Typography>
-          <Tooltip arrow title="Rodent reports at each block in the 14 days after an approved work order, compared with the 14 days before. Higher means recurrence fell.">
+          <Tooltip arrow title="Rodent reports at each block in the follow-up window after an approved work order, compared with the equivalent window before it. Higher means recurrence fell.">
             <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: BRAND.textLight, cursor: 'help' }} />
           </Tooltip>
         </Stack>
+
         {known ? (
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', mt: 0.5 }}>
-            {known && value !== 0 && <Icon sx={{ color, fontSize: 34, alignSelf: 'center' }} />}
-            <Typography sx={{ fontSize: 56, fontWeight: 800, lineHeight: 1, color, letterSpacing: '-2px' }}>
-              {pct(Math.abs(value))}
+          <>
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', mt: 1 }}>
+              {value !== 0 && <Icon sx={{ color, fontSize: 34, alignSelf: 'center' }} />}
+              <Typography sx={{ fontSize: { xs: 56, md: 68 }, fontWeight: 800, lineHeight: 1, color, letterSpacing: '-3px', fontVariantNumeric: 'tabular-nums' }}>
+                {pct(Math.abs(value))}
+              </Typography>
+            </Stack>
+            <Typography sx={{ color: BRAND.text, fontSize: 15, fontWeight: 600, mt: 0.5 }}>
+              {improved ? 'fewer repeat reports after action' : value < 0 ? 'more reports after action' : 'no measurable change'}
             </Typography>
-            <Typography sx={{ color: BRAND.textLight, fontSize: 16, fontWeight: 600 }}>
-              {improved ? 'fewer repeat reports' : value < 0 ? 'more reports' : 'no change'}
-            </Typography>
-          </Stack>
+            {/* Composition, not a period-over-period delta: the API exposes no prior
+                figure, so a "vs previous period" badge would be invented. */}
+            {measured > 0 && (
+              <Box component="span" sx={{ alignSelf: 'flex-start', mt: 1.5, px: 1, py: '3px', borderRadius: '999px', bgcolor: INTENT.success.bg, color: INTENT.success.ink, fontSize: 12, fontWeight: 700 }}>
+                {prevented} of {measured} interventions held with zero repeats
+              </Box>
+            )}
+          </>
         ) : (
-          <Typography sx={{ fontSize: 30, fontWeight: 800, color: BRAND.textLight, mt: 1 }}>Not enough data yet</Typography>
+          <Box sx={{ mt: 1 }}>
+            <Typography sx={{ fontSize: 26, fontWeight: 800, color: BRAND.textLight }}>Not enough data yet</Typography>
+            <Typography sx={{ fontSize: 13, color: BRAND.text, mt: 0.5 }}>
+              Interventions need a full follow-up window before recurrence can be judged.
+            </Typography>
+          </Box>
         )}
       </CardContent>
     </Card>
   );
 }
 
+// Secondary metric: label above, value below, one standard size.
 function StatTile({ label, value, sub, tip }) {
   return (
-    <Box sx={{ flex: 1, minWidth: 150, p: 2, bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '12px' }}>
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-        <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</Typography>
-        {tip && (
-          <Tooltip arrow title={tip}>
-            <HelpOutlineRoundedIcon sx={{ fontSize: 13, color: BRAND.textLight, cursor: 'help' }} />
-          </Tooltip>
-        )}
-      </Stack>
-      <Typography sx={{ fontSize: 30, fontWeight: 800, color: BRAND.heading, lineHeight: 1.1, mt: 0.25 }}>{value}</Typography>
-      {sub && <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>{sub}</Typography>}
+    <Card sx={{ height: '100%' }}>
+      <CardContent sx={{ p: 2.5 }}>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, color: BRAND.text, textTransform: 'uppercase', letterSpacing: '0.6px' }}>{label}</Typography>
+          {tip && (
+            <Tooltip arrow title={tip}>
+              <HelpOutlineRoundedIcon sx={{ fontSize: 13, color: BRAND.textLight, cursor: 'help' }} />
+            </Tooltip>
+          )}
+        </Stack>
+        <Typography sx={{ fontSize: 28, fontWeight: 800, color: BRAND.heading, lineHeight: 1.15, mt: 0.75, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+        {sub && <Typography sx={{ fontSize: 12, color: BRAND.text, mt: 0.25 }}>{sub}</Typography>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ChartTip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  const p = payload[0].payload;
+  return (
+    <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 12px 32px rgba(16,24,40,.15)', px: 1.5, py: 1 }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.textLight, mb: 0.25 }}>Week of {label}</Typography>
+      <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: BRAND.heading }}>
+        {p.reports} report{p.reports === 1 ? '' : 's'}
+      </Typography>
+      {p.interventions > 0 && (
+        <Typography sx={{ fontSize: 12, color: INTENT.success.ink, fontWeight: 600, mt: 0.25 }}>
+          {p.interventions} intervention{p.interventions === 1 ? '' : 's'} approved this week
+        </Typography>
+      )}
     </Box>
   );
 }
 
-function TrendChart({ trend }) {
-  const data = (trend || []).map(w => ({ label: shortDate(w.weekStart), reports: w.reports }));
+/**
+ * Rodent reports per week, as a gradient area chart with an intervention layer.
+ *
+ * The annotations are the point of this chart: a dashed marker on every week where a
+ * work order was approved turns "reports fell" into "reports fell after we acted".
+ * Weeks are matched by bucketing each intervention date into the trend's own week
+ * boundaries, so the markers cannot drift from the series.
+ */
+function TrendChart({ trend, interventions, weeks }) {
+  const gradId = useId();
+  const theme = useTheme();
+  // #2E67B5 is only 2.84:1 on the dark card - under the 3:1 needed for a graphic.
+  const LINE = SVG_ACCENT[theme.palette.mode]?.line || SVG_ACCENT.light.line;
+  const OK = SVG_ACCENT[theme.palette.mode].ok;
+  const data = useMemo(() => {
+    const rows = (trend || []).map(w => ({
+      label: shortDate(w.weekStart),
+      start: new Date(w.weekStart).getTime(),
+      reports: w.reports,
+      interventions: 0,
+    }));
+    // bucket each intervention into the last week whose start is <= its date
+    (interventions || []).forEach(i => {
+      const t = new Date(i.date).getTime();
+      let idx = -1;
+      rows.forEach((r, k) => { if (t >= r.start) idx = k; });
+      if (idx >= 0) rows[idx].interventions += 1;
+    });
+    return rows;
+  }, [trend, interventions]);
+
   const total = data.reduce((s, d) => s + d.reports, 0);
+  const marked = data.filter(d => d.interventions > 0);
+
   return (
     <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: 3 }}>
-        <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent reports per week</Typography>
-        <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2 }}>
-          Estate-wide volume over the last {data.length} weeks
-        </Typography>
+        <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', rowGap: 0.5 }}>
+          <Box>
+            <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>Rodent reports per week</Typography>
+            <Typography variant="body2" sx={{ color: BRAND.textLight }}>
+              Estate-wide volume over {weeks} weeks
+            </Typography>
+          </Box>
+          {marked.length > 0 && (
+            <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
+              <Box aria-hidden sx={{ width: 0, height: 14, borderLeft: `2px dashed ${OK}` }} />
+              <Typography sx={{ fontSize: 12, color: BRAND.text }}>
+                Intervention approved ({marked.reduce((s, d) => s + d.interventions, 0)})
+              </Typography>
+            </Stack>
+          )}
+        </Stack>
+
         {total === 0 ? (
           <Typography variant="body2" sx={{ color: BRAND.textLight, py: 6, textAlign: 'center' }}>No rodent reports in this period.</Typography>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 4 }}>
-              <XAxis dataKey="label" tick={{ fontSize: 12, fill: CHART.axis }} axisLine={{ stroke: BRAND.border }} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
-              <RTooltip
-                cursor={{ stroke: BRAND.border }}
-                contentStyle={{ borderRadius: 10, border: `1px solid ${BRAND.border}`, fontSize: 13 }}
-                formatter={v => [`${v} report${v === 1 ? '' : 's'}`, 'Reports']}
-              />
-              <Line type="monotone" dataKey="reports" stroke="#2E67B5" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <Box sx={{ mt: 2 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <AreaChart data={data} margin={{ top: 16, right: 12, left: -18, bottom: 4 }}>
+                <defs>
+                  <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={LINE} stopOpacity={0.28} />
+                    <stop offset="100%" stopColor={LINE} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                {/* dotted horizontal anchors + a real Y axis, so a peak has a value */}
+                <CartesianGrid stroke={theme.palette.divider} strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={{ stroke: theme.palette.divider }} tickLine={false} interval="preserveStartEnd" minTickGap={16} />
+                <YAxis tick={{ fontSize: 12, fill: theme.palette.text.secondary }} axisLine={false} tickLine={false} allowDecimals={false} width={40} />
+                <RTooltip content={<ChartTip />} cursor={{ stroke: theme.palette.text.secondary, strokeDasharray: '3 3' }} />
+                {marked.map(d => (
+                  <ReferenceLine
+                    key={d.label}
+                    x={d.label}
+                    stroke={OK}
+                    strokeDasharray="4 4"
+                    strokeWidth={2}
+                    label={{ value: '▲', position: 'top', fill: OK, fontSize: 11 }}
+                  />
+                ))}
+                <Area type="monotone" dataKey="reports" stroke={LINE} strokeWidth={2.5} fill={`url(#${gradId})`}
+                  dot={{ r: 2.5, fill: theme.palette.background.paper, stroke: LINE, strokeWidth: 2 }} activeDot={{ r: 5 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Box>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Expandable row: the supporting numbers already in the payload, revealed on demand
+// rather than adding columns or linking to a detail page that does not exist.
+function InterventionRow({ i, index }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TableRow
+        hover
+        onClick={() => setOpen(o => !o)}
+        sx={{
+          cursor: 'pointer',
+          bgcolor: index % 2 ? BRAND.section : 'inherit',
+          '&:hover': { bgcolor: BRAND.navySoft },
+          '& > td': { borderBottom: open ? 'none' : `1px solid ${BRAND.border}` },
+        }}
+      >
+        <TableCell sx={{ color: BRAND.heading, fontWeight: 700, whiteSpace: 'nowrap' }}>{i.block || '(No block)'}</TableCell>
+        <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{shortDate(i.date)}</TableCell>
+        <TableCell align="right"><DeltaPill before={i.before} after={i.after} outcome={i.outcome} /></TableCell>
+        <TableCell><OutcomePill outcome={i.outcome} /></TableCell>
+        <TableCell><StatusText status={i.status} /></TableCell>
+        <TableCell align="right" sx={{ width: 44 }}>
+          <IconButton
+            size="small"
+            aria-label={open ? `Hide detail for ${i.block || 'this intervention'}` : `Show detail for ${i.block || 'this intervention'}`}
+            aria-expanded={open}
+            onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+            sx={{ p: 0.5, color: BRAND.text, bgcolor: open ? BRAND.navySoft : 'transparent', '&:hover': { bgcolor: BRAND.navySoft } }}
+          >
+            <ExpandMoreRoundedIcon sx={{ fontSize: 19, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
+          </IconButton>
+        </TableCell>
+      </TableRow>
+      <TableRow>
+        <TableCell colSpan={6} sx={{ py: 0, borderBottom: `1px solid ${BRAND.border}` }}>
+          <Collapse in={open} unmountOnExit>
+            <Stack direction="row" spacing={3} sx={{ py: 1.5, px: 1, flexWrap: 'wrap', rowGap: 1 }}>
+              <Box>
+                <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>Reports before → after</Typography>
+                <Typography sx={{ fontSize: 13.5, color: BRAND.heading, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                  {i.before} → {i.outcome === 'monitoring' ? 'pending' : i.after}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>Consolidated reports</Typography>
+                <Typography sx={{ fontSize: 13.5, color: BRAND.heading, fontWeight: 600 }}>
+                  {i.consolidated_count > 1 ? `${i.consolidated_count} merged into one call-out` : 'Raised on its own'}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 11, color: BRAND.textLight }}>Time to close</Typography>
+                <Typography sx={{ fontSize: 13.5, color: BRAND.heading, fontWeight: 600 }}>
+                  {i.close_days == null ? 'Not closed yet' : `${i.close_days} day${i.close_days === 1 ? '' : 's'}`}
+                </Typography>
+              </Box>
+            </Stack>
+          </Collapse>
+        </TableCell>
+      </TableRow>
+    </>
   );
 }
 
@@ -132,118 +397,248 @@ export default function PreventionScorecard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [weeks, setWeeks] = useState(8);
+  const [weeksAnchor, setWeeksAnchor] = useState(null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await http.get('/api/scorecard');
+      const res = await http.get('/api/scorecard', { params: { trendWeeks: weeks } });
       setData(res.data);
     } catch (e) {
       setError(e.response?.data?.error || 'Failed to load the prevention scorecard');
     } finally {
       setLoading(false);
     }
-  }
-  useEffect(() => { load(); }, []);
+  }, [weeks]);
+
+  useEffect(() => {
+    // Fetching on mount/param change is the sanctioned use of an effect; the state
+    // updates happen after the await, so the rule's warning is a false positive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    load();
+  }, [load]);
 
   const s = data?.summary;
+  const all = useMemo(() => data?.interventions || [], [data]);
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return all.filter(i => {
+      if (filter !== 'all' && i.outcome !== filter) return false;
+      if (q && !String(i.block || '').toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [all, search, filter]);
+
+  // CSV, not PDF: a PDF export needs a rendering dependency this build does not
+  // carry. This is the same intervention table an exec summary would tabulate.
+  function exportCsv() {
+    const head = ['block', 'approved', 'reports_before', 'reports_after', 'outcome', 'status', 'close_days', 'consolidated_count'];
+    const body = rows.map(i => [i.block || '', i.date, i.before, i.outcome === 'monitoring' ? '' : i.after, i.outcome, i.status, i.close_days ?? '', i.consolidated_count]);
+    const csv = [head, ...body].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prevention-scorecard-${weeks}w.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-        <Typography variant="h5" component="h1" fontWeight={700} sx={{ color: BRAND.heading }}>Prevention Scorecard</Typography>
-        <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent } }}>
-          <RefreshRoundedIcon sx={{ fontSize: 20 }} />
-        </IconButton>
+    <Box sx={{ py: 3, maxWidth: 1440, mx: 'auto' }}>
+      {/* ── Header: one-line subtitle, methodology behind an info tooltip ────── */}
+      <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, flexWrap: 'wrap', rowGap: 1.5 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography component="h1" sx={{ fontSize: 24, fontWeight: 700, color: BRAND.heading, letterSpacing: '-0.4px' }}>
+            Prevention Scorecard
+          </Typography>
+          <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', mt: 0.25 }}>
+            <Typography sx={{ fontSize: 13.5, color: BRAND.text }}>
+              Did our interventions actually work?
+            </Typography>
+            <Tooltip
+              arrow
+              title={`Each approved work order is measured on whether rodent reports at that block fell in the ${data?.params?.windowDays ?? 14} days after action, versus the equivalent window before it. Outcomes, not activity volume. Interventions too recent to judge are held as "monitoring" rather than counted as successes.`}
+            >
+              <InfoOutlinedIcon sx={{ fontSize: 15, color: BRAND.textLight, cursor: 'help' }} />
+            </Tooltip>
+          </Stack>
+        </Box>
+
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
+          <Button
+            onClick={e => setWeeksAnchor(e.currentTarget)}
+            startIcon={<CalendarTodayRoundedIcon sx={{ fontSize: 17 }} />}
+            endIcon={<ExpandMoreRoundedIcon />}
+            aria-haspopup="listbox"
+            sx={{ textTransform: 'none', fontWeight: 600, color: BRAND.heading, whiteSpace: 'nowrap', '&:hover': { bgcolor: BRAND.section } }}
+          >
+            Last {weeks} weeks
+          </Button>
+          <Menu anchorEl={weeksAnchor} open={Boolean(weeksAnchor)} onClose={() => setWeeksAnchor(null)}>
+            {TREND_WEEKS.map(w => (
+              <MenuItem key={w} selected={w === weeks} onClick={() => { setWeeks(w); setWeeksAnchor(null); }} sx={{ fontSize: 14 }}>
+                Last {w} weeks
+              </MenuItem>
+            ))}
+          </Menu>
+
+          <IconButton onClick={load} disabled={loading} aria-label="Refresh" sx={{ color: BRAND.textLight, '&:hover': { color: BRAND.accent } }}>
+            <RefreshRoundedIcon sx={{ fontSize: 19 }} />
+          </IconButton>
+
+          <Button
+            onClick={exportCsv}
+            disabled={loading || rows.length === 0}
+            variant="outlined"
+            startIcon={<FileDownloadOutlinedIcon />}
+            sx={{ textTransform: 'none', fontWeight: 600, whiteSpace: 'nowrap', borderColor: BRAND.border, color: BRAND.text, '&:hover': { borderColor: BRAND.textLight } }}
+          >
+            Export summary
+          </Button>
+
+          {/* Interventions originate from approving escalations, so the action hook
+              points there. There is deliberately no "log intervention" form here -
+              that would bypass the human approval gate the queue exists to enforce. */}
+          <Button
+            component={RouterLink}
+            to="/action-queue"
+            variant="contained"
+            endIcon={<ArrowForwardRoundedIcon />}
+            sx={{ fontWeight: 700, whiteSpace: 'nowrap', bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }}
+          >
+            Review Action Queue
+          </Button>
+        </Stack>
       </Stack>
-      <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2.5 }}>
-        Did our interventions actually work? Each approved work order is measured on whether rodent reports at that block dropped in the {data?.params?.windowDays ?? 14} days after action - outcomes, not activity volume.
-      </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
       {loading ? (
-        <Box sx={{ py: 8, textAlign: 'center' }}><CircularProgress sx={{ color: BRAND.accent }} /></Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1fr 1fr 1fr' }, gap: 2.5 }}>
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} variant="rounded" height={i === 0 ? 210 : 120} />)}
+        </Box>
       ) : !s ? null : (
         <>
-          {/* headline row */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.4fr 1fr 1fr 1fr' }, gap: 2, mb: 2.5 }}>
-            <HeadlineReduction value={s.repeat_risk_reduction} />
+          {/* ── Hero KPI: the dominant metric, then three standardised tiles ──── */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: '1.5fr 1fr 1fr 1fr' }, gap: 2.5, mb: 2.5, alignItems: 'stretch' }}>
+            <HeroReduction value={s.repeat_risk_reduction} prevented={s.prevented} measured={s.measured} />
             <StatTile label="Prevention rate" value={pct(s.prevention_rate)} sub={`${s.prevented}/${s.measured} held, no repeat`} tip="Share of measured interventions with zero repeat reports in the follow-up window." />
             <StatTile label="Avg time to close" value={s.avg_time_to_close_days == null ? '—' : `${s.avg_time_to_close_days}d`} sub={`${s.closed_work_orders} closed`} />
             <StatTile label="Saved by consolidating" value={money(s.est_savings)} sub={`${s.call_outs_avoided} call-out${s.call_outs_avoided === 1 ? '' : 's'} avoided`} tip="Cumulative saving from merging multiple complaints into single call-outs in the Action Queue." />
           </Box>
 
-          {/* completion + trend */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 2fr' }, gap: 2.5, mb: 3 }}>
+          {/* ── Completion gauge + annotated trend ─────────────────────────────── */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 2fr' }, gap: 2.5, mb: 3, alignItems: 'stretch' }}>
             <Card sx={{ height: '100%' }}>
-              <CardContent sx={{ p: 3, textAlign: 'center' }}>
-                <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading, mb: 0.5 }}>Impact completion</Typography>
+              <CardContent sx={{ p: 3 }}>
+                <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading, mb: 0.25 }}>Impact completion</Typography>
                 <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2 }}>Work orders closed off</Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Donut value={s.impact_completion} />
-                </Box>
-                <Typography sx={{ fontSize: 13, color: BRAND.textLight, mt: 2 }}>
-                  {s.closed_work_orders} of {s.total_work_orders} closed · {s.open_work_orders} open
-                  {s.monitoring > 0 && ` · ${s.monitoring} still monitoring`}
-                </Typography>
+                <CompletionGauge
+                  value={s.impact_completion}
+                  closed={s.closed_work_orders}
+                  monitoring={s.monitoring}
+                  open={s.open_work_orders}
+                  total={s.total_work_orders}
+                />
               </CardContent>
             </Card>
-            <TrendChart trend={data.trend} />
+            <TrendChart trend={data.trend} interventions={all} weeks={weeks} />
           </Box>
 
-          {/* per-intervention transparency */}
-          <Typography variant="h6" fontWeight={600} sx={{ color: BRAND.heading, mb: 1.5 }}>Interventions</Typography>
-          {data.interventions.length === 0 ? (
-            <Card sx={{ border: `1px dashed ${BRAND.border}`, borderRadius: '10px', bgcolor: BRAND.section }}>
-              <CardContent sx={{ py: 5, textAlign: 'center' }}>
-                <Typography sx={{ color: BRAND.textLight }}>
-                  No work orders raised yet. Approve escalations in the Action Queue and their prevention outcomes will appear here.
+          {/* ── Interventions: toolbar, then the table ─────────────────────────── */}
+          <Card sx={{ mb: 2 }}>
+            <CardContent sx={{ p: 2 }}>
+              <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5, flexWrap: 'wrap', rowGap: 0.5 }}>
+                <Typography component="h2" sx={{ fontSize: 16, fontWeight: 700, color: BRAND.heading }}>Interventions</Typography>
+                <Typography sx={{ fontSize: 13, color: BRAND.text }}>
+                  {rows.length} of {all.length} shown
                 </Typography>
-              </CardContent>
-            </Card>
-          ) : (
-            <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: BRAND.section }}>
-                    <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Block</TableCell>
-                    <TableCell sx={{ fontWeight: 600, color: BRAND.textLight }}>Approved</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Reports before → after</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Outcome</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 600, color: BRAND.textLight }}>Status</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data.interventions.map((i, idx) => {
-                    const m = OUTCOME_META[i.outcome] || OUTCOME_META.monitoring;
+              </Stack>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ alignItems: { md: 'center' }, flexWrap: 'wrap', rowGap: 1.5 }}>
+                <TextField
+                  size="small" placeholder="Search block…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: BRAND.textLight }} /></InputAdornment> } }}
+                  sx={{ flexGrow: 1, minWidth: 200 }}
+                />
+                <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
+                  {FILTERS.map(f => {
+                    const active = filter === f.key;
                     return (
-                      <TableRow key={i.id} sx={{ bgcolor: idx % 2 ? BRAND.section : 'inherit' }}>
-                        <TableCell sx={{ color: BRAND.heading, fontWeight: 600, whiteSpace: 'nowrap' }}>{i.block || '(No block)'}</TableCell>
-                        <TableCell sx={{ color: BRAND.text, whiteSpace: 'nowrap' }}>{shortDate(i.date)}</TableCell>
-                        <TableCell align="center">
-                          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', justifyContent: 'center', color: BRAND.text }}>
-                            <Box component="span" sx={{ fontWeight: 700 }}>{i.before}</Box>
-                            <ArrowRightAltRoundedIcon sx={{ fontSize: 18, color: BRAND.textLight }} />
-                            <Box component="span" sx={{ fontWeight: 700, color: i.outcome === 'recurred' ? '#B3261E' : i.outcome === 'prevented' ? '#1E6023' : BRAND.text }}>
-                              {i.outcome === 'monitoring' ? '—' : i.after}
-                            </Box>
-                          </Stack>
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label={m.label} size="small" sx={{ bgcolor: m.bg, color: m.color, fontWeight: 700, borderRadius: '6px' }} />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label={i.status === 'closed' ? 'Closed' : 'Open'} size="small" sx={{ bgcolor: i.status === 'closed' ? BRAND.section : '#E8F1FB', color: i.status === 'closed' ? BRAND.textLight : '#1565C0', fontWeight: 600, borderRadius: '6px' }} />
-                        </TableCell>
-                      </TableRow>
+                      <Chip
+                        key={f.key} label={f.label} size="small" clickable aria-pressed={active}
+                        onClick={() => setFilter(f.key)}
+                        sx={{
+                          borderRadius: '999px', fontWeight: 600,
+                          bgcolor: active ? BRAND.slate : 'transparent', color: active ? '#fff' : BRAND.text,
+                          border: `1px solid ${active ? BRAND.slate : BRAND.border}`,
+                          '&:hover': { bgcolor: active ? BRAND.slateHover : BRAND.section },
+                        }}
+                      />
                     );
                   })}
-                </TableBody>
-              </Table>
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          {all.length === 0 ? (
+            <Card sx={{ border: `1px dashed ${BRAND.border}`, bgcolor: BRAND.section }}>
+              <CardContent sx={{ py: 5, textAlign: 'center' }}>
+                <Typography sx={{ color: BRAND.text }}>
+                  No work orders raised yet. Approve escalations in the Action Queue and their prevention outcomes will appear here.
+                </Typography>
+                <Button component={RouterLink} to="/action-queue" variant="outlined" size="small" sx={{ mt: 2, textTransform: 'none' }}>
+                  Open Action Queue
+                </Button>
+              </CardContent>
+            </Card>
+          ) : rows.length === 0 ? (
+            <Typography sx={{ color: BRAND.text, py: 3, textAlign: 'center' }}>
+              No interventions match this search or filter.
+            </Typography>
+          ) : (
+            <Paper variant="outlined" sx={{ border: `1px solid ${BRAND.border}`, overflow: 'hidden' }}>
+              <Box sx={{ overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 700 }}>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: BRAND.section }}>
+                      {[
+                        { l: 'Block', a: 'left', w: '22%' },
+                        { l: 'Approved', a: 'left', w: '14%' },
+                        { l: 'Change in reports', a: 'right', w: '22%' },
+                        { l: 'Outcome', a: 'left', w: '18%' },
+                        { l: 'Status', a: 'left', w: '16%' },
+                        { l: '', a: 'right', w: '8%' },
+                      ].map(h => (
+                        <TableCell key={h.l || 'x'} align={h.a} width={h.w}
+                          sx={{ fontWeight: 800, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.7px', color: BRAND.text, borderBottom: `2px solid ${BRAND.border}` }}>
+                          {h.l}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.map((i, idx) => <InterventionRow key={i.id} i={i} index={idx} />)}
+                  </TableBody>
+                </Table>
+              </Box>
             </Paper>
           )}
+
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start', mt: 2 }}>
+            <PlaceOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight, mt: '2px', flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 12, color: BRAND.textLight, lineHeight: 1.6 }}>
+              Interventions without a recorded block cannot be measured for recurrence and are shown as “No block”.
+              Rows marked “too recent” have not completed the follow-up window and are deliberately not counted as successes.
+            </Typography>
+          </Stack>
         </>
       )}
     </Box>

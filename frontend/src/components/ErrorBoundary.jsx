@@ -32,7 +32,7 @@ export default class ErrorBoundary extends Component {
         </Typography>
         <Stack direction="row" spacing={1.5} sx={{ justifyContent: 'center' }}>
           <Button variant="contained" onClick={() => window.location.reload()}>Reload page</Button>
-          <Button variant="outlined" onClick={() => window.location.assign('/')} sx={{ borderColor: BRAND.border, color: BRAND.slate }}>
+          <Button variant="outlined" onClick={() => window.location.assign('/')} sx={{ borderColor: BRAND.border, color: BRAND.text }}>
             Go home
           </Button>
         </Stack>
