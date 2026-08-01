@@ -12,8 +12,9 @@ jest.mock('../../src/config/mailer', () => ({
 }));
 
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 const app = require('../../src/index');
-const { sequelize } = require('../../src/models');
+const { sequelize, User } = require('../../src/models');
 const { sendMail } = require('../../src/config/mailer');
 
 // sendHealthAlert is fire-and-forget: the response returns before its DB query
@@ -31,9 +32,19 @@ beforeAll(async () => {
     ['res1', 'resident'],
   ];
   for (const [key, role] of accounts) {
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: key, email: `${key}@example.com`, password: 'secret1', role });
+    if (role === 'resident') {
+      await request(app)
+        .post('/api/auth/register')
+        .send({ name: key, email: `${key}@example.com`, password: 'secret1', role });
+    } else {
+      // Public registration always creates residents - seed staff/admin directly.
+      await User.create({
+        name: key,
+        email: `${key}@example.com`,
+        password_hash: await bcrypt.hash('secret1', 10),
+        role,
+      });
+    }
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: `${key}@example.com`, password: 'secret1' });

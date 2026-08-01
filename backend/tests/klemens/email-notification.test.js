@@ -9,8 +9,9 @@ process.env.DATABASE_URL = 'sqlite::memory:';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 const app = require('../../src/index');
-const { sequelize } = require('../../src/models');
+const { sequelize, User } = require('../../src/models');
 const { sendMail } = require('../../src/config/mailer');
 
 let staffToken;
@@ -23,9 +24,13 @@ beforeAll(async () => {
   await request(app)
     .post('/api/auth/register')
     .send({ name: 'Resident', email: RESIDENT_EMAIL, password: 'secret1' });
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name: 'Staff', email: 'staff@example.com', password: 'secret1', role: 'staff' });
+  // Public registration always creates residents - seed the staff account directly.
+  await User.create({
+    name: 'Staff',
+    email: 'staff@example.com',
+    password_hash: await bcrypt.hash('secret1', 10),
+    role: 'staff',
+  });
 
   const residentLogin = await request(app)
     .post('/api/auth/login')
