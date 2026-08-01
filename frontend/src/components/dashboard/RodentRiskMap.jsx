@@ -33,6 +33,7 @@ import { useUser } from '../../contexts/UserContext';
 import { SEVERITY, SG_CENTER, BASEMAPS, TILE_ATTR } from './rodentMapTokens';
 import SensorSurfaceLayer from './SensorSurfaceLayer';
 import VendorBriefingDialog from './VendorBriefingDialog';
+import VenueDetailDrawer from './VenueDetailDrawer';
 import { useSensorSurface, SIMULATED_LABEL, bandThresholds } from './sensorSurfaceData';
 import http from '../../http';
 
@@ -132,20 +133,78 @@ const glyphBox = (glyph, px) => `<div style="width:${px}px;height:${px}px;flex-s
 function makeIcon(html, size, coOccurs = false) {
   return L.divIcon({ className: `rk-marker${coOccurs ? ' rk-coocc' : ''}`, html, iconSize: [size, size], iconAnchor: [size / 2, size / 2], popupAnchor: [0, -size / 2] });
 }
+
+/**
+ * Teardrop pin.
+ *
+ * ================ WHY THE ANCHOR MOVES, AND WHY THAT MATTERS ===============
+ * A circular marker is anchored at its CENTRE - the dot sits on the coordinate.
+ * A teardrop is anchored at its TIP, because the tip is what points at the
+ * ground. Keeping the centre anchor would silently shift every reported position
+ * north by half a marker; at estate zoom that is a building or two.
+ * So iconAnchor is [w/2, h] and the popup opens from the tip.
+ * ===========================================================================
+ *
+ * The drop shadow is a real SVG filter rather than a CSS box-shadow, because a
+ * box-shadow would trace the icon's square bounding box, not the pin outline.
+ */
+function teardropIcon({ size, fill, stroke, glyph, glyphPx, badge = '', extraClass = '', coOccurs = false }) {
+  const w = size;
+  const h = Math.round(size * 1.3);
+  const cx = w / 2;
+  const cy = w / 2;
+  // circle head + a tip that meets the ground point
+  const d = `M ${cx} ${h} C ${cx - w * 0.34} ${h - w * 0.42}, 1 ${cy + w * 0.34}, 1 ${cy}`
+    + ` a ${cx - 1} ${cx - 1} 0 1 1 ${w - 2} 0`
+    + ` c 0 ${w * 0.34 - 0}, ${-w * 0.34 + w * 0.34} ${w * 0.1}, ${-cx + 1} ${h - cy}`
+    + ` Z`;
+  const html = `
+    <div class="rk-pin${extraClass}" style="position:relative;width:${w}px;height:${h}px;">
+      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;overflow:visible;">
+        <defs>
+          <filter id="rkDrop" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow dx="0" dy="1.5" stdDeviation="1.6" flood-color="rgba(16,24,40,.45)"/>
+          </filter>
+        </defs>
+        <path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2" filter="url(#rkDrop)"/>
+      </svg>
+      <div style="position:absolute;left:0;top:${Math.round(cy - glyphPx / 2)}px;width:${w}px;display:flex;justify-content:center;pointer-events:none;">
+        ${glyphBox(glyph, glyphPx)}
+      </div>
+      ${badge}
+    </div>`;
+  return L.divIcon({
+    className: `rk-marker${coOccurs ? ' rk-coocc' : ''}`,
+    html,
+    iconSize: [w, h],
+    iconAnchor: [w / 2, h],      // the TIP is the coordinate
+    popupAnchor: [0, -h + 4],
+  });
+}
 function rodentIcon(p) {
   const s = rodentDiameter(p.count);
   const band = bandOf(p);
   const sv = SEVERITY[band];
   const badge = band === 'critical'
-    ? `<div style="position:absolute;top:-4px;right:-4px;width:13px;height:13px;border-radius:50%;background:#fff;color:${sv.solid};border:1.5px solid ${RODENT_STROKE};display:grid;place-items:center;font:800 9px/1 Inter,Helvetica,Arial,sans-serif;">!</div>`
+    ? `<div style="position:absolute;top:-3px;right:-3px;width:13px;height:13px;border-radius:50%;background:#fff;color:${sv.solid};border:1.5px solid ${RODENT_STROKE};display:grid;place-items:center;font:800 9px/1 Inter,Helvetica,Arial,sans-serif;z-index:1;">!</div>`
     : '';
-  const html = `<div style="position:relative;width:${s}px;height:${s}px;display:grid;place-items:center;border-radius:50%;box-sizing:border-box;background:${sv.solid};color:${sv.onSolid};border:2.5px solid ${RODENT_STROKE};box-shadow:0 0 0 3px #fff,0 0 0 4.5px rgba(16,24,40,.55),0 2px 5px rgba(16,24,40,.45);">${glyphBox(RODENT_GLYPH, Math.round(s * 0.6))}${badge}</div>`;
-  return makeIcon(html, s, p.coOccurs);
+  // The pulse marks `critical` and nothing else. It is the band the backend
+  // assigned - NOT a reading of the observation text. Pulsing "fresh gnaw marks
+  // and live sightings" would mean classifying prose the model never scored, and
+  // the animation would then be asserting a severity nobody recorded.
+  const pulse = band === 'critical' ? ' rk-pin-critical' : '';
+  return teardropIcon({
+    size: s, fill: sv.solid, stroke: RODENT_STROKE,
+    glyph: RODENT_GLYPH, glyphPx: Math.round(s * 0.52),
+    badge, extraClass: pulse, coOccurs: p.coOccurs,
+  });
 }
 function feedingIcon(coOccurs = false) {
-  const s = 26;
-  const html = `<div style="width:${s}px;height:${s}px;display:grid;place-items:center;border-radius:50%;box-sizing:border-box;background:#fff;color:${FEEDING_INK};border:2.5px solid ${FEEDING_INK};box-shadow:0 0 0 3px #fff,0 0 0 4.5px rgba(16,24,40,.55),0 2px 5px rgba(16,24,40,.35);">${glyphBox(FEEDING_GLYPH, 15)}</div>`;
-  return makeIcon(html, s, coOccurs);
+  // white body so feeding stays visually distinct from the filled rodent pins
+  return teardropIcon({
+    size: 26, fill: '#fff', stroke: FEEDING_INK,
+    glyph: FEEDING_GLYPH, glyphPx: 14, coOccurs,
+  });
 }
 function clusterIcon(kind, k, band, coOccurs = false) {
   const feeding = kind === 'feeding';
@@ -219,7 +278,7 @@ const POPUP_TITLE_SX = { fontSize: 14.5, fontWeight: 700, color: BRAND.heading, 
  * block, the report list is capped (popups are not a table), and the two things an
  * officer can actually DO from here are explicit buttons at the bottom.
  */
-function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing }) {
+function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing, onOpenVenue }) {
   const counts = {};
   p.assessments.forEach(a => { const b = BAND_ORDER.includes(a.risk_level) ? a.risk_level : 'high'; counts[b] = (counts[b] || 0) + 1; });
   const recent = p.assessments.slice(0, 3);
@@ -270,8 +329,10 @@ function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing }) {
             Draft vendor briefing
           </Button>
         )}
-        {p.block && (
-          <Button size="small" fullWidth component={RouterLink} to={`/rodent?block=${encodeURIComponent(p.block)}`}
+        {p.block && onOpenVenue && (
+          // opens a drawer rather than navigating to /rodent - the officer keeps
+          // the map they were reading
+          <Button size="small" fullWidth onClick={() => onOpenVenue(p.block)}
             sx={{ textTransform: 'none', fontWeight: 700, color: ON_SURFACE.info }}>
             View location details
           </Button>
@@ -407,7 +468,7 @@ function FeedingPointBody({ p }) {
  * operational command. Zoom-to-separate is only offered when the cluster genuinely
  * spans more than one block.
  */
-function ClusterBody({ kind, members, map, bounds, onCreateWorkOrder, onDraftBriefing }) {
+function ClusterBody({ kind, members, map, bounds, onCreateWorkOrder, onDraftBriefing, onOpenVenue }) {
   // every report behind this cluster, so the briefing covers the whole hotspot
   const clusterAssessments = useMemo(
     () => members.flatMap(p => p.assessments || []),
@@ -489,8 +550,8 @@ function ClusterBody({ kind, members, map, bounds, onCreateWorkOrder, onDraftBri
             Separate {byBlock.length} blocks
           </Button>
         )}
-        {single && single.block !== 'Unlabelled' && (
-          <Button size="small" fullWidth component={RouterLink} to={`/rodent?block=${encodeURIComponent(single.block)}`}
+        {single && single.block !== 'Unlabelled' && onOpenVenue && (
+          <Button size="small" fullWidth onClick={() => onOpenVenue(single.block)}
             sx={{ textTransform: 'none', fontWeight: 700, color: ON_SURFACE.info }}>
             View location details
           </Button>
@@ -500,7 +561,7 @@ function ClusterBody({ kind, members, map, bounds, onCreateWorkOrder, onDraftBri
   );
 }
 
-function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onDraftBriefing }) {
+function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onDraftBriefing, markerRefs, onOpenVenue }) {
   const map = useMap();
   const [zoom, setZoom] = useState(() => map.getZoom());
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
@@ -512,10 +573,19 @@ function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onD
     if (g.length === 1) {
       const p = g[0].p;
       return (
-        <Marker key={`${kind}-${p.lat},${p.lng}`} position={[p.lat, p.lng]} icon={kind === 'feeding' ? feedingIcon(p.coOccurs) : rodentIcon(p)}
+        <Marker
+          key={`${kind}-${p.lat},${p.lng}`}
+          // registered by coordinate so the Action required list can open this
+          // exact popup. Cleared on unmount, or the map would hold refs to
+          // markers that no longer exist after a filter change.
+          ref={markerRefs ? (el => {
+            const k = `${p.lat},${p.lng}`;
+            if (el) markerRefs.current.set(k, el); else markerRefs.current.delete(k);
+          }) : undefined}
+          position={[p.lat, p.lng]} icon={kind === 'feeding' ? feedingIcon(p.coOccurs) : rodentIcon(p)}
           opacity={dimNonCoOccur && !p.coOccurs ? 0.3 : 1}
           keyboard title={`${p.block || 'Unlabelled block'}: ${p.count} ${unit}${p.count === 1 ? '' : 's'}`}>
-          <Popup maxHeight={320} minWidth={220} {...POPUP_PAN}><Body p={p} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} /></Popup>
+          <Popup maxHeight={320} minWidth={220} {...POPUP_PAN}><Body p={p} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} /></Popup>
         </Marker>
       );
     }
@@ -527,11 +597,25 @@ function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onD
     const bounds = L.latLngBounds(members.map(p => [p.lat, p.lng]));
     const band = kind === 'feeding' ? null : worstBand(members.map(bandOf));
     return (
-      <Marker key={`${kind}-cluster-${gi}-${cLat},${cLng}`} position={[cLat, cLng]} icon={clusterIcon(kind, members.length, band, clusterCoOccurs)}
+      <Marker
+        key={`${kind}-cluster-${gi}-${cLat},${cLng}`}
+        // A cluster registers under EVERY member's coordinate. Focusing a block
+        // from the Action required list has to open SOMETHING, and at estate zoom
+        // a block frequently still groups with its neighbours - registering only
+        // single markers meant the map flew there and opened nothing. Opening the
+        // cluster is also the more useful answer: it shows the block in the
+        // company of whatever it is clustered with.
+        ref={markerRefs ? (el => {
+          members.forEach(mp => {
+            const k = `${mp.lat},${mp.lng}`;
+            if (el) markerRefs.current.set(k, el); else if (markerRefs.current.get(k) === el) markerRefs.current.delete(k);
+          });
+        }) : undefined}
+        position={[cLat, cLng]} icon={clusterIcon(kind, members.length, band, clusterCoOccurs)}
         opacity={dimNonCoOccur && !clusterCoOccurs ? 0.3 : 1}
         keyboard title={`${members.length} ${kind} locations, ${reports} report${reports === 1 ? '' : 's'}`}>
         <Popup maxHeight={340} minWidth={230} {...POPUP_PAN}>
-          <ClusterBody kind={kind} members={members} map={map} bounds={bounds} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} />
+          <ClusterBody kind={kind} members={members} map={map} bounds={bounds} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} />
         </Popup>
       </Marker>
     );
@@ -682,6 +766,46 @@ function DensityLayer({ points, monoColor = null }) {
       </Polygon>
     );
   });
+}
+
+/**
+ * Fly to one reported location and open its popup.
+ *
+ * The popup open is deferred to the moveend, because Leaflet will not lay a
+ * popup out correctly while the map is still animating - it opens against the
+ * pre-flight viewport and lands off-screen.
+ */
+function FocusPoint({ focus, markerRefs }) {
+  const map = useMap();
+  const lastN = useRef(0);
+  useEffect(() => {
+    if (!focus || focus.n === lastN.current) return undefined;
+    lastN.current = focus.n;
+    // The marker may not exist yet at moveend: focusing also switches the view
+    // to pins, and that layer re-renders (and re-registers its refs) after the
+    // flight starts. It can also still be inside a cluster until the new zoom
+    // settles. So retry briefly rather than giving up on the first miss.
+    // Poll for the marker across the whole flight rather than hanging off
+    // moveend. Two things make moveend unreliable here: it never fires at all if
+    // the map is already at the target, and focusing ALSO switches the view to
+    // pins, so the layer re-registers its refs after the event has passed.
+    // ~2s of polling covers the 0.7s flight plus the re-render.
+    let tries = 0;
+    let timer = null;
+    const open = () => {
+      const m = markerRefs.current.get(focus.key);
+      if (m && m.openPopup) { m.openPopup(); return; }
+      if (tries++ < 40) timer = setTimeout(open, 50);
+    };
+    map.flyTo(focus.latlng, Math.max(map.getZoom(), 17), { duration: 0.7 });
+    // Wait for the flight AND the re-render before opening. Opening immediately
+    // did fire - and the popup was then destroyed, because switching to pins
+    // remounts the marker layer underneath it. 900ms clears the 0.7s flight plus
+    // React's commit; the poll then covers any further delay.
+    timer = setTimeout(open, 900);
+    return () => { if (timer) clearTimeout(timer); };
+  }, [focus, map, markerRefs]);
+  return null;
 }
 
 function FitToData({ latlngs, fitSignal }) {
@@ -876,20 +1000,30 @@ function TrendDelta({ current, previous, windowDays }) {
   );
 }
 
-function StatCard({ value, label, accent, hint, loading, trend, alert = false }) {
+function StatCard({ value, label, accent, hint, loading, trend, alert = false, active = false, onToggle = null }) {
   return (
     // Elevated card on the sheet surface, not a grey well sunk into it. The
     // BRAND.section fill made the four metrics read as one recessed strip; a
     // surface fill plus a hairline and a soft shadow lifts each into its own
     // object, which is what gives the dock its "command deck" weight.
     <Box
+      component={onToggle ? 'button' : 'div'}
+      type={onToggle ? 'button' : undefined}
+      onClick={onToggle || undefined}
+      aria-pressed={onToggle ? active : undefined}
       sx={{
         px: 2, py: 1.75, borderRadius: '10px', minWidth: 0,
-        bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`,
-        // the critical metric earns a red edge; the rest stay neutral so the one
-        // that matters is the only card the eye is pulled to
-        ...(alert ? { borderLeft: `4px solid ${ON_SURFACE.danger}` } : null),
+        width: '100%', textAlign: 'left', font: 'inherit',
+        cursor: onToggle ? 'pointer' : 'default',
+        // ACTIVE = inverted, so a filtered map can never look like an unfiltered
+        // one. The card is the only place the filter state is shown.
+        bgcolor: active ? ON_SURFACE.danger : BRAND.surface,
+        border: `1px solid ${active ? ON_SURFACE.danger : BRAND.border}`,
+        ...(alert && !active ? { borderLeft: `4px solid ${ON_SURFACE.danger}` } : null),
         boxShadow: '0 4px 12px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06)',
+        transition: 'background-color .15s ease, border-color .15s ease',
+        ...(onToggle ? { '&:hover': { borderColor: ON_SURFACE.danger } } : null),
+        '&:focus-visible': { outline: `2px solid ${ON_SURFACE.danger}`, outlineOffset: 2 },
       }}
     >
       {loading ? (
@@ -899,18 +1033,22 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false })
         </>
       ) : (
         <>
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Typography sx={{ fontSize: { xs: 32, md: 42 }, fontWeight: 900, lineHeight: 1, color: accent || BRAND.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: '-1.5px' }}>
-              {value}
+          {/* label above, integer below, trend pinned top-right */}
+          <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: active ? 'rgba(255,255,255,.85)' : BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.9px', lineHeight: 1.35 }}>
+              {label}
             </Typography>
-            {hint}
-            {trend}
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
+              {hint}
+              {trend}
+            </Stack>
           </Stack>
+          <Typography sx={{ fontSize: { xs: 30, md: 38 }, fontWeight: 900, lineHeight: 1.05, mt: 0.5, color: active ? '#fff' : (accent || BRAND.ink), fontVariantNumeric: 'tabular-nums', letterSpacing: '-1.5px' }}>
+            {value}
+          </Typography>
           {/* labels wrap rather than ellipsis: "High-risk locations" truncated to
               "HIGH-RISK LOCA…" at this column width, which is worse than two lines */}
-          <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.9px', mt: 0.4, lineHeight: 1.35 }}>
-            {label}
-          </Typography>
+
         </>
       )}
     </Box>
@@ -977,7 +1115,16 @@ export default function RodentRiskMap() {
   const [showRodent, setShowRodent] = useState(true);
   const [showFeeding, setShowFeeding] = useState(true);
   const [showCoOccur, setShowCoOccur] = useState(false);
-  const [viewMode, setViewMode] = useState('pins'); // pins | density
+  // Density is the landing view: for triage, binned concentration is the thing
+  // worth seeing first, and a full pin layer over an estate is noise.
+  // It deliberately does NOT also filter to high risk. Doing that would make the
+  // map show a subset while the metric cards below still counted everything, and
+  // an officer's first impression of the estate would under-report it. The
+  // high-risk filter is one click away on the card, and says so when it is on.
+  const [viewMode, setViewMode] = useState('density'); // pins | density
+  // when true the map shows ONLY high/critical locations - driven by the metric
+  // card, and always visibly reflected there
+  const [highRiskOnly, setHighRiskOnly] = useState(false);
   // null = follow the app's colour scheme; a value = the officer picked one. Derived
   // rather than synced in an effect, so a scheme change is reflected immediately
   // without a cascading render, and an explicit choice still wins.
@@ -987,11 +1134,18 @@ export default function RodentRiskMap() {
   // meant scrolling past basemap choices to reach the legend.
   // All three open by default: the drawer is tall enough to hold them, and the
   // point of the switch away from tabs was to stop hiding two thirds of it.
-  const [openSections, setOpenSections] = useState({ layers: true, filters: true, legend: true });
+  const [openSections, setOpenSections] = useState({ action: true, layers: true, filters: true, legend: true });
   const toggleSection = k => setOpenSections(s => ({ ...s, [k]: !s[k] }));
   const [dockOpen, setDockOpen] = useState(true);
   const [fitSignal, setFitSignal] = useState(0);
   const [flySignal, setFlySignal] = useState(0);
+  // markers register by "lat,lng" so the Action required list can open one
+  const markerRefs = useRef(new Map());
+  // { latlng, key, n } - n forces a re-fly when the same item is clicked twice
+  const [focus, setFocus] = useState(null);
+  // block whose venue detail drawer is open, or null
+  const [venueBlock, setVenueBlock] = useState(null);
+  const focusNonce = useRef(0);
   const [tileError, setTileError] = useState(false);
   const [woBlock, setWoBlock] = useState(null);
   // { ids, block } - the cluster an officer asked for a briefing on
@@ -1122,7 +1276,25 @@ export default function RodentRiskMap() {
   }, [playing, days.length]);
 
   const hasGeometry = rodentPoints.length > 0 || feedingPoints.length > 0;
-  const highRiskLocations = rodentPoints.filter(p => p.riskLevel === 'high' || p.riskLevel === 'critical').length;
+  // Counted from the UNFILTERED points, so the card keeps stating the true total
+  // even while the map is filtered down to exactly those locations - otherwise
+  // pressing the card would make its own number look like the whole estate.
+  const highRiskPoints = useMemo(
+    () => rodentPoints.filter(p => p.riskLevel === 'high' || p.riskLevel === 'critical'),
+    [rodentPoints],
+  );
+  const highRiskLocations = highRiskPoints.length;
+  // what the map actually draws
+  const shownRodent = highRiskOnly ? highRiskPoints : rodentPoints;
+  // worst first, by the server's own weighted score
+  const actionList = useMemo(
+    () => [...highRiskPoints].sort(
+      (a, b) => (b.weightedScore || 0) - (a.weightedScore || 0)
+        || b.count - a.count
+        || String(a.block || '').localeCompare(String(b.block || ''), 'en', { numeric: true }),
+    ),
+    [highRiskPoints],
+  );
 
   // Camera targets derive from the UNFILTERED data on purpose: the time-filtered
   // lists change identity on every scrubber step/playback tick, and feeding them
@@ -1151,6 +1323,22 @@ export default function RodentRiskMap() {
   const canRaiseWorkOrder = user?.role === 'admin';
 
   const flyToCoOccur = () => { setShowCoOccur(true); setFlySignal(n => n + 1); };
+
+  /**
+   * Jump to one high-risk location from the Action required list.
+   *
+   * Switches to PINS first: the popup belongs to a marker, and in density view
+   * there are no markers to open - the officer would be flown somewhere with
+   * nothing to read. Also clears the high-risk filter's effect on visibility by
+   * leaving it alone, since every item in this list is high-risk anyway.
+   */
+  function focusLocation(p) {
+    setViewMode('pins');
+    setShowRodent(true);
+    // an incrementing nonce, so clicking the SAME item twice re-flies
+    focusNonce.current += 1;
+    setFocus({ latlng: [p.lat, p.lng], key: `${p.lat},${p.lng}`, n: focusNonce.current });
+  }
   const syncedLabel = state.loading ? 'Syncing…' : updatedAt ? `Synced ${relTimeLabel(updatedAt, nowMs)}` : null;
 
   // ---- radius selection ------------------------------------------------------
@@ -1201,7 +1389,17 @@ export default function RodentRiskMap() {
         '.rk-marker > div': { transition: 'transform .12s ease' },
         '.rk-marker:hover > div': { transform: 'scale(1.12)' },
         '.rk-coocc > div': { position: 'relative' },
-        '.rk-coocc > div::after': { content: '""', position: 'absolute', inset: '-2px', borderRadius: 'inherit', pointerEvents: 'none', animation: 'rkMarkerPulse 1.8s ease-out infinite' },
+        // The ring tracks the pin's HEAD, not its bounding box.
+        // It used to be `inset: -2px; border-radius: inherit`, which worked only
+        // because the old marker's child was itself a circle. The teardrop's
+        // wrapper has no radius, so `inherit` resolved to 0 and the pulse drew a
+        // rectangle around the pin. Head diameter equals the box width, so a
+        // square block at the top with a 50% radius sits exactly on it.
+        '.rk-coocc > .rk-pin::after': {
+          content: '""', position: 'absolute', left: '-2px', top: '-2px',
+          width: 'calc(100% + 4px)', aspectRatio: '1', borderRadius: '50%',
+          pointerEvents: 'none', animation: 'rkMarkerPulse 1.8s ease-out infinite',
+        },
         '@keyframes rkpulse': { '0%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},.5)` }, '70%': { boxShadow: `0 0 0 7px rgba(${pulseRgb},0)` }, '100%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},0)` } },
         '@keyframes rkMarkerPulse': { '0%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},.45)` }, '70%': { boxShadow: `0 0 0 9px rgba(${pulseRgb},0)` }, '100%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},0)` } },
         // Leaflet's stock chrome follows the scheme: popup panel/tip, the canvas
@@ -1232,9 +1430,27 @@ export default function RodentRiskMap() {
           fontWeight: 500, boxShadow: '0 6px 20px rgba(0,0,0,.35)', whiteSpace: 'nowrap',
         },
         '.leaflet-tooltip.rk-hex-tip::before': { borderTopColor: 'rgba(17,24,39,.95)' },
+        // Pre-attentive cue on the worst band only.
+        // The ring is an ::after CIRCLE over the pin's head, not a box-shadow on
+        // the wrapper: the wrapper is a plain teardrop-sized div with no radius,
+        // so a box-shadow traced its square bounding box and drew a rectangle
+        // around the pin. Head diameter == wrapper width, so a square block at
+        // top:0 with a 50% radius lands exactly on it.
+        '@keyframes rkPinPulse': {
+          '0%,100%': { boxShadow: '0 0 0 0 rgba(185,28,28,.55)' },
+          '70%': { boxShadow: '0 0 0 11px rgba(185,28,28,0)' },
+        },
+        '.rk-pin-critical::after': {
+          content: '""', position: 'absolute', left: 0, top: 0,
+          width: '100%', aspectRatio: '1', borderRadius: '50%',
+          pointerEvents: 'none', animation: 'rkPinPulse 2s ease-out infinite',
+        },
         '@keyframes rkHexIn': { from: { opacity: 0, transform: 'scale(.86)' }, to: { opacity: 1, transform: 'scale(1)' } },
         'path.rk-hex': { transformBox: 'fill-box', transformOrigin: 'center', animation: 'rkHexIn .28s ease-out both' },
-        '@media (prefers-reduced-motion: reduce)': { 'path.rk-hex': { animation: 'none' } },
+        '@media (prefers-reduced-motion: reduce)': {
+          'path.rk-hex': { animation: 'none' },
+          '.rk-pin-critical': { animation: 'none' },
+        },
       }} />
 
       {/* ── Slim header. The long "reported positions only" disclaimer is now an
@@ -1403,6 +1619,7 @@ export default function RodentRiskMap() {
               <FitToData latlngs={dataLatLngs} fitSignal={fitSignal} />
               <FlyTo latlngs={coOccurLatLngs} signal={flySignal} />
               <RadiusPicker armed={radiusArmed} onPick={c => { setRadiusCentre(c); setRadiusArmed(false); }} />
+              <FocusPoint focus={focus} markerRefs={markerRefs} />
               <Polygon positions={ESTATE_BOUNDARY}
                 pathOptions={{ color: boundaryInk, weight: 1, opacity: 0.35, dashArray: '3 7', fill: true, fillColor: boundaryInk, fillOpacity: 0.03 }} />
 
@@ -1419,7 +1636,7 @@ export default function RodentRiskMap() {
 
               {viewMode === 'density' ? (
                 <>
-                  {showRodent && <DensityLayer points={rodentPoints} />}
+                  {showRodent && <DensityLayer points={shownRodent} />}
                   {/* feeding bins onto the SAME hex grid, so a rodent cell and a
                       feeding cell are directly comparable rather than one being
                       discs and the other polygons */}
@@ -1427,7 +1644,7 @@ export default function RodentRiskMap() {
                 </>
               ) : (
                 <>
-                  {showRodent && <PointClusterLayer points={rodentPoints} kind="rodent" dimNonCoOccur={showCoOccur} onCreateWorkOrder={setWoBlock} onDraftBriefing={openBriefing} />}
+                  {showRodent && <PointClusterLayer points={shownRodent} kind="rodent" dimNonCoOccur={showCoOccur} onCreateWorkOrder={setWoBlock} onDraftBriefing={openBriefing} markerRefs={markerRefs} onOpenVenue={setVenueBlock} />}
                   {showFeeding && <PointClusterLayer points={feedingPoints} kind="feeding" dimNonCoOccur={showCoOccur} />}
                 </>
               )}
@@ -1470,25 +1687,21 @@ export default function RodentRiskMap() {
       {/* ── Docked controls sidebar. Collapses to a 48px rail rather than
           disappearing, so the affordance to reopen it is always on the grid. ── */}
       {!state.error && (toolbarOpen ? (
-              // FLOATING panel from lg up: absolutely positioned over the map with
-              // its own elevation and rounded corners, so the map keeps the full
-              // width of the viewport instead of surrendering a 320px column. Below
-              // lg it stays a normal in-flow block, where a floating overlay would
-              // simply cover the map it is meant to control.
+              // DOCKED, not floating. A panel hovering over the canvas covered the
+              // pins underneath it - and on this map the top-right corner is water
+              // and estate alike, so what it hid was unpredictable. Docked, the map
+              // takes the remaining width and nothing is ever obscured.
               <Box
                 component="aside"
                 aria-label="Map controls"
                 sx={{
                   bgcolor: BRAND.surface,
                   overflowY: 'auto',
-                  width: { xs: '100%', lg: 316 },
-                  maxHeight: { xs: 320, lg: 'calc(100% - 32px)' },
+                  width: { xs: '100%', lg: 320 },
+                  flexShrink: 0,
+                  maxHeight: { xs: 320, lg: 'none' },
                   borderTop: { xs: `1px solid ${BRAND.border}`, lg: 'none' },
-                  position: { lg: 'absolute' },
-                  top: { lg: 16 }, right: { lg: 16 }, zIndex: { lg: 500 },
-                  border: { lg: `1px solid ${BRAND.border}` },
-                  borderRadius: { lg: '12px' },
-                  boxShadow: { lg: '0 12px 32px rgba(16,24,40,.18), 0 2px 8px rgba(16,24,40,.10)' },
+                  borderLeft: { lg: `1px solid ${BRAND.border}` },
                 }}
               >
                 <Box sx={{ position: 'sticky', top: 0, bgcolor: BRAND.surface, zIndex: 1, borderBottom: `1px solid ${BRAND.border}` }}>
@@ -1505,6 +1718,74 @@ export default function RodentRiskMap() {
                     are on while reading the legend had to keep switching. Sections
                     open independently, and a 24px gutter keeps them aligned. */}
                 <Box sx={{ p: 3, pt: 2 }}>
+                {/* ── ACTION REQUIRED ───────────────────────────────────────
+                    Spatial hunting is slow: finding the worst block means
+                    clicking around a map of an island. This is the same data as
+                    a worklist, ranked and one click from the popup.
+
+                    RANKED BY THE BACKEND'S OWN SCORE. `weightedScore` comes from
+                    computeRiskMap using its documented weights (low 1, medium 3,
+                    high 6, critical 10). No severity ordering is invented here -
+                    if the weights change server-side, this list re-orders with
+                    them. Ties fall back to report count, then block name, so the
+                    order is stable between renders rather than shuffling. */}
+                <PanelSection title={`Action required${actionList.length ? ` · ${actionList.length}` : ''}`} open={openSections.action} onToggle={() => toggleSection('action')}>
+                  {actionList.length === 0 ? (
+                    <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, py: 1 }}>
+                      No high or critical locations in this window.
+                    </Typography>
+                  ) : (
+                    <Stack spacing={0.5}>
+                      {actionList.map(p => {
+                        const sv = SEVERITY[bandOf(p)];
+                        return (
+                          <Stack
+                            key={`${p.lat},${p.lng}`}
+                            direction="row"
+                            spacing={1}
+                            sx={{
+                              alignItems: 'center', px: 1, py: 0.85, borderRadius: '8px',
+                              borderLeft: `3px solid ${sv.solid}`, bgcolor: BRAND.section,
+                              '&:hover': { bgcolor: BRAND.navySoft },
+                            }}
+                          >
+                            <Box
+                              component="button"
+                              type="button"
+                              onClick={() => focusLocation(p)}
+                              sx={{
+                                flexGrow: 1, minWidth: 0, textAlign: 'left', font: 'inherit',
+                                border: 0, background: 'none', cursor: 'pointer', p: 0,
+                                '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
+                              }}
+                            >
+                              <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {p.block || 'Unlabelled block'}
+                              </Typography>
+                              <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>
+                                {p.count} report{p.count === 1 ? '' : 's'} · score {p.weightedScore ?? '-'}
+                              </Typography>
+                            </Box>
+                            {/* the same high/critical gate the popup uses */}
+                            {warrantsBriefing(p.assessments) && (
+                              <Tooltip arrow title={`Draft a contractor briefing for ${p.block || 'this block'}`}>
+                                <IconButton
+                                  size="small"
+                                  aria-label={`Draft vendor briefing for ${p.block || 'this block'}`}
+                                  onClick={() => openBriefing(p.assessments.map(a => a.id), p.block)}
+                                  sx={{ flexShrink: 0, color: ON_SURFACE.info, '&:hover': { bgcolor: BRAND.surface } }}
+                                >
+                                  <AutoAwesomeOutlinedIcon sx={{ fontSize: 17 }} />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Stack>
+                        );
+                      })}
+                    </Stack>
+                  )}
+                </PanelSection>
+
                 <PanelSection title="Layers" open={openSections.layers} onToggle={() => toggleSection('layers')}>
                   <Typography sx={SECTION_LABEL}>View</Typography>
                   <ToggleButtonGroup value={viewMode} exclusive size="small" fullWidth onChange={(_e, v) => v && setViewMode(v)} sx={{ mb: 1.5 }}>
@@ -1531,7 +1812,7 @@ export default function RodentRiskMap() {
                       <LayerSwitch
                         checked={showSensors}
                         onChange={() => setShowSensors(v => !v)}
-                        swatch={<Box aria-hidden sx={{ width: 12, height: 12, borderRadius: '3px', background: `linear-gradient(135deg, ${SENSOR_RAMP[resolvedMode][1]}, ${SENSOR_RAMP[resolvedMode][10]})` }} />}
+                        swatch={<Box aria-hidden sx={{ width: 12, height: 12, borderRadius: '3px', background: `linear-gradient(135deg, ${SENSOR_RAMP[resolvedMode][1]}, ${SENSOR_RAMP[resolvedMode][SENSOR_RAMP[resolvedMode].length - 1]})` }} />}
                         label="Simulated sensors"
                         count={sensorSurface.data ? sensorSurface.data.sensorCount : null}
                       />
@@ -1687,15 +1968,13 @@ export default function RodentRiskMap() {
                 </Box>
               </Box>
             ) : (
-              // collapsed rail, floating on the same corner the panel occupies
+              // collapsed rail, docked on the same edge the panel occupies
               <Box sx={{
                 bgcolor: BRAND.surface, display: 'flex', justifyContent: 'center',
                 alignItems: { xs: 'center', lg: 'flex-start' }, py: 1,
-                width: { xs: '100%', lg: 44 },
+                width: { xs: '100%', lg: 44 }, flexShrink: 0,
                 borderTop: { xs: `1px solid ${BRAND.border}`, lg: 'none' },
-                position: { lg: 'absolute' }, top: { lg: 16 }, right: { lg: 16 }, zIndex: { lg: 500 },
-                border: { lg: `1px solid ${BRAND.border}` }, borderRadius: { lg: '10px' },
-                boxShadow: { lg: '0 8px 24px rgba(16,24,40,.16)' },
+                borderLeft: { lg: `1px solid ${BRAND.border}` },
               }}>
                 <Tooltip title="Map controls" placement="left">
                   <IconButton onClick={() => setToolbarOpen(true)} aria-label="Open map controls" sx={railBtn}>
@@ -1718,57 +1997,12 @@ export default function RodentRiskMap() {
                   get the size and the labels recede to micro-type */}
               {/* strict 4-column grid across the full sheet width - the cards no
                   longer share a row with the scrubber and drift out of alignment */}
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.75 }}>
-                <StatCard
-                  loading={state.loading}
-                  value={totalAssessments}
-                  label="Rodent reports"
-                  trend={prev && <TrendDelta current={totalAssessments} previous={prev.totalAssessments} windowDays={windowDays} />}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={highRiskLocations}
-                  label="High-risk locations"
-                  accent={highRiskLocations ? ON_SURFACE.danger : BRAND.ink}
-                  alert={highRiskLocations > 0}
-                  /* Gated on the prior window having MAPPED reports, not merely any
-                     reports. "High-risk locations" is derived from coordinates, so a
-                     window where nothing carried a location scores 0 - and comparing
-                     against that would read a coverage gap as a fall in risk. */
-                  trend={prev?.mappedCount > 0
-                    ? <TrendDelta current={highRiskLocations} previous={prev.highRiskLocations} windowDays={windowDays} />
-                    : null}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={feeding.total}
-                  label="Feeding sightings"
-                  trend={prev && <TrendDelta current={feeding.total} previous={prev.feedingTotal} windowDays={windowDays} />}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={`${locatedPct}%`}
-                  label={`Located · ${totalMapped}/${totalReports}`}
-                  accent={poorCoverage ? COVERAGE_INK : BRAND.ink}
-                  hint={poorCoverage ? (
-                    <Tooltip title={`Only ${locatedPct}% of reports in this window include a location, so the map may under-represent activity.`}>
-                      <InfoOutlinedIcon sx={{ fontSize: 15, color: COVERAGE_INK, cursor: 'help' }} />
-                    </Tooltip>
-                  ) : null}
-                />
-              </Box>
-
-              {poorCoverage && !state.loading && (
-                <Button component={RouterLink} to="/rodent" size="small" variant="contained" startIcon={<AddLocationAltOutlinedIcon />}
-                  sx={{ alignSelf: { md: 'center' }, flexShrink: 0, textTransform: 'none', fontWeight: 700, borderRadius: '6px', px: 2.5, py: 1, bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }}>
-                  Add locations
-                </Button>
-              )}
-
-              {/* Temporal scrubber, spanning the FULL sheet width beneath the
-                  cards rather than squeezed into the row beside them. */}
+              {/* Scrubber ABOVE the cards. Time manipulation belongs with the map
+                  it re-draws, not stranded at the very bottom of the sheet below
+                  the figures it changes - the cards are a readout OF the window
+                  the scrubber sets, so it reads top-down now. */}
               {days.length > 1 && (
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mt: 1.75, pt: 1.5, borderTop: `1px solid ${BRAND.border}` }}>
+                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1.75, pb: 1.5, borderBottom: `1px solid ${BRAND.border}` }}>
                   <Tooltip title={playing ? 'Pause playback' : 'Play activity over time'}>
                     <IconButton size="small" onClick={() => setPlaying(p => !p)} aria-label={playing ? 'Pause' : 'Play'} sx={railBtn}>
                       {playing ? <PauseRoundedIcon sx={{ fontSize: 20 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 20 }} />}
@@ -1812,6 +2046,57 @@ export default function RodentRiskMap() {
                   )}
                 </Stack>
               )}
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.75 }}>
+                <StatCard
+                  loading={state.loading}
+                  value={totalAssessments}
+                  label="Rodent reports"
+                  trend={prev && <TrendDelta current={totalAssessments} previous={prev.totalAssessments} windowDays={windowDays} />}
+                />
+                <StatCard
+                  loading={state.loading}
+                  value={highRiskLocations}
+                  label="High-risk locations"
+                  accent={highRiskLocations ? ON_SURFACE.danger : BRAND.ink}
+                  alert={highRiskLocations > 0}
+                  // pressing it filters the map to exactly these locations, and
+                  // inverts so the filtered state is never a silent one
+                  active={highRiskOnly}
+                  onToggle={highRiskLocations > 0 ? () => setHighRiskOnly(v => !v) : null}
+                  /* Gated on the prior window having MAPPED reports, not merely any
+                     reports. "High-risk locations" is derived from coordinates, so a
+                     window where nothing carried a location scores 0 - and comparing
+                     against that would read a coverage gap as a fall in risk. */
+                  trend={prev?.mappedCount > 0
+                    ? <TrendDelta current={highRiskLocations} previous={prev.highRiskLocations} windowDays={windowDays} />
+                    : null}
+                />
+                <StatCard
+                  loading={state.loading}
+                  value={feeding.total}
+                  label="Feeding sightings"
+                  trend={prev && <TrendDelta current={feeding.total} previous={prev.feedingTotal} windowDays={windowDays} />}
+                />
+                <StatCard
+                  loading={state.loading}
+                  value={`${locatedPct}%`}
+                  label={`Located · ${totalMapped}/${totalReports}`}
+                  accent={poorCoverage ? COVERAGE_INK : BRAND.ink}
+                  hint={poorCoverage ? (
+                    <Tooltip title={`Only ${locatedPct}% of reports in this window include a location, so the map may under-represent activity.`}>
+                      <InfoOutlinedIcon sx={{ fontSize: 15, color: COVERAGE_INK, cursor: 'help' }} />
+                    </Tooltip>
+                  ) : null}
+                />
+              </Box>
+
+              {poorCoverage && !state.loading && (
+                <Button component={RouterLink} to="/rodent" size="small" variant="contained" startIcon={<AddLocationAltOutlinedIcon />}
+                  sx={{ alignSelf: { md: 'center' }, flexShrink: 0, textTransform: 'none', fontWeight: 700, borderRadius: '6px', px: 2.5, py: 1, bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }}>
+                  Add locations
+                </Button>
+              )}
+
             </Box>
           </Collapse>
 
@@ -1870,6 +2155,13 @@ export default function RodentRiskMap() {
           </Box>
         </Box>
       )}
+
+      <VenueDetailDrawer
+        key={venueBlock || 'none'}
+        block={venueBlock}
+        open={Boolean(venueBlock)}
+        onClose={() => setVenueBlock(null)}
+      />
 
       <VendorBriefingDialog
         open={Boolean(briefing)}

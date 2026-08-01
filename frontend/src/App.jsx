@@ -18,6 +18,8 @@ import PetsOutlinedIcon from '@mui/icons-material/PetsOutlined'
 import { UserProvider, useUser } from './contexts/UserContext'
 import { useThemeMode } from './contexts/ThemeModeContext'
 import { useDashboardMetrics } from './hooks/useDashboardMetrics'
+import EmServicesLogo from './components/EmServicesLogo'
+import SiteFooter from './components/SiteFooter'
 import { BRAND } from './theme'
 import ProtectedRoute from './components/ProtectedRoute'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -112,13 +114,6 @@ const GROUP_META = {
 // `label` defaults to 4E so the badge matches the product name it sits beside.
 // The footer passes "EM" deliberately - there the badge sits next to "EM Services",
 // the operating company, so the two are consistent in each place.
-function BrandMark({ size = 30, fontSize = 14, label = '4E' }) {
-  return (
-    <Box sx={{ width: size, height: size, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize, flexShrink: 0 }}>
-      {label}
-    </Box>
-  )
-}
 
 // ---- Home: hero -> at-a-glance stats (staff) -> service cards --------------
 function Hero({ user, isStaff }) {
@@ -269,9 +264,8 @@ function NavDrawer({ open, onClose, isStaff }) {
   return (
     <Drawer anchor="left" open={open} onClose={onClose}>
       <Box sx={{ width: 280, pb: 2 }} role="navigation" onClick={onClose}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 2 }}>
-          <BrandMark />
-          <Typography sx={{ fontWeight: 800, letterSpacing: '-0.3px', fontSize: 16 }}>Biodiversity Tracker</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 2 }}>
+          <EmServicesLogo height={24} />
         </Box>
         <Divider />
         {groups.map((g, gi) => {
@@ -599,12 +593,10 @@ function NavBar() {
                 <MenuIcon sx={{ fontSize: 20 }} />
               </IconButton>
             )}
-            <Box component={RouterLink} to="/" sx={{ display: 'flex', alignItems: 'center', gap: 1.25, textDecoration: 'none', flexShrink: 0 }}>
-              <BrandMark />
-              {/* the badge already says 4E, so the wordmark does not repeat it */}
-              <Typography sx={{ color: 'text.primary', fontWeight: 800, letterSpacing: '-0.3px', fontSize: 16.5, whiteSpace: 'nowrap', display: { xs: 'none', sm: 'block' } }}>
-                Biodiversity Tracker
-              </Typography>
+            {/* The company wordmark IS the lockup - the artwork already reads
+                "EM SERVICES", so no text sits beside it. */}
+            <Box component={RouterLink} to="/" aria-label="EM Services - home" sx={{ display: 'flex', alignItems: 'center', textDecoration: 'none', flexShrink: 0 }}>
+              <EmServicesLogo height={26} />
             </Box>
 
             {user && <HorizontalNav isStaff={isStaff} />}
@@ -657,53 +649,6 @@ function NavBar() {
 }
 
 // ---- Footer ---------------------------------------------------------------
-function SiteFooter() {
-  const year = new Date().getFullYear()
-  return (
-    <Box component="footer" sx={{ mt: 6, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface }}>
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.6fr 1fr 1fr' }, gap: 3 }}>
-          <Box>
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1 }}>
-              {/* "EM" here: the badge sits beside the operating company's name */}
-              <BrandMark size={28} fontSize={12} label="EM" />
-              <Typography sx={{ fontWeight: 800, color: BRAND.heading }}>EM Services</Typography>
-            </Stack>
-            <Typography sx={{ fontSize: 13.5, color: BRAND.text, maxWidth: 420, lineHeight: 1.5 }}>
-              Township Management Partner for Better Communities. This 4E Flora, Fauna & Estate
-              Biodiversity Tracker is an internal proof-of-concept tool.
-            </Typography>
-          </Box>
-
-          <Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1 }}>Quick links</Typography>
-            <Stack spacing={0.5}>
-              {[{ to: '/', label: 'Home' }, { to: '/submit-report', label: 'Submit a report' }, { to: '/reports', label: 'My reports' }, { to: '/dashboard', label: 'Command Centre' }].map(l => (
-        <Box key={l.to} component={RouterLink} to={l.to} sx={{ fontSize: 13.5, color: BRAND.text, textDecoration: 'none', '&:hover': { color: BRAND.accent } }}>
-                  {l.label}
-        </Box>
-              ))}
-            </Stack>
-          </Box>
-
-          <Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1 }}>Contact</Typography>
-            <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.6 }}>201 Kim Tian Road, Singapore</Typography>
-            <Box component="a" href="https://www.emservices.com.sg" target="_blank" rel="noopener noreferrer"
-              sx={{ fontSize: 13.5, color: BRAND.accent, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
-              emservices.com.sg
-            </Box>
-          </Box>
-        </Box>
-
-        <Divider sx={{ my: 2.5 }} />
-        <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>
-          © {year} EM Services · 4E Biodiversity Tracker · proof-of-concept build
-        </Typography>
-      </Container>
-    </Box>
-  )
-}
 
 // Keys the error boundary by route, so a crash on one page clears the moment the
 // user navigates elsewhere (rather than staying broken until a manual reload).
@@ -715,14 +660,20 @@ function RouteBoundary({ children }) {
 // Routes that own the whole viewport (map dashboards): rendered edge-to-edge with
 // no Container, no footer and no page scroll - the viewport is locked and any
 // scrolling happens inside the page's own panels.
-const FULL_BLEED_PATHS = new Set(['/rodent-heatmap', '/action-queue', '/notif-log'])
+// Viewport is owned entirely by the page and there is NO footer: the map and the
+// kanban board both fill the screen and scroll internally.
+const FULL_BLEED_PATHS = new Set(['/rodent-heatmap', '/action-queue'])
+// Same full-height shell, but these pages render SiteFooter themselves at the end
+// of their own scroll region - so the footer is still reachable.
+const FULL_HEIGHT_PATHS = new Set(['/notif-log', '/alert-rules'])
 // Routes that keep the app chrome and footer but drop the centred max-width, so a
 // dense grid can use the full screen instead of being boxed at 1536px.
 const WIDE_PATHS = new Set(['/dashboard'])
 
 function AppFrame() {
   const location = useLocation()
-  const fullBleed = FULL_BLEED_PATHS.has(location.pathname)
+  const fullHeight = FULL_HEIGHT_PATHS.has(location.pathname)
+  const fullBleed = FULL_BLEED_PATHS.has(location.pathname) || fullHeight
   const wide = WIDE_PATHS.has(location.pathname)
   const routed = (
     <RouteBoundary>
@@ -771,6 +722,7 @@ function AppFrame() {
       {fullBleed
         ? <Box component="main" sx={{ flexGrow: 1, minHeight: 0 }}>{routed}</Box>
         : <Container maxWidth={wide ? false : 'xl'} sx={{ flexGrow: 1, px: wide ? { xs: 2, md: 3 } : undefined }}>{routed}</Container>}
+      {/* fullHeight pages emit their own footer inside their scroll region */}
       {!fullBleed && <SiteFooter />}
     </Box>
   )

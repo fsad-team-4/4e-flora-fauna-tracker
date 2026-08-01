@@ -59,7 +59,12 @@ export const THEME_TOKENS = {
   light: {
     '--em-heading': '#1A1A1A',
     '--em-text': '#444444',
-    '--em-text-light': '#6B7280', // slate-500: ~4.8:1 on white
+    // Secondary ink. #6B7280 cleared 4.8:1 on the white card but only 4.39:1 on
+    // the section grey and 4.11:1 on the navySoft row hover - and secondary text
+    // sits on all three (toolbars, column headers, zebra rows), so it was failing
+    // AA wherever it was NOT on white. #5B6470 measures 6.00 / 5.45 / 5.10.
+    // Dark mode's #9AA4B2 already clears both its backdrops (6.34 / 6.78).
+    '--em-text-light': '#5B6470',
     '--em-border': '#E5E7EB',     // grey-200
     '--em-section': '#F3F4F6', // page field - cards sit on it as pure white
     '--em-canvas': '#F8FAFC',  // slate-50: dense table pages, so white rows lift off it
@@ -242,21 +247,24 @@ Object.assign(CHART, CHART.light);
  * ---------------------------------------------------------------------------
  */
 const NEXRAD_REFLECTIVITY = [
-  '#04E9E7', // cyan      - lightest activity
-  '#019FF4', // light blue
+  // SEVEN steps, down from fifteen.
+  //
+  // The full NWS reflectivity scale has 15, but it is built for a radar operator
+  // reading dBZ off a legend. Here the reader is an estate officer asking "is
+  // this patch worse than that one", and 15 stops meant several neighbouring
+  // bands were near-indistinguishable while the legend needed 15 swatches.
+  //
+  // These 7 are the scale's own inflection points - one per hue family - so the
+  // low-to-high progression is unchanged and every step is separable at a
+  // glance. The raster still interpolates between them (makeColourLut, 256
+  // entries), so the surface stays continuous rather than posterised.
+  '#04E9E7', // cyan    - lightest activity
   '#0300F4', // blue
   '#02FD02', // green
-  '#01C501', // green
-  '#008E00', // dark green
   '#FDF802', // yellow
-  '#E5BC00', // dark yellow
   '#FD9500', // orange
   '#FD0000', // red
-  '#D40000', // dark red
-  '#BC0000', // darker red
-  '#F800FD', // magenta   - extreme
-  '#9854C6', // purple
-  '#FDFDFD', // white     - most intense
+  '#F800FD', // magenta - heaviest activity
 ];
 export const SENSOR_RAMP = {
   light: NEXRAD_REFLECTIVITY,

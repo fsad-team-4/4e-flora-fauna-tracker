@@ -41,7 +41,11 @@ router.get('/activity', restrictTo('admin', 'staff'), async (req, res) => {
     // counting them would let two clicks of "resend" turn one fire into three
     const [inWindow, inPrev, newest] = await Promise.all([
       NotificationLog.findAll({
-        attributes: ['rule_id', 'status'],
+        // createdAt is needed to bucket the window into a real hourly series -
+        // the cards previously had only two aggregates (total, prevTotal), and a
+        // sparkline drawn through two points either draws a meaningless straight
+        // line or invents the values in between.
+        attributes: ['rule_id', 'status', 'createdAt'],
         where: { createdAt: { [Op.gte]: windowStart }, retry_of: null },
       }),
       NotificationLog.count({ where: { createdAt: { [Op.gte]: prevStart, [Op.lt]: windowStart }, retry_of: null } }),
@@ -71,10 +75,29 @@ router.get('/activity', restrictTo('admin', 'staff'), async (req, res) => {
       rules[row.rule_id].lastTriggeredAt = new Date(row.last_at).toISOString();
     }
 
+    /**
+     * Per-hour buckets across the window: every hour is present, including the
+     * quiet ones, so a gap in dispatches renders as a genuine zero rather than
+     * the line skipping over it. Oldest bucket first.
+     *
+     * `sent`/`failed` are counted separately so the delivery-health card can plot
+     * the failure shape rather than re-deriving it from a single total.
+     */
+    const buckets = Array.from({ length: hours }, () => ({ total: 0, failed: 0 }));
+    for (const row of inWindow) {
+      const t = new Date(row.createdAt).getTime();
+      // index 0 is the OLDEST hour, so the series reads left-to-right in time
+      const idx = Math.floor((t - windowStart.getTime()) / 3600000);
+      if (idx < 0 || idx >= hours) continue;      // clock skew: drop, never clamp
+      buckets[idx].total += 1;
+      if (row.status === 'failed') buckets[idx].failed += 1;
+    }
+
     res.json({
       windowHours: hours,
       total: inWindow.length,
       prevTotal: inPrev,
+      series: buckets,
       failed: inWindow.filter(r => r.status === 'failed').length,
       // dispatches with no rule_id came from a work order or a manual send, not a
       // rule - surfaced separately rather than silently folded into a rule's count

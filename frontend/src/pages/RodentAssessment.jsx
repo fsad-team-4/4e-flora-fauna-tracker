@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Box, Typography, TextField, Button, Card, CardContent, Breadcrumbs, Badge,
+  Box, Typography, TextField, Button, Card, CardContent, Breadcrumbs, Badge, Autocomplete,
   Alert, CircularProgress, Chip, Table, TableHead, InputAdornment,
   TableRow, TableCell, TableBody, Paper, Stack, Checkbox, Divider, Tooltip, MenuItem,
   Dialog, DialogContent, DialogTitle, IconButton, Skeleton,
@@ -252,7 +252,12 @@ export default function RodentAssessment() {
   const [doneActions, setDoneActions] = useState({});
   const [photo, setPhoto] = useState(null); // { dataUrl, name }
   const [photoError, setPhotoError] = useState(null);
-  const [location, setLocation] = useState(null); // { lat, lng, accuracy } - the reported position
+  // { lat, lng, accuracy } from a device fix, or { lat, lng, source:'address' }
+  // from a looked-up block. Both are positions the officer reported; only the
+  // device fix is precise to where they stood, which the UI states.
+  const [location, setLocation] = useState(null);
+  const [addrOptions, setAddrOptions] = useState([]);
+  const [addrLoading, setAddrLoading] = useState(false);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState(null);
   // ?block=123 pre-filters the list, so "view block reports" links (e.g. from the
@@ -439,6 +444,31 @@ export default function RodentAssessment() {
   // Capture the officer's actual position from the device. Optional by design: a
   // failure (no signal in a stairwell, permission denied) must never block filing,
   // so it only sets an explanatory message - it never disables submit.
+  /**
+   * Address lookup for the Block field.
+   *
+   * Debounced at 300ms so a typed block does not fire a request per keystroke,
+   * and every response is guarded by a live flag - a slow reply for "12" must
+   * not overwrite the suggestions for "128 Lorong".
+   * A failed lookup sets no error banner: the officer can still type freely, so
+   * a dead network here is not something they need to act on.
+   */
+  useEffect(() => {
+    const q = block.trim();
+    let live = true;
+    // Both setState calls live INSIDE the debounce timer, never in the effect
+    // body - a synchronous set here cascades a render on every keystroke.
+    const t = setTimeout(() => {
+      if (q.length < 3) { setAddrOptions([]); return; }
+      setAddrLoading(true);
+      http.get('/api/geocode/search', { params: { q } })
+        .then(r => { if (live) setAddrOptions(r.data?.results || []); })
+        .catch(() => { if (live) setAddrOptions([]); })
+        .finally(() => { if (live) setAddrLoading(false); });
+    }, 300);
+    return () => { live = false; clearTimeout(t); };
+  }, [block]);
+
   function handleCaptureLocation() {
     setLocationError(null);
     if (!('geolocation' in navigator)) {
@@ -675,24 +705,70 @@ export default function RodentAssessment() {
               {/* Block + Floor share one grid row. Helper prose moved into tooltips so
                   the form does not carry paragraphs of explanation on the canvas. */}
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-                <TextField
-                  label="Block"
-                  value={block}
-                  onChange={e => setBlock(e.target.value)}
-                  size="small"
-                  fullWidth
-                  placeholder="e.g. Block 234"
+                {/* freeSolo is NOT optional here. An officer in a stairwell with
+                    no signal, or reporting somewhere OneMap does not index, must
+                    still be able to type a block and file. The lookup is an
+                    accelerator, never a gate. */}
+                <Autocomplete
+                  freeSolo
+                  options={addrOptions}
+                  filterOptions={x => x}
+                  getOptionLabel={o => (typeof o === 'string' ? o : o.label)}
+                  inputValue={block}
+                  onInputChange={(_e, v, reason) => { if (reason !== 'reset') setBlock(v); }}
+                  onChange={(_e, v) => {
+                    if (!v || typeof v === 'string') return;
+                    // The officer picked a real, named address - so this is a
+                    // reported position, not an inferred one. It is still only
+                    // block-level, which the helper text below says outright.
+                    setBlock(`${v.block ? `Block ${v.block}` : ''} ${v.road || ''}`.trim() || v.label);
+                    setLocation({ lat: v.lat, lng: v.lng, source: 'address', label: v.label });
+                    setLocationError(null);
+                  }}
+                  loading={addrLoading}
                   disabled={submitting}
-                  slotProps={{
-                    input: {
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <Tooltip title="Adding a block lets the AI check for repeat reports at the same location.">
-                            <HelpOutlineRoundedIcon sx={{ fontSize: 16, color: BRAND.textLight, cursor: 'help' }} />
-                          </Tooltip>
-                        </InputAdornment>
-                      ),
-                    },
+                  renderInput={params => (
+                    <TextField
+                      {...params}
+                      label="Block"
+                      size="small"
+                      fullWidth
+                      placeholder="e.g. 128 Lorong 1 Toa Payoh"
+                      helperText="Start typing a street to look it up, or just type a block name"
+                      /* MUI v9 hands renderInput `params.slotProps.input`, NOT
+                         `params.InputProps` - reading the old name gave undefined
+                         and threw on .endAdornment, which took the whole dialog
+                         down. Autocomplete's own adornment (clear/popup icons)
+                         has to be preserved or the dropdown arrow disappears. */
+                      slotProps={{
+                        ...params.slotProps,
+                        input: {
+                          ...params.slotProps?.input,
+                          endAdornment: (
+                            <>
+                              {addrLoading ? <CircularProgress size={15} sx={{ mr: 1 }} /> : null}
+                              <Tooltip title="Picking a looked-up address also fills the location, accurate to the block. Adding a block lets the AI check for repeat reports at the same location.">
+                                <HelpOutlineRoundedIcon sx={{ fontSize: 16, color: BRAND.textLight, cursor: 'help' }} />
+                              </Tooltip>
+                              {params.slotProps?.input?.endAdornment}
+                            </>
+                          ),
+                        },
+                      }}
+                    />
+                  )}
+                  renderOption={(props, o) => {
+                    const { key, ...rest } = props;
+                    return (
+                      <Box component="li" key={key} {...rest} sx={{ display: 'block !important' }}>
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: BRAND.heading }}>
+                          {o.block ? `Block ${o.block}` : ''} {o.road}
+                        </Typography>
+                        <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>
+                          {o.postal ? `Singapore ${o.postal}` : o.label}
+                        </Typography>
+                      </Box>
+                    );
                   }}
                 />
                 <TextField
@@ -779,11 +855,17 @@ export default function RodentAssessment() {
                     </Button>
                   </Tooltip>
                 ) : (
-                  <Tooltip title={`${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${location.accuracy ? ` · ±${Math.round(location.accuracy)}m` : ''}`}>
+                  // The two sources are NOT interchangeable and the chip says
+                  // which one this is. A device fix is where the officer stood;
+                  // a looked-up address is the centre of the block. Both are
+                  // reported positions, but only one is precise to the spot.
+                  <Tooltip title={location.source === 'address'
+                    ? `${location.label || 'Looked-up address'} · ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)} · accurate to the block, not the exact spot`
+                    : `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${location.accuracy ? ` · ±${Math.round(location.accuracy)}m` : ''}`}>
                     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', px: 1.25, py: 0.5, borderRadius: '999px', bgcolor: INTENT.success.bg, border: `1px solid ${INTENT.success.border}` }}>
                       <CheckCircleRoundedIcon sx={{ fontSize: 16, color: INTENT.success.ink }} />
                       <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: INTENT.success.ink }}>
-                        Location pinned{block.trim() ? `: ${block.trim()}` : ''}
+                        {location.source === 'address' ? 'Block location set' : 'Location pinned'}{block.trim() ? `: ${block.trim()}` : ''}
                       </Typography>
                       <IconButton size="small" onClick={handleClearLocation} disabled={submitting} aria-label="Remove location" sx={{ p: 0.25, color: INTENT.success.ink }}>
                         <CloseRoundedIcon sx={{ fontSize: 15 }} />

@@ -2,12 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box, Typography, Button, Chip, Stack, Checkbox, CircularProgress, Alert,
   Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
-  FormControlLabel, IconButton, Breadcrumbs, Link, Tabs, Tab, InputAdornment,
+  FormControlLabel, IconButton, Breadcrumbs, Link, InputAdornment,
   Select, MenuItem, Table, TableBody, TableCell, TableHead, TableRow,
-  TableContainer, TableSortLabel, Drawer, useMediaQuery, Skeleton, LinearProgress,
+  TableContainer, TableSortLabel, Drawer, Skeleton, LinearProgress,
   ToggleButton, ToggleButtonGroup, Paper,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
 import { visuallyHidden } from '@mui/utils';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
@@ -23,7 +22,6 @@ import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined';
 import ViewKanbanOutlinedIcon from '@mui/icons-material/ViewKanbanOutlined';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import { BRAND, INTENT, ON_SURFACE } from '../theme';
-import { useUser } from '../contexts/UserContext';
 import http from '../http';
 import UndoSnackbar from '../components/UndoSnackbar';
 
@@ -110,11 +108,6 @@ function relativeTime(from) {
   return `${Math.round(secs / 3600)} h ago`;
 }
 
-function greeting(hour) {
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
 
 // One footer metadatum: a 13px glyph and recessive ink, so every card's footer
 // reads as the same kind of information at the same weight.
@@ -154,12 +147,21 @@ function PriorityChip({ level, size = 'small' }) {
 // before - MUI gives a TextField and a Select slightly different intrinsic heights
 // at size="small", which read as a ragged row.
 const FIELD_H = 38;
+/**
+ * Ghost control: a grey fill with NO resting border, outlined only on hover and
+ * focus. Five bordered boxes in a row read as five objects competing with the
+ * grid below them; the fill alone is enough to say "this is an input".
+ * The focus outline is deliberately the full 2px action blue - a ghost field
+ * must not become a field with no visible focus state.
+ */
 const FIELD_SX = {
   minWidth: 132,
-  bgcolor: BRAND.surface,
-  '& .MuiOutlinedInput-root': { height: FIELD_H },
-  '& .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.border },
-  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.textLight },
+  bgcolor: BRAND.section,
+  borderRadius: '8px',
+  '& .MuiOutlinedInput-root': { height: FIELD_H, borderRadius: '8px' },
+  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
+  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.border },
+  '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.action, borderWidth: 2 },
   '& .MuiSelect-select, & .MuiInputBase-input': { fontSize: 14, fontWeight: 500 },
 };
 
@@ -207,96 +209,134 @@ const RANGES = [
  * glyph immediately beside the primary button read as a second action of equal
  * rank - and a downward arrow is the wrong signal next to "review urgent".
  */
+/**
+ * The three summary cards, as filters.
+ *
+ * `value` reads live counts rather than caching them, so a card can never state
+ * a figure the queue below has already moved past. Each `apply` sets the tab and
+ * priority the card claims to represent - pressing "7 Urgent" must actually show
+ * seven rows, or the card is lying.
+ */
+const KPI_CARDS = [
+  {
+    key: 'urgent',
+    label: 'Urgent',
+    ink: 'var(--em-prio-critical)',
+    value: ({ urgentCount }) => urgentCount,
+  },
+  {
+    key: 'action',
+    label: 'Requires action',
+    ink: 'var(--em-prio-high)',
+    value: ({ pending }) => pending,
+  },
+  {
+    key: 'done',
+    label: 'Completed',
+    ink: 'var(--em-ok-strong)',
+    value: ({ orders }) => (orders?.done?.length ?? 0),
+  },
+];
+
 function CommandCentre({
-  name, urgentCount, totals, q, setQ, priority, setPriority,
+  urgentCount, q, setQ, priority, setPriority,
   range, setRange, sort, setSort, sortOptions, primary, onExport, view, onView,
+  kpiFilter, applyKpiFilter, boardPending, boardOrders,
 }) {
-  const hour = new Date().getHours();
   return (
     <>
       {/* Functional page title, not a headline. The greeting was 32px of prime
           vertical space carrying no operational value; it survives as a single
           line of supporting text and the title now names the page. */}
-      <Box sx={{ px: { xs: 2, md: 3 }, pt: 2.25, pb: 1.75 }}>
-        <Typography component="h1" sx={{ fontSize: { xs: 18, md: 19 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.3px', lineHeight: 1.25 }}>
-          Action Queue
-        </Typography>
-        <Typography sx={{ fontSize: 13, color: BRAND.textLight, mt: 0.25 }}>
-          {greeting(hour)}{name ? `, ${name}` : ''} · {totals?.pending || 0} report{totals?.pending === 1 ? '' : 's'} awaiting review
-        </Typography>
-      </Box>
+      {/* Header AND toolbar stick as one unit, so the primary action and the
+          filters both survive a scroll through a long queue. */}
+      <Box sx={{ position: 'sticky', top: 0, zIndex: 20, bgcolor: BRAND.surface, px: { xs: 2, md: 3 }, pt: 2.25, pb: 1.5 }}>
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 1.5 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography component="h1" sx={{ fontSize: { xs: 19, md: 21 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.3px', lineHeight: 1.25 }}>
+              Action Queue
+            </Typography>
 
-      {/* ── The hook and the action, in ONE banner ─────────────────────────
-          The alert pill and the primary CTA used to sit at opposite ends of the
-          page, so the problem and its solution never appeared in the same
-          fixation. Full-bleed strip, statement left, button right: the reason to
-          click is literally attached to the thing you click.
-          The strip is always present so the contextual CTA never disappears -
-          only its tone and wording change when nothing is urgent. */}
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={1.5}
-        role={urgentCount > 0 ? 'alert' : 'status'}
-        sx={{
-          px: { xs: 2, md: 3 }, py: 1.5,
-          alignItems: { sm: 'center' }, justifyContent: 'space-between',
-          bgcolor: urgentCount > 0 ? INTENT.danger.bg : BRAND.section,
-          borderTop: `1px solid ${urgentCount > 0 ? INTENT.danger.border : BRAND.border}`,
-          borderBottom: `1px solid ${urgentCount > 0 ? INTENT.danger.border : BRAND.border}`,
-        }}
-      >
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
-          {urgentCount > 0 && (
-            <ReportProblemOutlinedIcon sx={{ fontSize: 20, color: INTENT.danger.ink, flexShrink: 0 }} aria-hidden />
-          )}
-          <Typography
+            {/* INLINE INSIGHT STRIP.
+                These were three bordered cards eating a band of the viewport to
+                show three integers. Same figures, same click-to-filter, as a
+                borderless row of pills - the queue itself starts ~15% higher up.
+                The dot is a graphic, so the count and label carry the meaning too. */}
+            <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.75 }}>
+              {KPI_CARDS.map(card => {
+                const active = kpiFilter === card.key;
+                const value = card.value({ urgentCount, pending: boardPending.length, orders: boardOrders });
+                return (
+                  <Stack
+                    key={card.key}
+                    component="button"
+                    type="button"
+                    direction="row"
+                    spacing={0.75}
+                    aria-pressed={active}
+                    onClick={() => applyKpiFilter(card.key)}
+                    sx={{
+                      alignItems: 'center', font: 'inherit', cursor: 'pointer',
+                      px: 1.25, py: 0.5, borderRadius: '999px', border: 0,
+                      bgcolor: active ? BRAND.navySoft : 'transparent',
+                      '&:hover': { bgcolor: active ? BRAND.navySoft : BRAND.section },
+                      '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
+                    }}
+                  >
+                    <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: card.ink, flexShrink: 0 }} />
+                    <Typography component="span" sx={{ fontSize: 14, fontWeight: 800, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
+                      {value}
+                    </Typography>
+                    <Typography component="span" sx={{ fontSize: 13, color: BRAND.text, fontWeight: active ? 700 : 500 }}>
+                      {card.label}
+                    </Typography>
+                  </Stack>
+                );
+              })}
+              {kpiFilter && (
+                <Button size="small" onClick={() => applyKpiFilter(kpiFilter)} sx={{ textTransform: 'none', color: BRAND.textLight, fontSize: 12.5, minWidth: 0 }}>
+                  Clear
+                </Button>
+              )}
+            </Stack>
+          </Box>
+
+          {/* the one global action, level with the title */}
+          <Button
+            variant="contained"
+            disableElevation
+            onClick={primary.onClick}
+            disabled={primary.disabled}
             sx={{
-              fontSize: { xs: 14.5, md: 15.5 }, lineHeight: 1.35,
-              fontWeight: urgentCount > 0 ? 600 : 500,
-              color: urgentCount > 0 ? INTENT.danger.ink : BRAND.text,
+              flexShrink: 0, bgcolor: BRAND.action, color: '#fff', fontWeight: 700, fontSize: 14.5,
+              px: 2.25, py: 1, borderRadius: '8px', whiteSpace: 'nowrap', textTransform: 'none',
+              boxShadow: '0 4px 14px rgba(29,78,216,.34)',
+              '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.45)' },
             }}
           >
-            {urgentCount > 0 ? (
-              <>
-                You have{' '}
-                <Box component="span" sx={{ fontWeight: 800 }}>
-                  {urgentCount} urgent item{urgentCount === 1 ? '' : 's'}
-                </Box>{' '}
-                requiring immediate approval.
-              </>
-            ) : totals?.pending ? (
-              <>Nothing urgent. {totals.pending} report{totals.pending === 1 ? '' : 's'} still await review.</>
-            ) : (
-              <>The queue is clear. Nothing awaits your approval.</>
-            )}
-          </Typography>
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+              {primary.label}
+              {primary.count > 0 && (
+                /* the count as a badge INSIDE the button, replacing the warning
+                   triangle - a caution glyph on the primary action read as a
+                   hazard rather than an invitation */
+                <Box
+                  component="span"
+                  aria-hidden
+                  sx={{
+                    minWidth: 22, height: 22, px: 0.5, borderRadius: '999px',
+                    bgcolor: 'rgba(255,255,255,.22)', color: '#fff',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {primary.count}
+                </Box>
+              )}
+            </Box>
+          </Button>
         </Stack>
-
-        <Button
-          variant="contained"
-          disableElevation
-          onClick={primary.onClick}
-          disabled={primary.disabled}
-          startIcon={primary.icon}
-          sx={{
-            flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'auto' },
-            bgcolor: BRAND.action, color: '#fff', fontWeight: 700, fontSize: 14.5,
-            px: 2.5, py: 1, borderRadius: '8px', whiteSpace: 'nowrap',
-            // brand-tinted glow marks this as the page's one global action.
-            // The pulse is decorative and the theme's prefers-reduced-motion
-            // rule collapses it to a no-op for anyone who asks for less motion.
-            boxShadow: '0 4px 14px rgba(29,78,216,.34)',
-            animation: primary.disabled ? 'none' : 'aqPulse 2.6s ease-in-out infinite',
-            '@keyframes aqPulse': {
-              '0%,100%': { boxShadow: '0 4px 14px rgba(29,78,216,.34)' },
-              '50%': { boxShadow: '0 4px 20px rgba(29,78,216,.55)' },
-            },
-            '&:hover': { bgcolor: BRAND.actionHover, animation: 'none' },
-          }}
-        >
-          {primary.label}
-        </Button>
-      </Stack>
+      </Box>
 
       {/* ── Unified toolbar ────────────────────────────────────────────────
           One full-width bar with its own bottom rule, separating the controls
@@ -305,11 +345,12 @@ function CommandCentre({
         direction="row"
         spacing={1}
         sx={{
-          px: { xs: 2, md: 3 }, py: 1.5,
-          borderTop: `1px solid ${BRAND.border}`,
-          borderBottom: `1px solid ${BRAND.border}`,
+          position: 'sticky', top: 84, zIndex: 19,
+          px: { xs: 2, md: 3 }, py: 1.25,
           bgcolor: BRAND.surface,
           flexWrap: 'wrap', rowGap: 1.25, alignItems: 'center',
+          // the lower rule is what separates the control bar from the data grid
+          boxShadow: `inset 0 -1px 0 ${BRAND.border}`,
         }}
       >
         <TextField
@@ -446,16 +487,15 @@ function TaskCard({
       onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
       sx={{
         position: 'relative',
-        // Solid surface, never a tint. A pale priority wash behind the whole card
-        // dropped the effective contrast of every glyph on it, and a column of
-        // pink cards turned the priority signal into wallpaper. The hue is spent
-        // on ONE 4px edge instead, where it is unmissable and touches no text.
-        p: 1.5, pl: 1.75, borderRadius: '10px', cursor: draggable ? 'grab' : 'pointer',
+        // Solid surface, never a tint - a pale priority wash behind the whole card
+        // dropped the contrast of every glyph on it, and a column of pink cards
+        // turned the priority signal into wallpaper.
+        // The 4px priority edge is gone too: the Critical/High pill already states
+        // urgency in words, so the bar was the same fact a second time and left
+        // every card looking bracketed.
+        p: 1.5, borderRadius: '10px', cursor: draggable ? 'grab' : 'pointer',
         bgcolor: BRAND.surface,
-        borderLeft: `4px solid ${level ? prio(level).accent : BRAND.border}`,
         border: `1px solid ${selected ? ON_SURFACE.info : BRAND.border}`,
-        borderLeftWidth: 4,
-        borderLeftColor: level ? prio(level).accent : BRAND.border,
         boxShadow: selected ? `0 0 0 1px ${ON_SURFACE.info}` : '0 1px 3px rgba(0,0,0,0.1)',
         opacity: dragging ? 0.45 : 1,
         transition: 'box-shadow .15s ease, transform .15s ease',
@@ -465,14 +505,15 @@ function TaskCard({
         '&:hover .aq-card-check, &:focus-within .aq-card-check': { opacity: 1 },
       }}
     >
-      {/* Selection control, OUT of the layout flow.
-          It used to be the first thing in the row, which put a second click target
-          in the corner the eye reads as the card's identity - and it pushed the
-          block number off the top-left. It is now pinned over the card's own
-          padding, so showing it shifts nothing, and it only appears on hover, on
-          keyboard focus, or once the card is actually selected.
-          focus-within is load-bearing: without it a keyboard user could tab to a
-          control at opacity 0. */}
+      {/* Selection control, in a RESERVED gutter.
+          It is absolutely positioned so revealing it never reflows the card, but
+          the top row keeps a permanent left inset the same width - otherwise the
+          checkbox landed straight on top of the block number the moment you
+          hovered, which is the one thing on the card you need to read.
+          Reserving the space costs a few pixels at rest and guarantees no overlap
+          and no jump. It shows on hover, on keyboard focus, or once selected;
+          focus-within is load-bearing, or a keyboard user could tab to a control
+          sitting at opacity 0. */}
       {onToggle && (
         <Checkbox
           className="aq-card-check"
@@ -482,8 +523,7 @@ function TaskCard({
           onClick={e => e.stopPropagation()}
           slotProps={{ input: { 'aria-label': `Select ${title}` } }}
           sx={{
-            position: 'absolute', top: 2, left: 2, p: 0.5, zIndex: 1,
-            bgcolor: BRAND.surface, borderRadius: '6px',
+            position: 'absolute', top: 8, left: 6, p: 0.25, zIndex: 1,
             opacity: checked ? 1 : 0,
             transition: 'opacity .12s ease',
             '&.Mui-checked': { color: ON_SURFACE.info },
@@ -492,10 +532,13 @@ function TaskCard({
         />
       )}
 
-      {/* TOP ROW: identity hard left, priority hard right. */}
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+      {/* TOP ROW: identity left, priority right. `pl` reserves the checkbox
+          gutter so the two never occupy the same pixels. */}
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', pl: onToggle ? '26px' : 0 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: BRAND.heading, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* smaller than it was, same weight: it stays the anchor without
+              out-shouting the observation underneath it */}
+          <Typography sx={{ fontSize: 14, fontWeight: 800, color: BRAND.heading, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {title}
           </Typography>
           {subtitle && <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 0.25 }}>{subtitle}</Typography>}
@@ -544,49 +587,108 @@ function TaskCard({
  * so dragging a card actually does the thing the board implies. Priority is still
  * the primary visual: it tints every card, badges it, and orders the column.
  */
-function BoardColumn({ id, title, count, hint, accent, children, dropActive, canDrop, onDragOver, onDrop, onDragLeave }) {
+function BoardColumn({ id, title, count, hint, accent, children, dropActive, canDrop, onDragOver, onDrop, onDragLeave, empty = false }) {
+  // one source of truth - the width, the header layout and the body visibility
+  // all keyed off the same flag so they can never disagree mid-transition
+  const collapsed = empty && !dropActive;
   return (
     <Box
       onDragOver={canDrop ? onDragOver : undefined}
       onDrop={canDrop ? onDrop : undefined}
       onDragLeave={canDrop ? onDragLeave : undefined}
       sx={{
-        // Sized so all six stages fit a 1440px viewport without a horizontal
-        // scroll: ~1392px of usable width across six columns is ~230 each. The
-        // 200px floor keeps them legible and lets the board scroll on narrower
-        // screens rather than crushing the cards.
-        flex: '1 1 0', minWidth: 200, maxWidth: 300,
+        // An EMPTY column collapses to a narrow strip rather than holding a
+        // full-width "Nothing at this stage" placeholder - with six stages, most
+        // are empty most of the time, and they were spending the width of the
+        // board on nothing. It expands on hover, on keyboard focus, and whenever
+        // a card is dragged over it, so it is never a dead end.
+        flex: collapsed ? '0 0 auto' : '1 1 0',
+        width: collapsed ? 56 : 'auto',
+        minWidth: collapsed ? 56 : 200,
+        // NO max width on an expanded column. A 300px cap was sized for six
+        // columns all expanded; the moment two collapse to 56px strips the other
+        // four cannot absorb the width they freed, and the board stops short with
+        // a band of dead space on the right. flex: 1 1 0 shares out whatever is
+        // actually there, so the board fills at any mix of collapsed/expanded.
+        maxWidth: collapsed ? 56 : 'none',
         display: 'flex', flexDirection: 'column',
-        bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 8%, ${BRAND.section})` : BRAND.section,
+        // white surface with a 2px status-coloured cap, replacing the grey fill
+        bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 8%, ${BRAND.surface})` : BRAND.surface,
         border: `1px solid ${dropActive ? ON_SURFACE.info : BRAND.border}`,
-        borderRadius: '12px', minHeight: 0,
-        transition: 'background-color .15s ease, border-color .15s ease',
+        borderTop: `2px solid ${accent}`,
+        borderRadius: '10px', minHeight: 0, overflow: 'hidden',
+        transition: 'flex .18s ease, width .18s ease, min-width .18s ease, max-width .18s ease, background-color .15s ease',
+        '&:hover, &:focus-within': {
+          flex: '1 1 0', width: 'auto', minWidth: 200, maxWidth: 300,
+        },
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', px: 1.75, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}>
-        <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
-        <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.7px' }}>
-          {title}
-        </Typography>
-        {/* Solid slate pill with white text. The outlined pale badge blended into
-            the column header's own background and read as part of the title. */}
-        <Box
-          component="span"
-          sx={{
-            fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
-            px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
-            fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-          }}
+      {collapsed ? (
+        /* COLLAPSED: a column, not a rotated row.
+           writingMode was previously set on the whole flex row, which turned the
+           count pill and the status dot on their sides along with the label - the
+           badge rendered sideways and the dot's flow direction flipped. Only the
+           TITLE should rotate; the dot is round and the number must stay upright
+           to be read at a glance. */
+        <Stack
+          spacing={1}
+          sx={{ alignItems: 'center', px: 0.75, py: 1.5, height: '100%', minHeight: 0 }}
         >
-          {count}
-        </Box>
-      </Stack>
-      {hint && (
+          <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+          <Typography
+            sx={{
+              writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+              fontSize: 12, fontWeight: 900, color: BRAND.heading,
+              textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap',
+              flexGrow: 1, minHeight: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+            }}
+          >
+            {title}
+          </Typography>
+          <Box
+            component="span"
+            sx={{
+              fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
+              px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
+              fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+            }}
+          >
+            {count}
+          </Box>
+        </Stack>
+      ) : (
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: 'center', px: 1.75, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}
+        >
+          <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+          <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>
+            {title}
+          </Typography>
+          {/* Solid slate pill with white text. The outlined pale badge blended into
+              the column header's own background and read as part of the title. */}
+          <Box
+            component="span"
+            sx={{
+              fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
+              px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
+              fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+            }}
+          >
+            {count}
+          </Box>
+        </Stack>
+      )}
+      {hint && !collapsed && (
         <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, px: 1.75, pt: 1 }}>{hint}</Typography>
       )}
-      <Stack spacing={1.25} id={id} sx={{ p: 1.5, overflowY: 'auto', flexGrow: 1, minHeight: 120 }}>
-        {children}
-      </Stack>
+      {/* the body is dropped entirely while collapsed - no placeholder text */}
+      {!collapsed && (
+        <Stack spacing={1.25} id={id} sx={{ p: 1.5, overflowY: 'auto', flexGrow: 1, minHeight: 120 }}>
+          {children}
+        </Stack>
+      )}
     </Box>
   );
 }
@@ -594,10 +696,19 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
 /* ------------------------------------------------------------------- table -- */
 
 const HEAD_SX = {
-  fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase',
-  letterSpacing: '0.6px', bgcolor: BRAND.section, borderBottom: `1px solid ${BRAND.border}`,
+  fontSize: 12, fontWeight: 600, color: BRAND.textLight, textTransform: 'uppercase',
+  letterSpacing: '0.05em', bgcolor: BRAND.section, borderBottom: `1px solid ${BRAND.border}`,
   py: 1.25, whiteSpace: 'nowrap',
 };
+
+/**
+ * Alignment by DATA TYPE, not by position.
+ *   left   - identifiers and prose (block, observation, contractor)
+ *   center - state badges, which otherwise float in the middle of a wide column
+ *   right  - quantities and dates, so magnitudes and digits stack for scanning
+ * A column declares `align`; `numeric` still implies right for existing defs.
+ */
+const alignOf = c => c.align || (c.numeric ? 'right' : 'left');
 const CELL_SX = { borderBottom: `1px solid ${BRAND.border}`, py: 1.5, fontSize: 14, color: BRAND.text };
 
 // Micro-CTAs stay out of the way until the row is engaged, but a keyboard user
@@ -662,7 +773,7 @@ function QueueTable({ columns, rows, sort, onSort, selectedKey, onSelect, checke
             {cols.map(c => (
               <TableCell
                 key={c.key}
-                align={c.numeric ? 'right' : 'left'}
+                align={alignOf(c)}
                 sx={{ ...HEAD_SX, width: c.width }}
                 sortDirection={sort.key === c.key ? sort.dir : false}
               >
@@ -717,7 +828,7 @@ function QueueTable({ columns, rows, sort, onSort, selectedKey, onSelect, checke
                   />
                 </TableCell>
                 {cols.map(c => (
-                  <TableCell key={c.key} align={c.numeric ? 'right' : 'left'} sx={CELL_SX}>
+                  <TableCell key={c.key} align={alignOf(c)} sx={CELL_SX}>
                     {c.render(row)}
                   </TableCell>
                 ))}
@@ -823,8 +934,8 @@ function StageStepper({ stages }) {
       {stages.map((s, i) => (
         <Box key={s.stage} sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-            {/* connectors are half-width either side of the dot so the track reads
-                as continuous; the first and last are blanked out */}
+            {/* half-width connectors either side of the dot, blanked at the ends,
+                so the track reads continuous without overhanging */}
             <Box sx={{ flex: 1, height: 2, bgcolor: i === 0 ? 'transparent' : (s.reached ? ON_SURFACE.info : BRAND.border) }} />
             <Tooltip
               arrow
@@ -834,7 +945,7 @@ function StageStepper({ stages }) {
             >
               <Box
                 sx={{
-                  width: 13, height: 13, borderRadius: '50%', flexShrink: 0, cursor: 'help',
+                  width: 12, height: 12, borderRadius: '50%', flexShrink: 0, cursor: 'help',
                   bgcolor: s.reached ? ON_SURFACE.info : BRAND.surface,
                   border: s.reached ? 'none' : `1.5px dashed ${BRAND.border}`,
                   boxShadow: s.reached ? `0 0 0 3px color-mix(in srgb, ${ON_SURFACE.info} 18%, transparent)` : 'none',
@@ -853,10 +964,11 @@ function StageStepper({ stages }) {
           >
             {STEP_LABEL[s.stage] || s.label}
           </Typography>
-          {/* the date is the evidence the stage really happened, so it stays visible
-              rather than living only in the tooltip */}
+          {/* the date is the evidence the stage happened, so a reached step keeps
+              it visible; an unreached one stays blank rather than showing a dash
+              that could read as a value */}
           <Typography sx={{ fontSize: 9.5, color: BRAND.textLight, textAlign: 'center', lineHeight: 1.2 }}>
-            {s.reached ? shortDate(s.at) : '-'}
+            {s.reached ? shortDate(s.at) : ''}
           </Typography>
         </Box>
       ))}
@@ -1051,22 +1163,34 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
         </>
       }
       footer={isOpen ? (
-        <Button
-          fullWidth
-          variant="contained"
-          disableElevation
-          startIcon={busy ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />}
-          disabled={busy}
-          onClick={async () => { setBusy(true); try { await onCloseOrder(order.id); } finally { setBusy(false); } }}
-          sx={{
-            bgcolor: BRAND.action, fontWeight: 800, fontSize: 15, minHeight: 46,
-            borderRadius: '8px', textTransform: 'none',
-            boxShadow: '0 4px 14px rgba(29,78,216,.32)',
-            '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)' },
-          }}
-        >
-          Mark work order done
-        </Button>
+        /* Terminal action bottom-RIGHT, secondary to its left: the Z-pattern
+           puts the committing action where the eye finishes. A 100%-wide primary
+           on a 560px drawer read as a banner, not a button, and gave the one
+           irreversible action on this panel no visual weight relative to it. */
+        <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+          <Button
+            onClick={onClose}
+            disabled={busy}
+            sx={{ textTransform: 'none', fontWeight: 600, color: BRAND.textLight, '&:hover': { bgcolor: BRAND.section } }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disableElevation
+            startIcon={busy ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />}
+            disabled={busy}
+            onClick={async () => { setBusy(true); try { await onCloseOrder(order.id); } finally { setBusy(false); } }}
+            sx={{
+              bgcolor: BRAND.action, fontWeight: 800, fontSize: 14.5, minHeight: 44,
+              px: 2.5, borderRadius: '8px', textTransform: 'none', whiteSpace: 'nowrap',
+              boxShadow: '0 4px 14px rgba(29,78,216,.32)',
+              '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)' },
+            }}
+          >
+            Mark done
+          </Button>
+        </Stack>
       ) : (
         <Typography sx={{ fontSize: 13, color: BRAND.textLight, textAlign: 'center' }}>
           Closed by {order.closed_by_name || 'an officer'} on {shortDate(order.closed_at)}.
@@ -1297,9 +1421,6 @@ function csvEscape(v) {
 }
 
 export default function ActionQueue() {
-  const theme = useTheme();
-  const splitOk = useMediaQuery(theme.breakpoints.up('lg'));
-  const { user } = useUser();
 
   const [queue, setQueue] = useState(null);
   const [workOrders, setWorkOrders] = useState([]);
@@ -1323,11 +1444,14 @@ export default function ActionQueue() {
   const [orderDetail, setOrderDetail] = useState({ id: null, data: null });
   const [busyBulk, setBusyBulk] = useState(false);
   const [busyRow, setBusyRow] = useState(null);
-  // board | list. Board is the triage surface; list stays for dense scanning and
-  // for the sortable columns the board deliberately does not reproduce.
+  // list | board. The DATA GRID is the default: with six pipeline stages, most
+  // columns are empty most of the time, so the board spent the width of the
+  // screen on whitespace while the rows it did have needed vertical scanning.
+  // The board stays one click away - it is still the only place a stage can be
+  // advanced by dragging, and that writes real backend transitions.
   const [view, setView] = useState(() => {
-    try { return localStorage.getItem('actionQueueView') === 'list' ? 'list' : 'board'; }
-    catch { return 'board'; }
+    try { return localStorage.getItem('actionQueueView') === 'board' ? 'board' : 'list'; }
+    catch { return 'list'; }
   });
   function switchView(next) {
     if (!next) return;
@@ -1385,13 +1509,25 @@ export default function ActionQueue() {
   }, []);
 
   const clusters = useMemo(() => queue?.clusters || [], [queue]);
-  const totals = queue?.totals;
-  // 'open' is not a status any more - the pipeline replaced it. Everywhere the
-  // UI says "open orders" it means "raised but not yet closed", i.e. still live.
-  const isLive = w => w.status !== 'closed';
-  const openCount = workOrders.filter(isLive).length;
-  const closedCount = workOrders.filter(w => w.status === 'closed').length;
   const urgentCount = clusters.filter(c => URGENT.has(c.risk_level)).length;
+
+  /**
+   * Which summary card is engaged, or null.
+   *
+   * The card does not own a private filter - it drives the SAME tab and priority
+   * controls the toolbar uses, so the toolbar always reflects what is actually
+   * being shown. Pressing the active card again clears it.
+   */
+  const [kpiFilter, setKpiFilter] = useState(null);
+  function applyKpiFilter(key) {
+    const next = kpiFilter === key ? null : key;
+    setKpiFilter(next);
+    setSelectedKey(null);
+    if (next === 'urgent') { setTab('pending'); setPriority('critical'); }
+    else if (next === 'action') { setTab('pending'); setPriority('all'); }
+    else if (next === 'done') { setTab('closed'); setPriority('all'); }
+    else { setPriority('all'); }
+  }
 
   /* ---- filtering + sorting ------------------------------------------------ */
 
@@ -1408,7 +1544,10 @@ export default function ActionQueue() {
         return { cluster: c, oldest };
       })
       .filter(({ cluster: c, oldest }) => {
-        if (priority !== 'all' && c.risk_level !== priority) return false;
+        // the Urgent card spans high AND critical - the priority select holds one
+        // value, so that band is applied here rather than faked in the dropdown
+        if (kpiFilter === 'urgent') { if (!URGENT.has(c.risk_level)) return false; }
+        else if (priority !== 'all' && c.risk_level !== priority) return false;
         if (cutoff && oldest && oldest.getTime() < cutoff) return false;
         if (needle) {
           const hay = `${c.block} ${c.assessments.map(a => a.observations).join(' ')}`.toLowerCase();
@@ -1425,7 +1564,7 @@ export default function ActionQueue() {
       block: (a, b) => a.cluster.block.localeCompare(b.cluster.block, 'en', { numeric: true }),
     }[sort.key] || (() => 0);
     return [...rows].sort((a, b) => cmp(a, b) * dir);
-  }, [clusters, priority, cutoff, needle, sort]);
+  }, [clusters, priority, cutoff, needle, sort, kpiFilter]);
 
   const orderRows = useMemo(() => {
     const wantClosed = tab === 'closed';
@@ -1586,12 +1725,7 @@ export default function ActionQueue() {
   const rows = tab === 'pending' ? pendingRows : orderRows;
   const rowKey = r => (tab === 'pending' ? r.cluster.block : String(r.id));
 
-  function switchTab(next) {
-    setTab(next);
-    setChecked(new Set());
-    setSelectedKey(null);
-    setSort(next === 'pending' ? { key: 'priority', dir: 'desc' } : { key: 'raised', dir: 'desc' });
-  }
+
 
   const toggle = key => setChecked(prev => {
     const next = new Set(prev);
@@ -1624,7 +1758,11 @@ export default function ActionQueue() {
   }, [selectedOrderId]);
 
   const detailOpen = Boolean(selectedCluster || selectedOrder);
-  const split = detailOpen && splitOk;
+  // The 40/60 split is gone: squeezing the grid to 40% defeated the point of a
+  // dense table, and the panel's own content had to reflow every time it opened.
+  // A drawer keeps the queue at full width and unmoved behind it - the pattern
+  // Linear/Jira/Zendesk use for exactly this triage job.
+  const split = false;
 
   /* ---- board drag/drop ----------------------------------------------------
      Only forward transitions are droppable, and each one maps to a real
@@ -1748,14 +1886,19 @@ export default function ActionQueue() {
     if (tab === 'pending') {
       if (checkedGroups.length > 0) {
         return {
-          label: `Approve ${checkedGroups.length} selected`,
+          label: 'Approve selected',
+          count: checkedGroups.length,
           icon: <DoneAllRoundedIcon />,
           onClick: () => setBulkApprove(true),
           disabled: false,
         };
       }
       return {
-        label: urgentCount > 0 ? `Review urgent · ${urgentCount}` : 'Start reviewing',
+        // `count` renders as a badge INSIDE the button; the label stops repeating
+        // it, and the warning glyph is dropped - a hazard icon on the primary
+        // action read as a caution rather than an invitation to act.
+        label: urgentCount > 0 ? 'Review urgent' : 'Start reviewing',
+        count: urgentCount,
         icon: <ReportProblemOutlinedIcon />,
         onClick: () => {
           const first = pendingRows.find(r => URGENT.has(r.cluster.risk_level)) || pendingRows[0];
@@ -1766,13 +1909,14 @@ export default function ActionQueue() {
     }
     if (tab === 'open') {
       return {
-        label: checked.size > 0 ? `Mark ${checked.size} done` : 'Mark done',
+        label: 'Mark done',
+        count: checked.size,
         icon: busyBulk ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />,
         onClick: closeSelected,
         disabled: checked.size === 0 || busyBulk,
       };
     }
-    return { label: 'Export closed orders', icon: <FileDownloadOutlinedIcon />, onClick: exportCsv, disabled: orderRows.length === 0 };
+    return { label: 'Export closed orders', count: 0, icon: <FileDownloadOutlinedIcon />, onClick: exportCsv, disabled: orderRows.length === 0 };
   })();
 
   function exportCsv() {
@@ -1795,35 +1939,54 @@ export default function ActionQueue() {
 
   const pendingColumns = useMemo(() => [
     {
-      key: 'block', label: 'Block', compact: true, width: '18%',
+      key: 'block', label: 'Block', compact: true, width: 170,
+      // the oldest date rides under the block rather than owning a column of its
+      // own - same two facts, one less column competing with the observation
       render: r => (
-        <Typography sx={{ fontSize: 14.5, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap' }}>{r.cluster.block}</Typography>
+        <Box>
+          <Typography sx={{ fontSize: 14.5, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap', lineHeight: 1.3 }}>{r.cluster.block}</Typography>
+          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, whiteSpace: 'nowrap' }}>
+            {r.oldest ? `oldest ${shortDate(r.oldest)}` : 'no date recorded'}
+          </Typography>
+        </Box>
       ),
     },
     {
-      key: 'summary', label: 'Latest observation', sortable: false, compact: false,
+      key: 'summary', label: 'Latest observation', sortable: false, compact: false, width: 'auto', flex: true,
+      // no maxWidth: the hard 340px cap truncated mid-sentence while a band of
+      // empty column sat to its right. The cell is the flexible column now, so
+      // the text runs to whatever width the browser actually has.
       render: r => (
-        <Typography sx={{ fontSize: 13.5, color: BRAND.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 340 }}>
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {r.cluster.assessments[0]?.observations || '-'}
         </Typography>
       ),
     },
-    { key: 'priority', label: 'Priority', numeric: true, compact: true, width: 100, render: r => <PriorityChip level={r.cluster.risk_level} /> },
+    // centred: a state badge right-aligned inside a wide column reads as adrift
+    { key: 'priority', label: 'Priority', align: 'center', compact: true, width: 110, render: r => <PriorityChip level={r.cluster.risk_level} /> },
     {
       key: 'count', label: 'Reports', numeric: true, compact: true, width: 90,
       render: r => <Box sx={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: BRAND.heading }}>{r.cluster.count}</Box>,
     },
     {
       key: 'savings', label: 'Est. saving', numeric: true, compact: false, width: 120,
-      render: r => (
-        <Box sx={{ fontVariantNumeric: 'tabular-nums', color: r.cluster.est_savings > 0 ? ON_SURFACE.ok : BRAND.textLight, fontWeight: 600 }}>
-          {r.cluster.est_savings > 0 ? money(r.cluster.est_savings) : '-'}
+      // A tinted badge rather than bright green text: ON_SURFACE.ok as body text
+      // on the row surface is a thin pass, and a saturated figure in an otherwise
+      // neutral column read louder than a savings estimate warrants.
+      render: r => (r.cluster.est_savings > 0 ? (
+        <Box
+          component="span"
+          sx={{
+            display: 'inline-block', px: 0.85, py: '2px', borderRadius: '6px',
+            bgcolor: INTENT.success.bg, color: INTENT.success.ink,
+            fontSize: 12.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {money(r.cluster.est_savings)}
         </Box>
-      ),
-    },
-    {
-      key: 'oldest', label: 'Oldest', numeric: true, compact: false, width: 100,
-      render: r => <Box sx={{ fontVariantNumeric: 'tabular-nums', color: BRAND.textLight }}>{r.oldest ? shortDate(r.oldest) : '-'}</Box>,
+      ) : (
+        <Box component="span" sx={{ color: BRAND.textLight }}>-</Box>
+      )),
     },
   ], []);
 
@@ -1943,11 +2106,7 @@ export default function ActionQueue() {
         : <GhostButton onClick={() => setSelectedKey(String(w.id))} aria-label={`Open work order ${w.id}`}>View</GhostButton>,
     }));
 
-  const TABS = [
-    { value: 'pending', label: 'Requires action', count: clusters.length },
-    { value: 'open', label: 'Open orders', count: openCount },
-    { value: 'closed', label: 'Closed', count: closedCount },
-  ];
+
 
   const detailNode = selectedCluster ? (
     <ClusterDetail
@@ -2009,9 +2168,7 @@ export default function ActionQueue() {
       {loading && <LinearProgress sx={{ height: 2, '& .MuiLinearProgress-bar': { bgcolor: ON_SURFACE.info } }} />}
 
       <CommandCentre
-        name={user?.name?.split(' ')[0]}
         urgentCount={urgentCount}
-        totals={totals}
         q={q} setQ={setQ}
         priority={priority} setPriority={setPriority}
         range={range} setRange={setRange}
@@ -2021,6 +2178,10 @@ export default function ActionQueue() {
         onExport={exportCsv}
         view={view}
         onView={switchView}
+        kpiFilter={kpiFilter}
+        applyKpiFilter={applyKpiFilter}
+        boardPending={boardPending}
+        boardOrders={boardOrders}
       />
 
       <Box sx={{ px: { xs: 2, md: 3 } }}>
@@ -2028,53 +2189,18 @@ export default function ActionQueue() {
         {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
       </Box>
 
-      {/* Tabs carry the counts the removed KPI cards used to. In board view the
-          columns ARE the stages, so tabs would be a second, weaker copy of the same
-          navigation - the row collapses to the drag hint instead. The view switcher
-          itself now lives in the toolbar with the other controls. */}
-      <Box sx={{ px: { xs: 2, md: 3 }, borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', gap: 2 }}>
-        {view === 'board' ? (
-          <Typography sx={{ fontSize: 13.5, color: BRAND.textLight, py: 1.25, flexGrow: 1 }}>
+      {/* The tab row is gone. It filtered by the SAME states the KPI cards now
+          filter by - "Requires action / Open orders / Closed" against
+          "Urgent / Requires action / Completed" - so the page offered two
+          controls for one job and they could disagree with each other. The cards
+          own it; the board's drag hint is all that remains here. */}
+      {view === 'board' && (
+        <Box sx={{ px: { xs: 2, md: 3 }, pb: 1.5 }}>
+          <Typography sx={{ fontSize: 13.5, color: BRAND.textLight }}>
             Drag a card to the next stage to action it, or open one to review it in detail.
           </Typography>
-        ) : (
-        <Tabs
-          value={tab}
-          onChange={(_, v) => switchTab(v)}
-          sx={{
-            flexGrow: 1,
-            minHeight: 42,
-            '& .MuiTabs-indicator': { backgroundColor: ON_SURFACE.info, height: 2 },
-            '& .MuiTab-root': {
-              textTransform: 'none', fontSize: 14, fontWeight: 600, minHeight: 42, py: 0,
-              color: BRAND.textLight, '&.Mui-selected': { color: BRAND.heading, fontWeight: 700 },
-            },
-          }}
-        >
-          {TABS.map(t => (
-            <Tab
-              key={t.value}
-              value={t.value}
-              label={
-                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                  <span>{t.label}</span>
-                  <Box
-                    component="span"
-                    sx={{
-                      fontSize: 12, fontWeight: 700, px: 0.75, borderRadius: '999px', minWidth: 20,
-                      bgcolor: tab === t.value ? BRAND.action : BRAND.section,
-                      color: tab === t.value ? '#fff' : BRAND.textLight,
-                    }}
-                  >
-                    {t.count}
-                  </Box>
-                </Stack>
-              }
-            />
-          ))}
-        </Tabs>
-        )}
-      </Box>
+        </Box>
+      )}
 
       {/* master / detail. The grid is the master; at lg+ it compacts to 40% and the
           detail takes 60%, below that the detail becomes a full-height drawer.
@@ -2106,6 +2232,7 @@ export default function ActionQueue() {
                     count={items.length}
                     accent={c.accent}
                     hint={dropCol === c.col && canDropOn(c.col) ? `Drop to move to ${c.title}` : c.hint}
+                    empty={items.length === 0}
                     {...colProps(c.col)}
                   >
                     {items.length === 0 && (
@@ -2227,13 +2354,13 @@ export default function ActionQueue() {
         )}
       </Box>
 
-      {/* below lg there is not enough width for a genuine split, so the same panel
-          slides over as a drawer rather than being crushed into a column */}
+      {/* One detail surface at every width. The queue behind it never reflows, so
+          the row you came from is still exactly where you left it. */}
       <Drawer
         anchor="right"
-        open={detailOpen && !splitOk}
+        open={detailOpen}
         onClose={() => setSelectedKey(null)}
-        slotProps={{ paper: { sx: { width: { xs: '100%', sm: 460 } } } }}
+        slotProps={{ paper: { sx: { width: { xs: '100%', sm: 480, lg: 560 } } } }}
       >
         {detailNode}
       </Drawer>

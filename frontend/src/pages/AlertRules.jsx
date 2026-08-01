@@ -5,7 +5,7 @@ import {
   TextField, Select, MenuItem, FormControl, InputLabel, InputAdornment,
   Alert, Chip, IconButton, Menu, ListItemIcon, ListItemText,
   Autocomplete, Grid, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions,
-  Divider, Skeleton, Checkbox, ToggleButtonGroup, ToggleButton,
+  Divider, Skeleton, Checkbox, ToggleButtonGroup, ToggleButton, Stack,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -16,6 +16,9 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import SmsOutlinedIcon from '@mui/icons-material/SmsOutlined';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
@@ -28,6 +31,7 @@ import VerticalSplitRoundedIcon from '@mui/icons-material/VerticalSplitRounded';
 import { useUser } from '../contexts/UserContext';
 import { BRAND, INTENT, ON_SURFACE, KPI_TONE } from '../theme';
 import http from '../http';
+import SiteFooter from '../components/SiteFooter';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 // Trigger config: label, the severity colour used on the trigger chip, whether it
@@ -80,7 +84,7 @@ function relTime(iso) {
 function TriggerChip({ triggerType }) {
   const t = TRIGGERS[triggerType];
   const sev = sevOf(triggerType);
-  return <Chip label={t?.label || triggerType} size="small" sx={{ height: 20, fontSize: 11, bgcolor: sev.tint, color: sev.ink, fontWeight: 700, borderRadius: '6px' }} />;
+  return <Chip label={t?.label || triggerType} size="small" sx={{ height: 20, fontSize: 11, bgcolor: sev.tint, color: sev.ink, fontWeight: 600, borderRadius: '4px', px: 0.25 }} />;
 }
 
 // threshold chip: neutral "code style" per the badge hierarchy - a condition is
@@ -94,8 +98,7 @@ function ThresholdChip({ triggerType, threshold }) {
     <Chip
       label={`≥ ${threshold} ${t.unit}`}
       size="small"
-      variant="outlined"
-      sx={{ height: 20, fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: BRAND.textLight, borderColor: BRAND.border, borderRadius: '6px' }}
+      sx={{ height: 20, fontSize: 11, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', bgcolor: BRAND.section, color: BRAND.textLight, borderRadius: '4px', px: 0.25 }}
     />
   );
 }
@@ -171,20 +174,66 @@ function RowMenu({ onEdit, onDuplicate, onDelete }) {
 
 // KPI hero tile: icon in a tinted well, oversized tabular figure, quiet subtext.
 // Same anatomy as the dashboard KPI cards so the strip reads as one system.
-function StatTile({ icon: Icon, tone, label, value, sub, subInk }) {
+/**
+ * Bar sparkline over the activity window.
+ *
+ * Bars, not a line: the series is a count of discrete dispatches per hour, and a
+ * smoothed line between hourly counts would draw values at moments nothing was
+ * sent. Quiet hours render as an empty slot at the baseline, so a gap reads as a
+ * real zero rather than as missing data.
+ *
+ * Renders nothing at all when the window recorded no dispatches - a flat row of
+ * empty bars would be decoration implying a measurement that never happened.
+ */
+function MiniBars({ series, colour, height = 26 }) {
+  if (!series?.length) return null;
+  const max = Math.max(...series);
+  if (max <= 0) return null;
+  return (
+    <Box aria-hidden sx={{ display: 'flex', alignItems: 'flex-end', gap: '1px', height, mt: 0.5 }}>
+      {series.map((v, i) => (
+        <Box
+          key={i}
+          sx={{
+            flex: 1, minWidth: 0, borderRadius: '1px',
+            height: `${Math.max(v > 0 ? 12 : 2, (v / max) * 100)}%`,
+            bgcolor: colour,
+            opacity: v > 0 ? 0.85 : 0.18,
+          }}
+        />
+      ))}
+    </Box>
+  );
+}
+
+/**
+ * One cell of the metrics bar.
+ *
+ * These were four separate Cards with 16px padding and a 38px icon well each,
+ * which spent a whole band of the page on four integers. They are now segments of
+ * a single bar divided by hairlines - the same figures, roughly half the height.
+ */
+function StatCell({ icon: Icon, tone, label, value, sub, subInk, spark }) {
   const mode = useTheme().palette.mode;
   const t = KPI_TONE[mode][tone];
   return (
-    <Card sx={{ p: 2, height: '100%', display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-      <Box sx={{ width: 38, height: 38, borderRadius: '8px', bgcolor: t.tint, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-        <Icon sx={{ fontSize: 20, color: t.ink }} />
-      </Box>
-      <Box sx={{ minWidth: 0 }}>
-        <Typography sx={{ fontSize: 12, fontWeight: 600, color: BRAND.textLight, lineHeight: 1.3 }}>{label}</Typography>
-        <Typography sx={{ fontSize: 26, fontWeight: 800, color: BRAND.ink, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
-        {sub && <Typography sx={{ fontSize: 12, color: subInk || BRAND.textLight, display: 'flex', alignItems: 'center', gap: 0.25 }}>{sub}</Typography>}
-      </Box>
-    </Card>
+    <Box sx={{ px: 2.25, py: 1.75, minWidth: 0, flex: 1 }}>
+      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 0.5 }}>
+        <Icon sx={{ fontSize: 15, color: t.ink, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: 11, fontWeight: 800, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1.3 }}>
+          {label}
+        </Typography>
+      </Stack>
+      <Typography sx={{ fontSize: 30, fontWeight: 800, color: BRAND.ink, lineHeight: 1.05, letterSpacing: '-1px', fontVariantNumeric: 'tabular-nums' }}>
+        {value}
+      </Typography>
+      {sub && (
+        <Typography sx={{ fontSize: 11.5, color: subInk || BRAND.textLight, display: 'flex', alignItems: 'center', gap: 0.25, mt: 0.25 }}>
+          {sub}
+        </Typography>
+      )}
+      {spark}
+    </Box>
   );
 }
 
@@ -194,7 +243,8 @@ function StatTile({ icon: Icon, tone, label, value, sub, subInk }) {
 // severity only; everything else lives in the detail pane.
 function RuleListPane({ rules, selectedId, onSelect }) {
   return (
-    <Card sx={{ flex: { md: '0 0 35%' }, minWidth: 0, maxHeight: { md: '62vh' }, overflow: 'auto', borderRadius: '12px' }}>
+    // tinted rail, so the SELECTED item can be the one white raised object on it
+    <Card sx={{ flex: { md: '0 0 33%' }, minWidth: 0, maxHeight: { md: 'calc(100vh - 330px)' }, overflow: 'auto', borderRadius: '12px', bgcolor: BRAND.section }}>
       <Box role="listbox" aria-label="Alert rules" sx={{ py: 0.5 }}>
         {rules.length === 0 && (
           <Typography sx={{ px: 2, py: 3, fontSize: 13.5, color: BRAND.textLight, textAlign: 'center' }}>
@@ -215,10 +265,14 @@ function RuleListPane({ rules, selectedId, onSelect }) {
               onClick={() => onSelect(rule.id)}
               onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(rule.id); } }}
               sx={{
-                px: 1.5, py: 1.1, mx: 0.75, my: 0.25, borderRadius: '8px', cursor: 'pointer',
+                px: 1.5, py: 1.1, mx: 0.75, my: 0.35, borderRadius: '8px', cursor: 'pointer',
                 borderLeft: '3px solid', borderLeftColor: paused ? BRAND.border : sev.bar,
-                bgcolor: selected ? BRAND.navySoft : 'transparent',
-                '&:hover': { bgcolor: selected ? BRAND.navySoft : BRAND.section },
+                // selection is physical: a white card lifted off the grey rail,
+                // rather than a tint that competed with the hover state
+                bgcolor: selected ? BRAND.surface : 'transparent',
+                boxShadow: selected ? '0 2px 8px rgba(16,24,40,.14)' : 'none',
+                transition: 'background-color .12s ease, box-shadow .12s ease',
+                '&:hover': { bgcolor: selected ? BRAND.surface : 'rgba(120,130,145,0.10)' },
                 '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: -2 },
               }}
             >
@@ -240,14 +294,29 @@ function RuleListPane({ rules, selectedId, onSelect }) {
 }
 
 // dispatch log entry inside the detail pane
-function DispatchRow({ log }) {
+/**
+ * One node on the dispatch timeline.
+ *
+ * A dot on a connecting rail rather than a bordered row: these are chronological
+ * events, and a timeline says "this then this" in a way a list of rules does not.
+ * The connector is omitted on the last node so the rail terminates rather than
+ * trailing into nothing.
+ */
+function DispatchRow({ log, last = false }) {
   const failed = log.status === 'failed';
+  const dot = failed ? ON_SURFACE.danger : INTENT.success.ink;
   return (
-    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', py: 0.9, borderTop: `1px solid ${BRAND.border}` }}>
+    <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'stretch', position: 'relative' }}>
+      {/* rail + node */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 12 }}>
+        <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: dot, mt: '11px', flexShrink: 0, boxShadow: `0 0 0 3px ${BRAND.surface}` }} />
+        {!last && <Box sx={{ width: 2, flexGrow: 1, bgcolor: BRAND.border, my: '2px' }} />}
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', py: 0.9, flex: 1, minWidth: 0 }}>
       <Chip
         label={failed ? 'Failed' : 'Sent'}
         size="small"
-        sx={{ height: 19, fontSize: 10.5, fontWeight: 700, borderRadius: '5px', mt: '1px', bgcolor: failed ? INTENT.danger.bg : INTENT.success.bg, color: failed ? INTENT.danger.ink : INTENT.success.ink }}
+        sx={{ height: 19, fontSize: 10.5, fontWeight: 700, borderRadius: '4px', mt: '1px', bgcolor: failed ? INTENT.danger.bg : INTENT.success.bg, color: failed ? INTENT.danger.ink : INTENT.success.ink }}
       />
       <Box sx={{ minWidth: 0, flex: 1 }}>
         <Typography sx={{ fontSize: 12.5, color: BRAND.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -261,6 +330,7 @@ function DispatchRow({ log }) {
       <Tooltip title={new Date(log.createdAt).toLocaleString()} arrow>
         <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, whiteSpace: 'nowrap', cursor: 'default' }}>{relTime(log.createdAt)}</Typography>
       </Tooltip>
+      </Box>
     </Box>
   );
 }
@@ -280,7 +350,9 @@ function RuleDetailPane({ rule, act, isAdmin, logsEntry, onToggle, onEdit, onDup
   const kw = { color: ON_SURFACE.info, fontWeight: 700 };
   const last = relTime(act?.lastTriggeredAt);
   return (
-    <Card sx={{ flex: 1, minWidth: 0, borderRadius: '12px', p: 2.5, maxHeight: { md: '62vh' }, overflow: 'auto' }}>
+    // A tinted container, so the sections inside can be separate white cards
+    // instead of one long scroll divided only by uppercase labels.
+    <Box sx={{ flex: 1, minWidth: 0, borderRadius: '12px', p: 2, maxHeight: { md: 'calc(100vh - 330px)' }, overflow: 'auto', bgcolor: BRAND.section, border: `1px solid ${BRAND.border}` }}>
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, flexWrap: 'wrap' }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
@@ -309,11 +381,12 @@ function RuleDetailPane({ rule, act, isAdmin, logsEntry, onToggle, onEdit, onDup
         )}
       </Box>
 
-      {/* trigger conditions, stated as executable-looking facts */}
-      <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px', mt: 2.5, mb: 0.75 }}>
+      {/* CARD 1 - trigger conditions, as a real code block */}
+      <Card sx={{ p: 2, mt: 2, borderRadius: '10px' }}>
+      <Typography sx={{ fontSize: 11.5, fontWeight: 800, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1 }}>
         Trigger conditions
       </Typography>
-      <Box sx={{ px: 1.75, py: 1.25, bgcolor: BRAND.canvas, border: `1px solid ${BRAND.border}`, borderRadius: '8px' }}>
+      <Box sx={{ px: 1.75, py: 1.5, bgcolor: BRAND.canvas, border: `1px solid ${BRAND.border}`, borderRadius: '8px' }}>
         <Typography sx={monoSx}>
           <Box component="span" sx={kw}>IF</Box> {t?.full || rule.trigger_type}
           {t?.threshold && rule.threshold != null && <> <Box component="span" sx={kw}>AND</Box> count ≥ {rule.threshold} {t.unit}</>}
@@ -328,17 +401,19 @@ function RuleDetailPane({ rule, act, isAdmin, logsEntry, onToggle, onEdit, onDup
         <ThresholdChip triggerType={rule.trigger_type} threshold={rule.threshold} />
         {emails.map(e => (
           <Tooltip key={e} title={e} arrow>
-            <Chip label={localPart(e)} size="small" sx={{ bgcolor: BRAND.section, color: BRAND.text, borderRadius: '6px', fontSize: 12, height: 22, cursor: 'default' }} />
+            <Chip label={localPart(e)} size="small" sx={{ bgcolor: BRAND.section, color: BRAND.text, borderRadius: '4px', fontSize: 12, height: 22, cursor: 'default' }} />
           </Tooltip>
         ))}
       </Box>
+      </Card>
 
-      {/* recent dispatches for THIS rule, straight from the notification log */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2.5, mb: 0.5 }}>
-        <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      {/* CARD 2 - dispatch history for THIS rule, as a vertical timeline */}
+      <Card sx={{ p: 2, mt: 2, borderRadius: '10px' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Typography sx={{ fontSize: 11.5, fontWeight: 800, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Recent activity log
         </Typography>
-        <Button size="small" component={RouterLink} to="/notif-log" sx={{ color: ON_SURFACE.info, fontSize: 12 }}>Open full log</Button>
+        <Button size="small" component={RouterLink} to="/notif-log" sx={{ color: ON_SURFACE.info, fontSize: 12, textTransform: 'none' }}>Open full log</Button>
       </Box>
       {!logsEntry && <Skeleton variant="rounded" height={72} />}
       {logsEntry && logsEntry.error && (
@@ -347,8 +422,11 @@ function RuleDetailPane({ rule, act, isAdmin, logsEntry, onToggle, onEdit, onDup
       {logsEntry && !logsEntry.error && logsEntry.logs.length === 0 && (
         <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, py: 1 }}>No dispatches recorded for this rule yet.</Typography>
       )}
-      {logsEntry && !logsEntry.error && logsEntry.logs.map(log => <DispatchRow key={log.id} log={log} />)}
-    </Card>
+      {logsEntry && !logsEntry.error && logsEntry.logs.map((log, i, arr) => (
+        <DispatchRow key={log.id} log={log} last={i === arr.length - 1} />
+      ))}
+      </Card>
+    </Box>
   );
 }
 
@@ -359,6 +437,9 @@ const HEAD_CELL_SX = {
 
 export default function AlertRules() {
   const { user } = useUser();
+  // Driven by the page's own scroll region, not the window: with a full-height
+  // layout the document never scrolls, so useScrollTrigger would never fire.
+  const [scrolled, setScrolled] = useState(false);
   const isAdmin = user?.role === 'admin';
 
   const [rules, setRules] = useState([]);
@@ -583,99 +664,186 @@ export default function AlertRules() {
   );
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* -- header ------------------------------------------------------- */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2.5 }}>
-        <div>
-          <Typography variant="h5" component="h1" fontWeight={800} sx={{ color: BRAND.ink, letterSpacing: '-0.4px' }}>Alert Rules</Typography>
-          <Typography variant="body2" sx={{ color: BRAND.textLight, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            Configure when the system should notify staff
-            {activity && (
-              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: '1px', borderRadius: '999px', bgcolor: activity.failed > 0 ? INTENT.warning.bg : INTENT.success.bg, color: activity.failed > 0 ? INTENT.warning.ink : INTENT.success.ink, fontSize: 12, fontWeight: 600 }}>
-                <Box component="span" aria-hidden sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'currentColor' }} />
-                {activity.failed > 0 ? `${activity.failed} failed dispatch${activity.failed > 1 ? 'es' : ''} in ${activity.windowHours}h` : 'All rule triggers functioning normally'}
-              </Box>
-            )}
-            {!isAdmin && <Chip label="read-only" size="small" sx={{ height: 20 }} />}
+    /* Fills the viewport, like the notification log: the header and status bands
+       are fixed and everything below them scrolls in its own region, so the
+       primary action is permanently on screen rather than merely sticky. */
+    <Box sx={{ width: '100%', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: BRAND.canvas }}>
+      {/* -- header band: outside the scroll region, so always visible ------ */}
+      <Box
+        sx={{
+          flexShrink: 0, zIndex: 20,
+          px: 3, pt: 2.5, pb: 2,
+          bgcolor: BRAND.surface, borderBottom: `1px solid ${BRAND.border}`,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 2, flexWrap: 'wrap',
+          boxShadow: scrolled ? '0 4px 12px rgba(16,24,40,.07)' : 'none',
+          transition: 'box-shadow .2s ease',
+        }}
+      >
+        <Box sx={{ minWidth: 0 }}>
+          {/* breadcrumbs ground the page in the app's hierarchy */}
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.35 }}>
+            <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: BRAND.textLight }}>Settings</Typography>
+            <ChevronRightRoundedIcon sx={{ fontSize: 13, color: BRAND.textLight }} aria-hidden />
+            <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: BRAND.textLight }}>Alerts</Typography>
+            <ChevronRightRoundedIcon sx={{ fontSize: 13, color: BRAND.textLight }} aria-hidden />
+            <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.text }}>Rules</Typography>
+          </Stack>
+          {/* title and subtitle sit tight together as one block - the status
+              badge that used to run inline with the subtitle now has its own
+              band below, so this line is only ever one thing */}
+          <Typography component="h1" sx={{ fontSize: { xs: 22, md: 26 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.5px', lineHeight: 1.2 }}>
+            Alert Rules
           </Typography>
-        </div>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 0.25 }}>
+            <Typography sx={{ fontSize: 13.5, color: BRAND.textLight }}>
+              Configure when the system should notify staff
+            </Typography>
+            {!isAdmin && <Chip label="read-only" size="small" sx={{ height: 20, fontSize: 11 }} />}
+          </Stack>
+        </Box>
         {isAdmin && (
           <Button
             variant="contained"
             startIcon={<AddRoundedIcon />}
             onClick={openCreate}
-            sx={{ flexShrink: 0, whiteSpace: 'nowrap', bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover }, borderRadius: '6px' }}
+            sx={{
+              flexShrink: 0, whiteSpace: 'nowrap', textTransform: 'none',
+              fontWeight: 700, fontSize: 14.5, px: 2.25, py: 1, borderRadius: '8px',
+              bgcolor: BRAND.action, color: '#fff',
+              boxShadow: '0 2px 8px rgba(29,78,216,.28)',
+              transition: 'background-color .15s ease, box-shadow .15s ease, transform .15s ease',
+              '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)', transform: 'translateY(-1px)' },
+              '&:active': { transform: 'translateY(0)', boxShadow: '0 2px 6px rgba(29,78,216,.32)' },
+              '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
+            }}
           >
             New Rule
           </Button>
         )}
       </Box>
 
+      {/* system status as its own band directly under the header */}
+      {activity && (
+        <Stack
+          direction="row"
+          spacing={1}
+          role="status"
+          sx={{
+            flexShrink: 0, px: 3, py: 1, alignItems: 'center',
+            bgcolor: activity.failed > 0 ? INTENT.warning.bg : INTENT.success.bg,
+            borderBottom: `1px solid ${activity.failed > 0 ? INTENT.warning.border : INTENT.success.border}`,
+          }}
+        >
+          <Box aria-hidden sx={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, bgcolor: activity.failed > 0 ? INTENT.warning.ink : INTENT.success.ink }} />
+          <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: activity.failed > 0 ? INTENT.warning.ink : INTENT.success.ink }}>
+            {activity.failed > 0
+              ? `${activity.failed} failed dispatch${activity.failed > 1 ? 'es' : ''} in the last ${activity.windowHours}h`
+              : 'All rule triggers functioning normally'}
+          </Typography>
+        </Stack>
+      )}
+
+      {/* everything below the fixed bands scrolls together; the table's own
+          sticky header pins to the top of THIS box */}
+      <Box
+        onScroll={e => setScrolled(e.currentTarget.scrollTop > 8)}
+        sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}
+      >
+      {/* The content block is at least a full region tall, so the footer that
+          follows begins at or below the bottom edge - off screen until you
+          scroll past the content.
+          NOT flexGrow: flex only shares out FREE space, and this footer is 330px
+          tall, so the content merely grew into whatever was left and ~330px of
+          footer stayed on screen. minHeight forces the content past the fold. */}
+      <Box sx={{ minHeight: '100%', px: 3, py: 2.5, boxSizing: 'border-box' }}>
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
       {/* -- KPI hero strip ------------------------------------------------ */}
-      <Grid container spacing={2} sx={{ mb: 2.5 }}>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <StatTile icon={FactCheckOutlinedIcon} tone="info" label="Total rules" value={rules.length}
-            sub={`${activeCount} active, ${pausedCount} paused`} />
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <StatTile icon={BoltOutlinedIcon} tone="warn" label={`Triggers (${activity?.windowHours ?? 24}h)`}
-            value={activity ? activity.total : '-'}
-            sub={trendPct != null ? (
-              <>
-                {trendPct >= 0
-                  ? <ArrowUpwardRoundedIcon sx={{ fontSize: 13 }} aria-hidden />
-                  : <ArrowDownwardRoundedIcon sx={{ fontSize: 13 }} aria-hidden />}
-                {`${trendPct >= 0 ? '+' : ''}${trendPct}% vs prior ${activity.windowHours}h`}
-              </>
-            ) : activity ? 'no prior-window baseline' : 'activity unavailable'} />
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <StatTile icon={MarkEmailReadOutlinedIcon} tone={healthPct != null && healthPct < 100 ? 'warn' : 'ok'} label="Delivery health"
-            value={healthPct != null ? `${healthPct}%` : '-'}
-            sub={activity ? (activity.total > 0 ? `${activity.total - activity.failed} of ${activity.total} dispatches sent` : 'no dispatches in window') : 'activity unavailable'}
-            subInk={healthPct != null && healthPct < 100 ? ON_SURFACE.warn : undefined} />
-        </Grid>
-        <Grid size={{ xs: 6, md: 3 }}>
-          <StatTile icon={ForumOutlinedIcon} tone="info" label="Active channels" value={channelSet.size}
-            sub={channelSet.size ? [...channelSet].map(c => CHANNEL_META[c]?.label || c).join(' · ') : 'no active rules'} />
-        </Grid>
-      </Grid>
+      {/* One bar, four segments, hairline dividers - replaces four floating
+          cards that spent a whole band of the page on four integers. */}
+      <Card
+        sx={{
+          mb: 2, display: 'flex', flexWrap: { xs: 'wrap', md: 'nowrap' }, alignItems: 'stretch',
+          '& > *:not(:first-of-type)': {
+            borderLeft: { md: `1px solid ${BRAND.border}` },
+            borderTop: { xs: `1px solid ${BRAND.border}`, md: 'none' },
+          },
+        }}
+      >
+        <StatCell icon={FactCheckOutlinedIcon} tone="info" label="Total rules" value={rules.length}
+          sub={`${activeCount} active, ${pausedCount} paused`} />
+        <StatCell icon={BoltOutlinedIcon} tone="warn" label={`Triggers (${activity?.windowHours ?? 24}h)`}
+          value={activity ? activity.total : '-'}
+          sub={trendPct != null ? (
+            <>
+              {trendPct >= 0
+                ? <ArrowUpwardRoundedIcon sx={{ fontSize: 13 }} aria-hidden />
+                : <ArrowDownwardRoundedIcon sx={{ fontSize: 13 }} aria-hidden />}
+              {`${trendPct >= 0 ? '+' : ''}${trendPct}% vs prior ${activity.windowHours}h`}
+            </>
+          ) : activity ? 'no prior-window baseline' : 'activity unavailable'}
+          spark={<MiniBars series={activity?.series?.map(b => b.total)} colour={ON_SURFACE.info} />} />
+        <StatCell icon={MarkEmailReadOutlinedIcon} tone={healthPct != null && healthPct < 100 ? 'warn' : 'ok'} label="Delivery health"
+          value={healthPct != null ? `${healthPct}%` : '-'}
+          sub={activity ? (activity.total > 0 ? `${activity.total - activity.failed} of ${activity.total} dispatches sent` : 'no dispatches in window') : 'activity unavailable'}
+          subInk={healthPct != null && healthPct < 100 ? ON_SURFACE.warn : undefined}
+          /* plots FAILURES, not the health percentage: the shape worth seeing is
+             when things broke, and a near-flat 100% line says nothing */
+          spark={<MiniBars series={activity?.series?.map(b => b.failed)} colour={ON_SURFACE.danger} />} />
+        <StatCell icon={ForumOutlinedIcon} tone="info" label="Active channels" value={channelSet.size}
+          sub={channelSet.size ? [...channelSet].map(c => CHANNEL_META[c]?.label || c).join(' · ') : 'no active rules'} />
+      </Card>
 
       {/* -- filter & operations bar --------------------------------------- */}
-      <Card sx={{ mb: 2, px: 2, py: 1.25, display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
+      {/* One tinted container so search, filters and the view switch read as a
+          single control surface rather than four objects on the page field. */}
+      <Card sx={{ mb: 2, px: 2, py: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1.25, alignItems: 'center', bgcolor: BRAND.section, boxShadow: 'none', border: `1px solid ${BRAND.border}` }}>
         <TextField
           value={q}
           onChange={e => setQ(e.target.value)}
           size="small"
           placeholder="Search rules or recipients…"
-          sx={{ flex: '1 1 220px', minWidth: 180 }}
+          sx={{ flex: '1 1 220px', minWidth: 180, bgcolor: BRAND.surface, borderRadius: '8px' }}
           slotProps={{
             input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ fontSize: 18, color: BRAND.textLight }} /></InputAdornment> },
             htmlInput: { 'aria-label': 'Search rules or recipients' },
           }}
         />
-        <FormControl size="small" sx={{ minWidth: 130 }}>
+        <FormControl size="small" sx={{ minWidth: 155, bgcolor: BRAND.surface, borderRadius: '8px' }}>
           <InputLabel>Severity</InputLabel>
-          <Select value={fltSeverity} label="Severity" onChange={e => setFltSeverity(e.target.value)}>
+          <Select
+            value={fltSeverity}
+            label="Severity"
+            onChange={e => setFltSeverity(e.target.value)}
+            startAdornment={<InputAdornment position="start"><ShieldOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight }} /></InputAdornment>}
+          >
             <MenuItem value="all">All</MenuItem>
             <MenuItem value="urgent">Urgent</MenuItem>
             <MenuItem value="watch">Watch</MenuItem>
             <MenuItem value="info">Informational</MenuItem>
           </Select>
         </FormControl>
-        <FormControl size="small" sx={{ minWidth: 110 }}>
+        <FormControl size="small" sx={{ minWidth: 145, bgcolor: BRAND.surface, borderRadius: '8px' }}>
           <InputLabel>Status</InputLabel>
-          <Select value={fltStatus} label="Status" onChange={e => setFltStatus(e.target.value)}>
+          <Select
+            value={fltStatus}
+            label="Status"
+            onChange={e => setFltStatus(e.target.value)}
+            startAdornment={<InputAdornment position="start"><MonitorHeartOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight }} /></InputAdornment>}
+          >
             <MenuItem value="all">All</MenuItem>
             <MenuItem value="active">Active</MenuItem>
             <MenuItem value="paused">Paused</MenuItem>
           </Select>
         </FormControl>
-        <FormControl size="small" sx={{ minWidth: 120 }}>
+        <FormControl size="small" sx={{ minWidth: 150, bgcolor: BRAND.surface, borderRadius: '8px' }}>
           <InputLabel>Channel</InputLabel>
-          <Select value={fltChannel} label="Channel" onChange={e => setFltChannel(e.target.value)}>
+          <Select
+            value={fltChannel}
+            label="Channel"
+            onChange={e => setFltChannel(e.target.value)}
+            startAdornment={<InputAdornment position="start"><ForumOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight }} /></InputAdornment>}
+          >
             <MenuItem value="all">All</MenuItem>
             <MenuItem value="email">Email</MenuItem>
             <MenuItem value="sms">SMS</MenuItem>
@@ -692,7 +860,14 @@ export default function AlertRules() {
           onChange={(_, next) => switchView(next)}
           size="small"
           aria-label="Layout"
-          sx={{ '& .MuiToggleButton-root': { px: 1.25, py: 0.5, textTransform: 'none', fontSize: 12.5, color: BRAND.textLight, borderColor: BRAND.border, '&.Mui-selected': { bgcolor: BRAND.slate, color: '#fff', '&:hover': { bgcolor: BRAND.slateHover } } } }}
+          sx={{
+            bgcolor: BRAND.surface, borderRadius: '8px', p: '3px', gap: '2px', border: `1px solid ${BRAND.border}`,
+            '& .MuiToggleButtonGroup-grouped': {
+              border: 0, marginLeft: 0, px: 1.25, py: 0.4, borderRadius: '6px !important',
+              textTransform: 'none', fontSize: 12.5, fontWeight: 600, color: BRAND.textLight,
+              '&.Mui-selected': { bgcolor: BRAND.navySoft, color: BRAND.heading, fontWeight: 700, '&:hover': { bgcolor: BRAND.navySoft } },
+            },
+          }}
         >
           <ToggleButton value="table" aria-label="Table view">
             <TableRowsRoundedIcon sx={{ fontSize: 15, mr: 0.5 }} /> Table
@@ -752,8 +927,13 @@ export default function AlertRules() {
           />
         </Box>
       ) : (
-        <Card sx={{ borderRadius: '12px', overflow: 'hidden' }}>
-          <TableContainer sx={{ maxHeight: '62vh' }}>
+        // overflowX clip, NOT overflow hidden: `hidden` creates a containing
+        // block that clips position:sticky, which is what stops the pinned
+        // header rendering. The TableContainer no longer caps its own height
+        // either - the page's scroll region owns the Y axis, so there is one
+        // scrollbar rather than two.
+        <Card sx={{ borderRadius: '12px', overflowX: 'clip' }}>
+          <TableContainer>
             <Table stickyHeader size="small" aria-label="Alert rules">
               <TableHead>
                 <TableRow>
@@ -771,9 +951,11 @@ export default function AlertRules() {
                   )}
                   <TableCell sx={HEAD_CELL_SX}>{sortLabel('name', 'Rule')}</TableCell>
                   <TableCell sx={HEAD_CELL_SX}>Trigger condition</TableCell>
-                  <TableCell sx={HEAD_CELL_SX}>{sortLabel('count', `Activity (${activity?.windowHours ?? 24}h)`)}</TableCell>
+                  {/* numeric + timestamp column, so it right-aligns */}
+                  <TableCell align="right" sx={HEAD_CELL_SX}>{sortLabel('count', `Activity (${activity?.windowHours ?? 24}h)`)}</TableCell>
                   <TableCell sx={HEAD_CELL_SX}>Recipients</TableCell>
-                  <TableCell sx={HEAD_CELL_SX}>{sortLabel('status', 'Status')}</TableCell>
+                  {/* an absolute state indicator, so it centres */}
+                  <TableCell align="center" sx={HEAD_CELL_SX}>{sortLabel('status', 'Status')}</TableCell>
                   {isAdmin && <TableCell sx={{ ...HEAD_CELL_SX, width: 48 }} align="right"><Box component="span" sx={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Actions</Box></TableCell>}
                 </TableRow>
               </TableHead>
@@ -798,10 +980,18 @@ export default function AlertRules() {
                       key={rule.id}
                       hover
                       selected={selected.has(rule.id)}
-                      sx={{ bgcolor: paused ? BRAND.section : 'transparent', '& td': { borderColor: BRAND.border } }}
+                      // the whole row is the affordance, not just the edit button:
+                      // clicking anywhere opens that rule in the split view
+                      onClick={() => { setDetailId(rule.id); switchView('split'); }}
+                      sx={{
+                        cursor: 'pointer',
+                        bgcolor: paused ? BRAND.section : 'transparent',
+                        '& td': { borderColor: BRAND.border },
+                        '&:hover': { bgcolor: BRAND.section },
+                      }}
                     >
                       {isAdmin && (
-                        <TableCell padding="checkbox">
+                        <TableCell padding="checkbox" onClick={e => e.stopPropagation()}>
                           <Checkbox
                             size="small"
                             checked={selected.has(rule.id)}
@@ -825,7 +1015,7 @@ export default function AlertRules() {
                       <TableCell sx={{ color: BRAND.text, fontSize: 13, whiteSpace: 'nowrap' }}>
                         {TRIGGERS[rule.trigger_type]?.full || rule.trigger_type}
                       </TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         {act ? (
                           <>
                             <Typography sx={{ fontSize: 13, color: BRAND.text, fontVariantNumeric: 'tabular-nums' }}>
@@ -847,8 +1037,8 @@ export default function AlertRules() {
                         )}
                       </TableCell>
                       <TableCell><RecipientPills recipients={rule.recipients} channel={rule.channel} /></TableCell>
-                      <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <TableCell align="center" onClick={e => e.stopPropagation()} sx={{ whiteSpace: 'nowrap' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75 }}>
                           {isAdmin && (
                             <Switch
                               checked={rule.is_active}
@@ -862,7 +1052,7 @@ export default function AlertRules() {
                         </Box>
                       </TableCell>
                       {isAdmin && (
-                        <TableCell align="right" sx={{ pr: 1 }}>
+                        <TableCell align="right" onClick={e => e.stopPropagation()} sx={{ pr: 1 }}>
                           <RowMenu onEdit={() => openEdit(rule)} onDuplicate={() => openDuplicate(rule)} onDelete={() => setDeleteIds([rule.id])} />
                         </TableCell>
                       )}
@@ -874,6 +1064,15 @@ export default function AlertRules() {
           </TableContainer>
         </Card>
       )}
+      </Box>
+      {/* The shell skips its own footer on full-height routes (the document never
+          scrolls, so it would be unreachable), so it rides this page's scroll
+          region instead - reached by scrolling past the content, never pinned.
+          It is a SIBLING of the growing content block, not a child of it: nested
+          inside, it sat at the natural end of the content and the block grew
+          beneath it, which is what left it showing at rest. */}
+      <SiteFooter />
+      </Box>
 
       {/* creation/edit lives in a modal - the table is the default surface */}
       <RuleFormDialog
@@ -929,11 +1128,19 @@ function previewParts({ triggerType, threshold, channel, recipients, inputValue 
 // into the field grid - each section is scannable as its own block. Hoisted to
 // module scope: defining it inside the dialog would remount it (and drop input
 // focus) on every keystroke.
-function Section({ n, title, children, last }) {
+/**
+ * One step of the rule form.
+ *
+ * The red 1/2/3 counters are gone: brand red is the app's alarm colour, and
+ * spending it on ordinals put three small alerts inside a routine form. The
+ * order is already carried by the vertical sequence, so the heading just needs
+ * to be a heading - bolder, darker, and a size up.
+ */
+function Section({ title, children, last }) {
   return (
     <Box sx={{ pb: last ? 0 : 2.5, mb: last ? 0 : 2.5, borderBottom: last ? 'none' : `1px solid ${BRAND.border}` }}>
-      <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 1.5 }}>
-        <Box component="span" sx={{ color: BRAND.accent, mr: 0.75 }}>{n}</Box>{title}
+      <Typography sx={{ fontSize: 14.5, fontWeight: 700, color: BRAND.heading, mb: 1.5, letterSpacing: '-0.1px' }}>
+        {title}
       </Typography>
       {children}
     </Box>
@@ -982,20 +1189,31 @@ function RuleFormDialog({ open, initial, isEdit, onSave, onClose, saveError }) {
   }
 
   const parts = previewParts({ triggerType, threshold, channel, recipients, inputValue });
-  const hl = { fontWeight: 700, color: BRAND.heading, bgcolor: BRAND.navySoft, borderRadius: '4px', px: 0.5, py: '1px' };
+  // literal colours: the preview card is dark in BOTH schemes, so its highlight
+  // cannot ride the scheme-aware tokens
+  const darkHl = { fontWeight: 700, color: '#F1F5F9', bgcolor: 'rgba(148,163,184,.18)', borderRadius: '4px', px: 0.5, py: '1px' };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '14px' } } }}>
+    <Dialog
+      // one focus treatment for every input in the form: a thicker ring in the
+      // action blue, so keyboard position is never ambiguous
+      sx={{
+        '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': {
+          borderColor: BRAND.action, borderWidth: 2,
+        },
+        '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: `0 0 0 3px rgba(29,78,216,.18)` },
+      }}
+      open={open} onClose={onClose} maxWidth="sm" fullWidth slotProps={{ paper: { sx: { borderRadius: '14px' } } }}>
       <DialogTitle sx={{ fontWeight: 700, color: BRAND.heading }}>{isEdit ? 'Edit Rule' : 'New Alert Rule'}</DialogTitle>
       <Box component="form" onSubmit={submit}>
         <DialogContent sx={{ pt: 1 }}>
           {saveError && <Alert severity="error" sx={{ mb: 2 }}>{saveError}</Alert>}
 
-          <Section n="1" title="General">
+          <Section title="General">
             <TextField label="Rule name" value={name} onChange={e => setName(e.target.value)} required size="small" fullWidth />
           </Section>
 
-          <Section n="2" title="Trigger conditions">
+          <Section title="Trigger conditions">
             <Grid container spacing={2}>
               <Grid size={{ xs: 12, sm: usesThreshold ? 7 : 12 }}>
                 <FormControl size="small" fullWidth required>
@@ -1023,7 +1241,7 @@ function RuleFormDialog({ open, initial, isEdit, onSave, onClose, saveError }) {
             </Grid>
           </Section>
 
-          <Section n="3" title="Actions &amp; notifications" last>
+          <Section title="Actions &amp; notifications" last>
             <FormControl size="small" fullWidth required sx={{ mb: 2 }}>
               <InputLabel>Delivery channel</InputLabel>
               <Select value={channel} onChange={e => setChannel(e.target.value)} label="Delivery channel">
@@ -1074,14 +1292,22 @@ function RuleFormDialog({ open, initial, isEdit, onSave, onClose, saveError }) {
 
         {/* live preview banner: When [trigger] -> Send [channel] to [recipients],
             with the dynamic parts highlighted so drift is impossible to miss */}
-        <Box sx={{ mx: 3, mb: 1, px: 2, py: 1.25, bgcolor: BRAND.section, borderRadius: '8px', border: `1px solid ${BRAND.border}` }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
+        {/* Dark card: the configuration above is what you are EDITING, this is
+            what it will DO. Inverting the surface separates the two completely,
+            so the preview reads as a result rather than another form field. It is
+            the same dark in both schemes - it is a console, not a themed panel. */}
+        <Box sx={{ mx: 3, mb: 1.5, px: 2, py: 1.5, bgcolor: '#0F172A', borderRadius: '10px' }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '0.08em', mb: 0.75 }}>
             Preview
           </Typography>
-          <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.9 }}>
-            When <Box component="span" sx={hl}>{parts.when}</Box>
-            {' → send '}<Box component="span" sx={hl}>{parts.how}</Box>
-            {' to '}<Box component="span" sx={hl}>{parts.who}</Box>
+          <Typography sx={{ fontSize: 13.5, color: '#E2E8F0', lineHeight: 1.85, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', whiteSpace: 'pre-wrap' }}>
+            <Box component="span" sx={{ color: '#7DD3FC', fontWeight: 700 }}>WHEN</Box>{' '}
+            <Box component="span" sx={darkHl}>{parts.when}</Box>
+            {'\n'}
+            <Box component="span" sx={{ color: '#7DD3FC', fontWeight: 700 }}>SEND</Box>{' '}
+            <Box component="span" sx={darkHl}>{parts.how}</Box>{' '}
+            <Box component="span" sx={{ color: '#7DD3FC', fontWeight: 700 }}>TO</Box>{' '}
+            <Box component="span" sx={darkHl}>{parts.who}</Box>
           </Typography>
         </Box>
 

@@ -29,6 +29,29 @@ import { useThemeMode } from '../../contexts/ThemeModeContext';
  *   AI unavailable  - the call failed. No text is supplied. The officer writes
  *                     it. We do not hand over a template dressed as an AI draft.
  */
+/**
+ * Sentences in the draft that state a fact was NOT recorded.
+ *
+ * ============== THIS IS NOT AN AI CONFIDENCE SIGNAL ========================
+ * The model returns no per-sentence confidence, and nothing in the response
+ * says how sure it was about anything. Inventing a "the AI seems unsure here"
+ * highlight would be fabricating a measurement.
+ *
+ * What IS detectable is the prompt's own contract: it instructs the model to
+ * write "not recorded" wherever a detail is missing rather than guessing. So a
+ * match here means one thing only, and it is a fact about the DATA - this
+ * briefing is telling the contractor that something was never captured. That is
+ * exactly what an officer should check before sending, so it is worth marking.
+ * The label says "missing detail", never "uncertain".
+ * ===========================================================================
+ */
+const MISSING_RE = /not recorded|not specified|none recorded|not yet confirmed/i;
+
+function splitSentences(text) {
+  // keep the delimiter so re-joining reproduces the original exactly
+  return String(text || '').split(/(?<=[.!?])\s+/);
+}
+
 export default function VendorBriefingDialog({ open, onClose, assessmentIds, block, onRaiseWorkOrder, canRaise }) {
   // the AI banner's gradient needs literal colours per scheme, so it reads the
   // resolved mode the same way the rest of the map surface does
@@ -89,6 +112,14 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
   }
 
   const tooShort = text.trim().length < 20;
+  const canSend = !sending && !loading && !tooShort && !sendState?.delivered;
+
+  // Cmd/Ctrl+Enter from inside the editor sends. Gated on exactly the same
+  // condition as the button, so the shortcut can never dispatch something the
+  // button itself would refuse.
+  function onEditorKeyDown(e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && canSend) { e.preventDefault(); send(); }
+  }
 
   return (
     /* A RIGHT-DOCKED DRAWER, not a centre-screen modal.
@@ -207,6 +238,7 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
             <TextField
               value={text}
               onChange={e => setText(e.target.value)}
+              onKeyDown={onEditorKeyDown}
               multiline
               minRows={12}
               fullWidth
@@ -216,13 +248,40 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
               // Prose, not code: a monospace face made a human-readable briefing
               // look like a config file. Generous leading and a focus ring make it
               // read as a document you are editing.
+              // A tinted well with a solid border, so it reads as an input rather
+              // than as rendered output the officer might assume is read-only.
               sx={{
-                '& .MuiInputBase-root': { bgcolor: BRAND.surface, borderRadius: '10px', p: 1.5 },
+                '& .MuiInputBase-root': { bgcolor: BRAND.section, borderRadius: '10px', p: 1.5 },
                 '& .MuiInputBase-input': { fontSize: 14, lineHeight: 1.75, color: BRAND.heading },
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.border },
-                '&:focus-within .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.action, borderWidth: 2 },
+                '& .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.border, borderWidth: 1.5 },
+                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.textLight },
+                '& .MuiOutlinedInput-root.Mui-focused': { bgcolor: BRAND.surface },
+                '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.action, borderWidth: 2 },
               }}
             />
+
+            {/* Missing-detail callout. Points at the sentences the officer most
+                needs to verify before this reaches a contractor. */}
+            {!aiError && (() => {
+              const flagged = splitSentences(text).filter(x => MISSING_RE.test(x));
+              if (!flagged.length) return null;
+              return (
+                <Box sx={{ mt: 1.5, p: 1.5, borderRadius: '8px', bgcolor: INTENT.warning.bg, border: `1px solid ${INTENT.warning.border}` }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: INTENT.warning.ink, mb: 0.5 }}>
+                    {flagged.length} missing detail{flagged.length === 1 ? '' : 's'} - check before sending
+                  </Typography>
+                  {flagged.map((x, i) => (
+                    <Typography key={i} sx={{ fontSize: 12.5, color: INTENT.warning.ink, lineHeight: 1.55 }}>
+                      {x.trim()}
+                    </Typography>
+                  ))}
+                  <Typography sx={{ fontSize: 11.5, color: INTENT.warning.ink, opacity: 0.85, mt: 0.5 }}>
+                    These are gaps in the recorded data, not doubts about the draft. Fill them in
+                    if you know the answer, or leave them as they are.
+                  </Typography>
+                </Box>
+              );
+            })()}
 
             {/* Outcome reflects the real send result, never an assumption */}
             {sendState && (
@@ -249,7 +308,10 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
         <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, mb: 1.25 }}>
           Nothing is sent until you press send.
         </Typography>
-        <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end', alignItems: 'center' }}>
+        {/* Cancel is pushed to the FAR LEFT and the two committing actions are
+            grouped right, so the mouse never travels from "back out" straight
+            onto "send to a paid contractor". */}
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         {/* Ghost, so the three actions read as increasing commitment
             left to right: ghost -> outline -> solid. */}
         <Button
@@ -263,6 +325,7 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
         >
           {sendState?.delivered ? 'Close' : 'Cancel'}
         </Button>
+        <Box sx={{ flexGrow: 1 }} />
 
         {/* Raising the work order commits money, so it stays admin-only - the
             server enforces it too; this only hides an action that would 403. */}
@@ -292,7 +355,7 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
         <Button
           variant="contained"
           onClick={send}
-          disabled={sending || loading || tooShort || Boolean(sendState?.delivered)}
+          disabled={!canSend}
           startIcon={sending ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <SendRoundedIcon />}
           sx={{
             textTransform: 'none', fontWeight: 800, fontSize: 14.5, borderRadius: '8px', whiteSpace: 'nowrap',

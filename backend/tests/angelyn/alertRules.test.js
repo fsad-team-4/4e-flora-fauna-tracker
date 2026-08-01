@@ -232,6 +232,46 @@ describe('GET /api/alert-rules/activity', () => {
     await seed(ruleA, 'sent', 40 * HOUR);
   });
 
+  test('the hourly series covers every hour and sums to the window total', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.series)).toBe(true);
+    // one bucket per hour, quiet hours included - a gap must render as a real
+    // zero, not as the line skipping over it
+    expect(res.body.series).toHaveLength(24);
+    const sum = res.body.series.reduce((n, b) => n + b.total, 0);
+    expect(sum).toBe(res.body.total);
+    const failed = res.body.series.reduce((n, b) => n + b.failed, 0);
+    expect(failed).toBe(res.body.failed);
+  });
+
+  test('the series is oldest-first, so it reads left to right in time', async () => {
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    // seeded fires sit 1h, 2h and 3h ago inside a 24h window, so with index 0 as
+    // the OLDEST hour they land in the last quarter of the array, not the first
+    const firstQuarter = res.body.series.slice(0, 6).reduce((n, b) => n + b.total, 0);
+    const lastQuarter = res.body.series.slice(-6).reduce((n, b) => n + b.total, 0);
+    expect(lastQuarter).toBeGreaterThan(firstQuarter);
+  });
+
+  test('the series honours the hours parameter', async () => {
+    const res = await request(app).get('/api/alert-rules/activity?hours=48')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body.series).toHaveLength(48);
+    expect(res.body.series.reduce((n, b) => n + b.total, 0)).toBe(res.body.total);
+  });
+
+  test('resends are excluded from the series, as they are from the total', async () => {
+    // the seed includes a retry_of row 0.5h ago; if the buckets counted it the
+    // series sum would exceed the total the endpoint reports
+    const res = await request(app).get('/api/alert-rules/activity')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(res.body.series.reduce((n, b) => n + b.total, 0)).toBe(res.body.total);
+    expect(res.body.total).toBe(4);   // 3 rule-A fires + 1 unattributed
+  });
+
   test('staff can read activity', async () => {
     const res = await request(app).get('/api/alert-rules/activity')
       .set('Authorization', `Bearer ${staffToken}`);

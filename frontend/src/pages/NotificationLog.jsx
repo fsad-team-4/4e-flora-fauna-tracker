@@ -17,6 +17,7 @@ import DoneRoundedIcon from '@mui/icons-material/DoneRounded';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
 import http from '../http';
+import SiteFooter from '../components/SiteFooter';
 import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import NotificationTimeline from '../components/NotificationTimeline';
 import UndoSnackbar from '../components/UndoSnackbar';
@@ -569,7 +570,10 @@ export default function NotificationLog() {
       {/* Owns BOTH scroll axes. The table's stickyHeader pins to the top of THIS
           box, so the column labels stay visible while the log scrolls beneath
           the fixed title band. */}
-      <Box tabIndex={-1} sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto', px: { xs: 2, md: 3 }, py: 2.5 }}>
+      <Box tabIndex={-1} sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
+      {/* at least one full region tall, so the footer after it starts at or below
+          the fold and is only reached by scrolling past the content */}
+      <Box sx={{ minHeight: '100%', px: { xs: 2, md: 3 }, py: 2.5, boxSizing: 'border-box' }}>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
 
@@ -947,6 +951,12 @@ export default function NotificationLog() {
       )}
 
       </Box>
+      {/* The shell skips its own footer on full-height routes (the document never
+          scrolls, so it would be unreachable), so it rides this page's scroll
+          region instead - reached by scrolling past the content, never pinned. */}
+      <SiteFooter />
+      </Box>
+
 
       {/* MASTER-DETAIL DRAWER.
           Failure detail used to expand inline, which pushed every row below it

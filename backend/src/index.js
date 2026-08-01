@@ -39,6 +39,7 @@ app.use('/api/work-orders', require('./routes/workOrders'));
 app.use('/api/scorecard', require('./routes/scorecard'));
 app.use('/api/block-diagnosis', require('./routes/blockDiagnosis'));
 app.use('/api/rodent-riskmap', require('./routes/rodentRiskMap'));
+app.use('/api/geocode', require('./routes/geocode'));
 // SIMULATED sensor surface - kept a separate endpoint from the real risk map on
 // purpose, so the two data kinds can never be served in one merged shape
 app.use('/api/sensor-surface', require('./routes/sensorSurface'));
