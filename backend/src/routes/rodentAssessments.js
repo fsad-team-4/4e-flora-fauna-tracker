@@ -1,5 +1,6 @@
 const express = require('express');
 const cloudinary = require('../config/cloudinary');
+const sequelize = require('../config/database');
 const { RodentAssessment, WorkOrder } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const yup = require('yup');
@@ -7,6 +8,12 @@ const { assessRodentRisk, hasApiKey, stubAssessment } = require('../services/rod
 const { aiLimiter } = require('../utils/rateLimiters');
 const { validateBody } = require('../utils/validate');
 const { Op } = require('sequelize');
+
+// SQLite's LIKE is case-insensitive by default; Postgres's is NOT. On Neon the
+// same query would silently return fewer rows - no error, just a filter that
+// quietly stops matching "Block 123" when the user types "block 123". Pick the
+// operator per dialect so both environments behave the same.
+const LIKE = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.like;
 
 const createSchema = yup.object({
   block_number: yup.string().nullable().max(120, 'block is too long'),
@@ -70,14 +77,14 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 
   // block is free text, so match loosely - "234" should find "Block 234"
   if (block && block.trim()) {
-    where.block_number = { [Op.like]: `%${block.trim()}%` };
+    where.block_number = { [LIKE]: `%${block.trim()}%` };
   }
   // free-text search across what the officer actually wrote, plus the AI's cause
   if (search && search.trim()) {
     const q = `%${search.trim()}%`;
     where[Op.or] = [
-      { observations: { [Op.like]: q } },
-      { likely_cause: { [Op.like]: q } },
+      { observations: { [LIKE]: q } },
+      { likely_cause: { [LIKE]: q } },
     ];
   }
   // date range, inclusive of the whole "to" day
