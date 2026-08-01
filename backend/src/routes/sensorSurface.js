@@ -12,7 +12,7 @@ const express = require('express');
 const { Op } = require('sequelize');
 const { SensorReading } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
-const { computeSensorSurface } = require('../services/sensorSurface');
+const { computeSensorSurface, MAX_GRID } = require('../services/sensorSurface');
 const { councilNames, BOUNDARIES_ARE_APPROXIMATE, SG_BOUNDS } = require('../services/townCouncils');
 
 const router = express.Router();
@@ -23,7 +23,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const windowDays = Math.min(90, Math.max(1, parseInt(req.query.windowDays) || 30));
-    const gridResolution = Math.min(60, Math.max(8, parseInt(req.query.gridResolution) || 28));
+    // Cap follows MAX_GRID in the service: the surface is contoured client-side,
+    // so it needs a fine grid to read as a field rather than tiles.
+    const gridResolution = Math.min(MAX_GRID, Math.max(8, parseInt(req.query.gridResolution) || 180));
     const asOf = req.query.asOf ? new Date(req.query.asOf) : new Date();
     if (Number.isNaN(asOf.getTime())) return res.status(400).json({ error: 'invalid asOf' });
     const councils = req.query.councils

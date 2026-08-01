@@ -715,7 +715,7 @@ function RouteBoundary({ children }) {
 // Routes that own the whole viewport (map dashboards): rendered edge-to-edge with
 // no Container, no footer and no page scroll - the viewport is locked and any
 // scrolling happens inside the page's own panels.
-const FULL_BLEED_PATHS = new Set(['/rodent-heatmap', '/action-queue'])
+const FULL_BLEED_PATHS = new Set(['/rodent-heatmap', '/action-queue', '/notif-log'])
 // Routes that keep the app chrome and footer but drop the centred max-width, so a
 // dense grid can use the full screen instead of being boxed at 1536px.
 const WIDE_PATHS = new Set(['/dashboard'])

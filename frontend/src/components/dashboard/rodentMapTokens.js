@@ -31,6 +31,10 @@ export const SG_CENTER = [1.3690, 103.8456];
  * labels entirely, which is what actually stops street type competing with the pins.
  */
 export const BASEMAPS = {
+  // Default. CARTO Positron with no labels: a desaturated near-greyscale ground
+  // that gives the data layers the only saturated colour on the canvas. The
+  // previous default was the LABELLED variant, whose road casings and green park
+  // fills competed directly with the severity hues.
   muted: { label: 'Muted', url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png' },
   labelled: { label: 'Labelled', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' },
   dark: { label: 'Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png' },

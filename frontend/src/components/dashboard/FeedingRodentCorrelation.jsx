@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Card, CardContent, Box, Stack, Typography, Skeleton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TableSortLabel, IconButton, Collapse, Tooltip,
+  TableContainer, TableHead, TableRow, TableSortLabel, Tooltip,
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
-import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import { useTheme } from '@mui/material/styles';
-import { BRAND, INTENT, ON_SURFACE } from '../../theme';
+import { BRAND, INTENT } from '../../theme';
 import http from '../../http';
 
 // The feeding/rodent signal hues, per scheme. In light the inks are deepened
@@ -63,159 +61,154 @@ function StatusBadge({ children, title }) {
  * The inks come from SIGNAL_INK, tuned per scheme (see that constant's note), so
  * the digits stay well clear of AA against the zebra rows in both schemes.
  * Right-aligned so digits stack.
+ *
+ * ================= WHY THERE IS NO LONGER A SEVERITY DOT ===================
+ * This cell used to carry a dot: red at value >= 5, amber at 3-4, tooltipped
+ * "High volume" / "Moderate volume". Both cutoffs were invented in this file.
+ * backend/src/services/blockDiagnosis.js applies NO magnitude threshold to
+ * rodent counts at all - line 116 filters on presence only
+ * (`feedingCount > 0 && rodentAssessmentCount > 0`) - so "5 is high" was a claim
+ * the data never made, and the tooltip stated it as fact.
+ *
+ * `tint` now marks the ONE boundary the backend actually defines: whether any
+ * assessment at this block was rated medium/high/critical (ELEVATED_LEVELS,
+ * blockDiagnosis.js:26). That is a real, sourced distinction rather than a
+ * magnitude band nobody set.
+ *
+ * A trend arrow was considered and rejected: /api/block-diagnosis returns one
+ * window only (block_number, feedingCount, rodentAssessmentCount,
+ * elevatedRodentCount, firstFeedingDate, firstRodentDate, sampleSize) with no
+ * prior-period figure, so any up/down arrow would have to invent its comparison.
+ * ===========================================================================
  */
-function NumCell({ value, color, dim = false, heat = false }) {
+function NumCell({ value, color, dim = false, tint = false, tintLabel = null }) {
   const flat = dim || !value;
-  // heat dot: red at/above 5, amber at 3-4, none below. Communicates severity at a
-  // glance so the reader is not parsing integers to find the bad rows.
-  const dot = heat && value >= 3 ? (value >= 5 ? ON_SURFACE.danger : ON_SURFACE.warn) : null;
-  return (
-    <TableCell align="right" sx={{ py: 1.25 }}>
-      <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', justifyContent: 'flex-end' }}>
-        {dot && (
-          <Tooltip title={value >= 5 ? 'High volume' : 'Moderate volume'}>
-            <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: dot, flexShrink: 0 }} />
-          </Tooltip>
-        )}
-        <Typography
-          component="span"
-          sx={{
-            fontSize: 15.5, fontWeight: 800,
-            color: flat ? BRAND.textLight : color,
-            fontVariantNumeric: 'tabular-nums',
-          }}
-        >
-          {value}
-        </Typography>
-      </Stack>
+  const cell = (
+    <TableCell
+      align="right"
+      // A tint is a colour-only signal, which the old dot's tooltip at least
+      // partly mitigated. The label is carried on the cell as an aria-label and a
+      // tooltip, so the meaning survives for screen readers and for anyone who
+      // cannot separate the hues.
+      aria-label={tint && tintLabel ? `${value}. ${tintLabel}` : undefined}
+      sx={{
+        py: 1.25,
+        // Tint the whole cell rather than sitting a dot beside the digits: the dot
+        // read as a bullet belonging to the number, and at 8px it was the smallest
+        // mark on the densest surface of the page.
+        ...(tint ? { bgcolor: INTENT.danger.tint } : null),
+      }}
+    >
+      <Typography
+        component="span"
+        sx={{
+          fontSize: 15.5, fontWeight: 800,
+          color: flat ? BRAND.textLight : color,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value}
+      </Typography>
     </TableCell>
   );
+  return tint && tintLabel ? <Tooltip title={tintLabel}>{cell}</Tooltip> : cell;
 }
 
 // Explicit widths summing to 100%, so the table fills its container instead of
 // collapsing to content width and leaving dead space to the right.
 const COLUMNS = [
-  { id: 'block_number', label: 'Estate Block', align: 'left', width: '17%' },
-  { id: 'feedingCount', label: 'Feed Sightings', align: 'right', width: '12%' },
+  { id: 'block_number', label: 'Estate Block', align: 'left', width: '18%' },
+  { id: 'feedingCount', label: 'Feed Sightings', align: 'right', width: '13%' },
   { id: 'rodentAssessmentCount', label: 'Rodent Reports', align: 'right', width: '13%' },
-  { id: 'elevatedRodentCount', label: 'At-Risk Cases', align: 'right', width: '12%' },
+  { id: 'elevatedRodentCount', label: 'At-Risk Cases', align: 'right', width: '13%' },
   // the first-seen ordering used to be reachable only by expanding a row; it is the
   // single most useful sentence in the panel, so it gets a column of its own
-  { id: 'firstFeedingDate', label: 'Insights', align: 'left', width: '25%' },
-  { id: 'sampleSize', label: 'Significance', align: 'left', width: '15%' },
+  { id: 'firstFeedingDate', label: 'Insights', align: 'left', width: '27%' },
+  { id: 'sampleSize', label: 'Significance', align: 'left', width: '16%' },
 ];
-// trailing expand column - not sortable, so it is not part of COLUMNS
-const EXPAND_COL_WIDTH = '6%';
-const COL_COUNT = COLUMNS.length + 1;
 
+/**
+ * One block row.
+ *
+ * THE EXPANDABLE SUB-ROW IS GONE, and nothing was lost with it. It restated
+ * exactly three things, all of which are already on the visible row:
+ *   - "Feeding first seen X · rodent reports from Y" -> the Insights column
+ *     prints the same two values in the same words (and names the missing field
+ *     instead of the sub-row's bare "n/a").
+ *   - the ordering caveat -> character-for-character the StatusBadge tooltip,
+ *     off the same `flagged` condition.
+ *   - "Small sample - not statistically significant." -> a weaker version of the
+ *     Significance column, which shows the record count AND the 10-record bar.
+ * So the chevron, its aria-expanded plumbing, the row click handler and the
+ * conditional borders bought a second copy of the row. The prose it was built to
+ * hold had already been promoted into columns; only the sub-row stayed behind.
+ */
 function BlockRow({ block, index }) {
   const ink = SIGNAL_INK[useTheme().palette.mode] || SIGNAL_INK.light;
-  const [open, setOpen] = useState(false);
   const feedDate = fmtDate(block.firstFeedingDate);
   const rodentDate = fmtDate(block.firstRodentDate);
   const small = block.sampleSize < SMALL_SAMPLE;
   const flagged = orderingFlag(block);
 
+  // Zebra striping keyed off the row index, so the eye can track a single row
+  // across the columns. Kept subtle enough not to fight the hover state.
   return (
-    <>
-      {/* Zebra striping keyed off the row index, so the eye can track a single row
-          across five columns. Kept subtle enough not to fight the hover state. */}
-      <TableRow
-        hover
-        sx={{
-          '& > td': { borderBottom: open ? 'none' : `1px solid ${BRAND.border}` },
-          cursor: 'pointer',
-          bgcolor: index % 2 === 1 ? BRAND.section : 'transparent',
-          // explicit hover wins over the zebra tint, so the eye can still track a
-          // row across all five columns on a striped table
-          '&:hover': { bgcolor: BRAND.navySoft },
-        }}
-        onClick={() => setOpen(o => !o)}
-      >
-        <TableCell sx={{ py: 1.25 }}>
-          <Typography component="span" sx={{ fontSize: 14, fontWeight: 700, color: BRAND.heading }}>
-            {block.block_number}
-          </Typography>
-        </TableCell>
-        <NumCell value={block.feedingCount} color={ink.feeding} />
-        <NumCell value={block.rodentAssessmentCount} color={ink.rodent} heat />
-        <NumCell value={block.elevatedRodentCount} color={ink.rodent} dim={block.elevatedRodentCount === 0} />
-        <TableCell sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
-          <Typography sx={{ fontSize: 12.5, color: BRAND.text, lineHeight: 1.45 }}>
-            {feedDate ? `Feeding first seen ${feedDate}` : 'Feeding date not recorded'}
-          </Typography>
-          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.45 }}>
-            {rodentDate ? `rodent reports from ${rodentDate}` : 'rodent date not recorded'}
-          </Typography>
-        </TableCell>
-        <TableCell sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Tooltip
-              title={small
-                ? `Only ${block.sampleSize} record${block.sampleSize === 1 ? '' : 's'} - below the ${SMALL_SAMPLE}-record bar for a meaningful pattern.`
-                : `${block.sampleSize} records - large enough to be worth acting on.`}
-            >
-              <Typography
-                component="span"
-                sx={{ fontSize: 12.5, fontWeight: small ? 500 : 600, color: small ? BRAND.textLight : BRAND.text, fontStyle: small ? 'italic' : 'normal', whiteSpace: 'nowrap', cursor: 'help' }}
-              >
-                {small ? `Small sample · ${block.sampleSize}` : `${block.sampleSize} records`}
-              </Typography>
-            </Tooltip>
-            {flagged && (
-              <StatusBadge title="Feeding was first logged after the rodent reports here, so the ordering does not support feeding as a driver - treat as co-occurrence only.">
-                Ordering caveat
-              </StatusBadge>
-            )}
-          </Stack>
-        </TableCell>
-        {/* Expand control at the END of the row: the eye scans Block -> counts ->
-            significance -> action, so the interaction belongs where that journey
-            finishes, not before it starts. */}
-        <TableCell align="right" sx={{ py: 1.25, borderBottom: open ? 'none' : `1px solid ${BRAND.border}` }}>
-          <IconButton
-            size="small"
-            aria-label={open ? `Hide detail for ${block.block_number}` : `Show detail for ${block.block_number}`}
-            aria-expanded={open}
-            onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
-            sx={{
-              p: 0.5, color: open ? BRAND.heading : BRAND.text,
-              bgcolor: open ? BRAND.navySoft : 'transparent',
-              '&:hover': { bgcolor: BRAND.navySoft },
-            }}
+    <TableRow
+      hover
+      sx={{
+        '& > td': { borderBottom: `1px solid ${BRAND.border}` },
+        bgcolor: index % 2 === 1 ? BRAND.section : 'transparent',
+        // explicit hover wins over the zebra tint, so the eye can still track a
+        // row across every column on a striped table
+        '&:hover': { bgcolor: BRAND.navySoft },
+      }}
+    >
+      <TableCell sx={{ py: 1.25 }}>
+        <Typography component="span" sx={{ fontSize: 14, fontWeight: 700, color: BRAND.heading }}>
+          {block.block_number}
+        </Typography>
+      </TableCell>
+      <NumCell value={block.feedingCount} color={ink.feeding} />
+      <NumCell value={block.rodentAssessmentCount} color={ink.rodent} />
+      <NumCell
+        value={block.elevatedRodentCount}
+        color={ink.rodent}
+        dim={block.elevatedRodentCount === 0}
+        // The one boundary the backend actually draws: at least one assessment
+        // here was rated medium, high or critical.
+        tint={block.elevatedRodentCount > 0}
+        tintLabel={`${block.elevatedRodentCount} of ${block.rodentAssessmentCount} assessment${block.rodentAssessmentCount === 1 ? '' : 's'} at this block was rated medium, high or critical.`}
+      />
+      <TableCell sx={{ py: 1.25 }}>
+        <Typography sx={{ fontSize: 12.5, color: BRAND.text, lineHeight: 1.45 }}>
+          {feedDate ? `Feeding first seen ${feedDate}` : 'Feeding date not recorded'}
+        </Typography>
+        <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.45 }}>
+          {rodentDate ? `rodent reports from ${rodentDate}` : 'rodent date not recorded'}
+        </Typography>
+      </TableCell>
+      <TableCell sx={{ py: 1.25 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
+          <Tooltip
+            title={small
+              ? `Only ${block.sampleSize} record${block.sampleSize === 1 ? '' : 's'} - below the ${SMALL_SAMPLE}-record bar for a meaningful pattern.`
+              : `${block.sampleSize} records - large enough to be worth acting on.`}
           >
-            <KeyboardArrowDownRoundedIcon sx={{ fontSize: 20, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
-          </IconButton>
-        </TableCell>
-      </TableRow>
-
-      {/* Expandable detail: the prose that used to crowd the card lives here. */}
-      <TableRow>
-        <TableCell colSpan={COL_COUNT} sx={{ py: 0, borderBottom: `1px solid ${BRAND.border}` }}>
-          <Collapse in={open} unmountOnExit>
-            <Box sx={{ py: 1.5, pl: 1, pr: 1 }}>
-              <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, lineHeight: 1.6 }}>
-                Feeding first seen {feedDate || 'n/a'} · rodent reports from {rodentDate || 'n/a'}
-              </Typography>
-              {flagged && (
-                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-start', mt: 0.75 }}>
-                  <WarningAmberRoundedIcon sx={{ fontSize: 16, color: ON_SURFACE.warn, mt: '1px', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 12.5, color: ON_SURFACE.warn, lineHeight: 1.6 }}>
-                    Feeding was first logged after the rodent reports here, so the ordering does not
-                    support feeding as a driver - treat as co-occurrence only.
-                  </Typography>
-                </Stack>
-              )}
-              {block.sampleSize < SMALL_SAMPLE && (
-                <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.75, fontStyle: 'italic' }}>
-                  Small sample - not statistically significant.
-                </Typography>
-              )}
-            </Box>
-          </Collapse>
-        </TableCell>
-      </TableRow>
-    </>
+            <Typography
+              component="span"
+              sx={{ fontSize: 12.5, fontWeight: small ? 500 : 600, color: small ? BRAND.textLight : BRAND.text, fontStyle: small ? 'italic' : 'normal', whiteSpace: 'nowrap', cursor: 'help' }}
+            >
+              {small ? `Small sample · ${block.sampleSize}` : `${block.sampleSize} records`}
+            </Typography>
+          </Tooltip>
+          {flagged && (
+            <StatusBadge title="Feeding was first logged after the rodent reports here, so the ordering does not support feeding as a driver - treat as co-occurrence only.">
+              Ordering caveat
+            </StatusBadge>
+          )}
+        </Stack>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -323,7 +316,6 @@ export default function FeedingRodentCorrelation() {
                         </TableSortLabel>
                       </TableCell>
                     ))}
-                    <TableCell width={EXPAND_COL_WIDTH} sx={{ borderBottom: `2px solid ${BRAND.border}`, bgcolor: BRAND.section }} />
                   </TableRow>
                 </TableHead>
                 <TableBody>

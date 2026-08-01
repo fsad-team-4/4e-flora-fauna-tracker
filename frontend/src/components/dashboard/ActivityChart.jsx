@@ -1,15 +1,31 @@
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { BRAND, SVG_ACCENT } from '../../theme';
 
-// Bar + line combo. The stacked area rendered as two near-flat bands, which said
-// almost nothing: rounded bars give fauna sightings a countable shape, and a bold
-// line over the top makes the open-case trend legible against them.
+// Two lines on ONE shared axis.
+//
+// ============== WHY THE SECOND Y-AXIS IS GONE ==============================
+// This was a bar series on a left axis and a line on a right axis, justified by a
+// comment claiming the two "live on very different scales". They do not. Measured
+// against the live endpoint, a 7-day window returns sightings 7..10 and open cases
+// 4..5 - the same order of magnitude, and both are plain counts.
+//
+// A dual axis is the single most misleading chart construction there is: the two
+// scales are chosen independently, so the crossings and the relative heights are
+// artefacts of the axis maxima rather than facts about the estate. Here it was
+// actively lying - the right axis topped out at 8 while the left ran to 12, which
+// drew 4 open cases as visually LEVEL WITH 7 sightings.
+//
+// One axis, both series in counts, no normalisation and no indexing: the reader can
+// compare the two directly because they are genuinely comparable. What the axis
+// cannot say is that sightings are events logged that DAY while open cases are the
+// backlog standing that day, so the subtitle says it in words.
+// ===========================================================================
 //
 // LITERAL colours only. These are data, not CSS: they go to alpha() for the legend
 // tints and into recharts' SVG stroke/fill attributes. A var(--...) token makes
@@ -17,8 +33,8 @@ import { BRAND, SVG_ACCENT } from '../../theme';
 // here - the scheme is carried by the SVG_ACCENT literals, indexed by palette mode.
 function buildSeries(mode) {
   return [
-    { key: 'sightings', name: 'Fauna sightings', color: '#8CA3BD', mark: 'bar' },
-    { key: 'openCases', name: 'Open cases', color: SVG_ACCENT[mode].danger, mark: 'line' },
+    { key: 'sightings', name: 'Fauna sightings logged', color: '#5B8FD6', mark: 'line' },
+    { key: 'openCases', name: 'Open cases outstanding', color: SVG_ACCENT[mode].danger, mark: 'line' },
   ];
 }
 
@@ -55,8 +71,9 @@ function LegendToggle({ color, label, mark, active, onClick }) {
   );
 }
 
-// No combined total here: the two series now sit on separate axes, so adding them
-// would produce a number that means nothing.
+// No combined total: one is a daily count of events and the other is a standing
+// backlog, so adding them would produce a number that means nothing even though
+// they now share an axis.
 function ChartTooltip({ active, payload, label, series = [] }) {
   if (!active || !payload?.length) return null;
   return (
@@ -80,7 +97,6 @@ function ChartTooltip({ active, payload, label, series = [] }) {
 
 export default function ActivityChart({ history = [] }) {
   const [hidden, setHidden] = useState({}); // series keys toggled off via the legend
-  const lineShadowId = useId();
   // Recharts writes these into SVG attributes, so they must be real colours - the
   // BRAND.* CSS variables would not resolve there.
   const theme = useTheme();
@@ -107,8 +123,11 @@ export default function ActivityChart({ history = [] }) {
           <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
             Estate Activity
           </Typography>
+          {/* States the stock/flow difference in words, because one shared count
+              axis cannot: sightings are events logged that day, open cases are the
+              backlog standing that day. */}
           <Typography variant="body2" sx={{ color: BRAND.textLight }}>
-            Fauna sightings (left axis) vs open cases (right axis){dateRangeText && ` · ${dateRangeText}`}
+            Sightings logged per day vs open cases outstanding that day - both counts, one axis{dateRangeText && ` · ${dateRangeText}`}
           </Typography>
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1, mt: 1.5 }}>
             {SERIES.map(s => (
@@ -133,15 +152,11 @@ export default function ActivityChart({ history = [] }) {
           </Box>
         ) : (
           <Box role="img" aria-label={summary}>
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 4 }} barCategoryGap="35%">
-                <defs>
-                  <filter id={lineShadowId} x="-20%" y="-40%" width="140%" height="200%">
-                    <feDropShadow dx="0" dy="2" stdDeviation="2.5" floodColor={SERIES[1].color} floodOpacity="0.32" />
-                  </filter>
-                </defs>
-                {/* horizontal rules only, faint and dashed */}
-                <CartesianGrid stroke={gridInk} strokeDasharray="3 4" strokeOpacity={0.7} vertical={false} />
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={data} margin={{ top: 8, right: 26, left: -20, bottom: 4 }}>
+                {/* Faint horizontal rules ONLY - no verticals, no axis line on the
+                    value axis. The grid is a reading aid, not part of the data. */}
+                <CartesianGrid stroke={gridInk} strokeDasharray="3 4" strokeOpacity={0.55} vertical={false} />
                 <XAxis
                   dataKey="label"
                   tickFormatter={fmtDay}
@@ -151,62 +166,38 @@ export default function ActivityChart({ history = [] }) {
                   interval={tickInterval}
                   minTickGap={8}
                 />
-                {/* Dual axis: sightings and open cases live on very different scales,
-                    so sharing one axis flattened the smaller series into the floor.
-                    Each axis is tinted to its series so it is obvious which is which. */}
+                {/* ONE axis, in counts, shared by both series. Neutral ink rather
+                    than a series tint - tinting an axis only made sense while there
+                    were two of them to tell apart. */}
                 <YAxis
-                  yAxisId="left"
-                  tick={{ fontSize: 12, fill: SERIES[0].color }}
+                  tick={{ fontSize: 12, fill: axisInk }}
                   axisLine={false}
                   tickLine={false}
                   allowDecimals={false}
-                  width={44}
-                />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 12, fill: SERIES[1].color }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                  width={40}
+                  width={46}
                 />
                 <Tooltip
                   cursor={{ stroke: axisInk, strokeWidth: 1, strokeDasharray: '3 3' }}
                   content={<ChartTooltip series={SERIES} />}
                 />
-                {!hidden.sightings && (
-                  <Bar
-                    yAxisId="left"
-                    dataKey="sightings"
-                    name="Fauna sightings"
-                    fill={SERIES[0].color}
-                    // soft-edged: fully rounded caps read gentler than square columns
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={20}
-                    animationBegin={0}
-                    animationDuration={800}
-                  />
-                )}
-                {!hidden.openCases && (
-                  // Thick smooth spline with a soft drop shadow and visible data point
-                  // markers, so each reading is locatable on the curve.
+                {SERIES.filter(s => !hidden[s.key]).map(s => (
                   <Line
-                    yAxisId="right"
+                    key={s.key}
                     type="monotone"
-                    dataKey="openCases"
-                    name="Open cases"
-                    stroke={SERIES[1].color}
-                    strokeWidth={3}
+                    dataKey={s.key}
+                    name={s.name}
+                    stroke={s.color}
+                    strokeWidth={2.5}
                     strokeLinecap="round"
-                    dot={{ r: 3.5, fill: theme.palette.background.paper, stroke: SERIES[1].color, strokeWidth: 2 }}
-                    activeDot={{ r: 6, fill: SERIES[1].color, stroke: theme.palette.background.paper, strokeWidth: 2 }}
-                    filter={`url(#${lineShadowId})`}
+                    // 2px surface ring on each marker so the two lines stay readable
+                    // where they cross instead of merging into one blob
+                    dot={{ r: 3.5, fill: theme.palette.background.paper, stroke: s.color, strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: s.color, stroke: theme.palette.background.paper, strokeWidth: 2 }}
                     animationBegin={0}
                     animationDuration={800}
                   />
-                )}
-              </ComposedChart>
+                ))}
+              </LineChart>
             </ResponsiveContainer>
           </Box>
         )}

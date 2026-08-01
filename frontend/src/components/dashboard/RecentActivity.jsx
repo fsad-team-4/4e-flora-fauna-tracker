@@ -101,12 +101,15 @@ export default function RecentActivity({ cases = [], limit = 5 }) {
         ) : (
           // Separation by whitespace, not rules: the row hover gives the grouping
           // cue instead, so five entries do not read as five boxed cells.
-          <Stack spacing={0.5}>
+          <Stack spacing={0}>
             {items.map((c, i) => (
               <Box
                 key={c.id ?? `${c.title}-${i}`}
                 sx={{
-                  py: 1.25, px: 1, mx: -1, borderRadius: '8px',
+                  // Tighter rows: py 1.25 + spacing 0.5 between five entries spent
+                  // more of the card on gaps than on content. The hover wash still
+                  // groups each row, so the whitespace was doing no work.
+                  py: 0.85, px: 1, mx: -1, borderRadius: '8px',
                   transition: 'background-color .15s ease',
                   '&:hover': { bgcolor: BRAND.section },
                 }}
@@ -126,7 +129,7 @@ export default function RecentActivity({ cases = [], limit = 5 }) {
                       </Typography>
                     </Stack>
                     {/* category text is gone from this row - the glyph carries it */}
-                    <Stack direction="row" spacing={1.25} sx={{ mt: 0.6, flexWrap: 'wrap', rowGap: 0.5 }}>
+                    <Stack direction="row" spacing={1.25} sx={{ mt: 0.35, flexWrap: 'wrap', rowGap: 0.5 }}>
                       {c.block_number && <Meta icon={PlaceOutlinedIcon}>{c.block_number}</Meta>}
                       {c.createdAt && <Meta icon={ScheduleRoundedIcon}>{fmtWhen(c.createdAt)}</Meta>}
                     </Stack>

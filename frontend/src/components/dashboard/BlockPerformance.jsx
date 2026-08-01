@@ -4,10 +4,15 @@ import { BRAND } from '../../theme';
 import TopRiskBlocks from './TopRiskBlocks';
 import BlocksRanked from './BlocksRanked';
 
+// ONE source for the cap and the sentence describing it. These were separate: the
+// blurb said "Top 5" while TopRiskBlocks' own default was 3 and this file passed no
+// `limit`, so the widget rendered three rows under a label promising five.
+const RISK_TOP_N = 5;
+
 const VIEWS = {
   risk: {
     label: 'Risk',
-    blurb: 'Top 5 blocks by sighting volume against the hotspot threshold',
+    blurb: `Top ${RISK_TOP_N} blocks by sighting volume against the hotspot threshold`,
   },
   volume: {
     label: 'Volume',
@@ -67,7 +72,7 @@ export default function BlockPerformance({ sightingsByBlock = [], hotspots = [],
         </Stack>
 
         {view === 'risk'
-          ? <TopRiskBlocks sightingsByBlock={sightingsByBlock} topBlock={topBlock} embedded />
+          ? <TopRiskBlocks sightingsByBlock={sightingsByBlock} topBlock={topBlock} limit={RISK_TOP_N} embedded />
           : <BlocksRanked sightingsByBlock={sightingsByBlock} hotspots={hotspots} embedded />}
       </CardContent>
     </Card>

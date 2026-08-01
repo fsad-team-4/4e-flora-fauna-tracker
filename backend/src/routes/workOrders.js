@@ -10,13 +10,16 @@ const express = require('express');
 const yup = require('yup');
 const { Op } = require('sequelize');
 const cloudinary = require('../config/cloudinary');
-const { RodentAssessment, WorkOrder, WorkOrderEvent, User } = require('../models');
+const { RodentAssessment, WorkOrder, WorkOrderEvent, User, FaunaSighting } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
 const { sendEmail } = require('../services/emailService');
 const { recordDispatch } = require('../services/notificationService');
 const { STAGES, recordStage, buildPipeline, lastUpdate, isStage } = require('../services/workOrderStages');
 const { notifyStageChange } = require('../services/workOrderNotify');
 const { draftBriefing } = require('../services/vendorBriefing');
+const { blockKey } = require('../services/blockDiagnosis');
+const { councilFor } = require('../services/townCouncils');
+const { sendAndRecord } = require('../services/notificationService');
 const { validateBody } = require('../utils/validate');
 
 const idList = yup.array().of(yup.number().integer().positive()).min(1, 'select at least one report').required();
@@ -31,6 +34,18 @@ const dismissSchema = yup.object({
   note: yup.string().nullable().max(2000),
 });
 const undismissSchema = yup.object({ assessment_ids: idList });
+const briefingDraftSchema = yup.object({
+  assessment_ids: idList,
+  notes: yup.string().nullable().max(2000),
+});
+const briefingSendSchema = yup.object({
+  // the officer's REVIEWED text - never regenerated server-side on send
+  body: yup.string().trim().min(20, 'the briefing looks too short to send').max(20000).required(),
+  block: yup.string().nullable().max(200),
+  risk_level: yup.string().nullable().max(40),
+  recipient: yup.string().nullable().email('recipient must be a valid email'),
+  assessment_ids: yup.array().of(yup.number().integer().positive()).nullable(),
+});
 
 // Stage transition. scheduled_for is only meaningful for the 'scheduled' stage
 // and is REQUIRED there - the service rejects the stage without it.
@@ -77,6 +92,33 @@ const hasCloudinary = Boolean(
 // global constant, and why this default is env-overridable. Rows raised before this feature stay null and
 // render "not recorded" rather than being back-filled with an assumption.
 const DEFAULT_TOWN_COUNCIL = process.env.TOWN_COUNCIL || 'Ang Mo Kio Town Council';
+
+/**
+ * Feeding activity recorded at the same block in the same window.
+ *
+ * Passed to the briefing generator as CO-OCCURRENCE ONLY. computeFeedingRodentCorrelation
+ * is explicit that this is not established causation, and the prompt repeats
+ * the constraint so the drafted text cannot upgrade it to a cause.
+ */
+async function feedingContext(block) {
+  const key = blockKey(block);
+  if (!key) return null;
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sightings = await FaunaSighting.findAll({
+      where: { createdAt: { [Op.gte]: since } },
+    });
+    const here = sightings.filter(sg => blockKey(sg.block_number) === key
+      && Array.isArray(sg.behaviour_tags) && sg.behaviour_tags.includes('feeding'));
+    if (!here.length) return null;
+    const species = [...new Set(here.map(sg => sg.species).filter(Boolean))].join(', ');
+    return { sightings: here.length, species: species || null };
+  } catch (e) {
+    // never block a briefing on the optional context
+    console.error('feeding context lookup failed (briefing continues):', e.message);
+    return null;
+  }
+}
 
 const RISK_ORDER = { low: 0, medium: 1, high: 2, critical: 3 };
 function highestRisk(levels) {
@@ -427,6 +469,112 @@ router.patch('/:id/stage', restrictTo('admin', 'staff'), validateBody(stageSchem
   }
 });
 
+
+/**
+ * POST /briefing/draft - draft a vendor briefing straight from assessment ids.
+ *
+ * The risk map's cluster popup has assessment ids and NO work order: an officer
+ * looking at a hotspot has not committed money yet. So this drafts without
+ * creating anything. Nothing is persisted and nothing is sent - the officer
+ * reviews and edits the text first, then either sends it or raises a work order
+ * through the existing admin-only approval route.
+ *
+ * staff + admin: drafting text costs nothing. Raising the work order is the
+ * financial act, and that stays restricted at POST /.
+ */
+router.post('/briefing/draft', restrictTo('admin', 'staff'), validateBody(briefingDraftSchema), async (req, res) => {
+  try {
+    const items = await RodentAssessment.findAll({
+      where: { id: { [Op.in]: req.body.assessment_ids }, is_deleted: false },
+      order: [['createdAt', 'DESC']],
+    });
+    if (!items.length) return res.status(404).json({ error: 'no matching assessments' });
+
+    const block = items.find(i => i.block_number && i.block_number.trim())?.block_number || null;
+    const risk = highestRisk(items.map(i => i.risk_level || 'low'));
+    const feeding = await feedingContext(block);
+
+    // Derive the council from a REPORTED coordinate, not from the estate-wide
+    // default: the fixtures span four councils, and defaulting put "Block 79 Toa
+    // Payoh" under Ang Mo Kio TC in a document going to a contractor. Reports
+    // filed without a position yield null, which the prompt renders as
+    // "not recorded" rather than guessing.
+    const located = items.find(i => Number.isFinite(Number(i.gps_lat)) && Number.isFinite(Number(i.gps_lng)));
+    const council = located ? councilFor(Number(located.gps_lat), Number(located.gps_lng)) : null;
+
+    const { text, stubbed, error, aiFailed, quota_exhausted, model } = await draftBriefing(
+      { block_number: block, town_council: council, risk_level: risk, notes: req.body.notes || null },
+      items,
+      feeding,
+    );
+
+    // AI configured but failed: no text, and say so. The officer writes it
+    // manually rather than being handed a template that looks AI-written.
+    if (aiFailed) {
+      return res.status(502).json({
+        error, ai_failed: true, draft_only: true, quota_exhausted: Boolean(quota_exhausted),
+        // still hand back the context so the manual editor is not empty-handed
+        context: { block, risk_level: risk, assessment_ids: items.map(i => i.id), feeding },
+      });
+    }
+    if (error) return res.status(400).json({ error });
+
+    res.json({
+      draft: text,
+      stubbed,               // true = factual template (no API key), not an AI draft
+      model: model || null,  // which model actually served it, for debugging quota
+      draft_only: true,      // nothing has been sent or created
+      block,
+      risk_level: risk,
+      assessment_ids: items.map(i => i.id),
+      feeding,               // co-occurrence context, shown as such in the UI
+    });
+  } catch (err) {
+    console.error('briefing draft failed:', err);
+    res.status(500).json({ error: 'failed to draft the briefing' });
+  }
+});
+
+/**
+ * POST /briefing/send - send the officer's REVIEWED text to the contractor.
+ *
+ * Takes the edited body, not a server-regenerated one: what the human approved
+ * is what goes out. Delivery is recorded through sendAndRecord, so the log
+ * carries the true outcome and a failure shows as failed - the UI only ever
+ * renders "sent HH:MM" off a row that actually sent.
+ */
+router.post('/briefing/send', restrictTo('admin', 'staff'), validateBody(briefingSendSchema), async (req, res) => {
+  try {
+    const { body, block, assessment_ids, recipient, risk_level } = req.body;
+    const to = (recipient && recipient.trim()) || CONTRACTOR_EMAIL;
+    const subject = `Rodent control briefing - ${block || 'unspecified block'}${risk_level ? ` (${risk_level} risk)` : ''}`;
+
+    const log = await sendAndRecord({
+      channel: 'email',
+      recipient: to,
+      subject,
+      body,
+      severity: risk_level || null,
+      source_type: 'vendor_briefing',
+      source_id: Array.isArray(assessment_ids) && assessment_ids.length ? assessment_ids[0] : null,
+    });
+
+    // 200 either way: the attempt is a real, logged event. `delivered` is the
+    // truth the UI renders, not the HTTP status.
+    res.json({
+      delivered: log.status === 'sent',
+      status: log.status,
+      error_reason: log.error_reason || null,
+      recipient: to,
+      log_id: log.id,
+      sent_at: log.status === 'sent' ? log.createdAt : null,
+    });
+  } catch (err) {
+    console.error('briefing send failed:', err);
+    res.status(500).json({ error: 'failed to send the briefing' });
+  }
+});
+
 // PATCH /:id/close - closing terminates a paid engagement, so it stays admin.
 // Delegates to the same stage machine so it is logged like every other scan.
 router.patch('/:id/close', restrictTo('admin'), async (req, res) => {
@@ -516,7 +664,16 @@ router.post('/:id/briefing', restrictTo('admin', 'staff'), async (req, res) => {
       where: { work_order_id: wo.id },
       order: [['createdAt', 'DESC']],
     });
-    const { text, stubbed, error } = await draftBriefing(wo, assessments);
+    const feeding = await feedingContext(wo.block_number);
+    const { text, stubbed, error, aiFailed, quota_exhausted, model } = await draftBriefing(
+      { block_number: wo.block_number, town_council: wo.town_council, risk_level: wo.risk_level, notes: wo.notes },
+      assessments,
+      feeding,
+    );
+    // A configured AI that failed returns no text on purpose: the officer is
+    // told and writes it manually, rather than being handed a template that
+    // reads like a model wrote it. 502 because the upstream call is what broke.
+    if (aiFailed) return res.status(502).json({ error, ai_failed: true, draft_only: true, quota_exhausted: Boolean(quota_exhausted) });
     if (error) return res.status(400).json({ error });
 
     await wo.update({ vendor_briefing: text, vendor_briefing_at: new Date() });
@@ -526,6 +683,7 @@ router.post('/:id/briefing', restrictTo('admin', 'staff'), async (req, res) => {
       vendor_briefing_at: wo.vendor_briefing_at,
       // surfaced so the UI can label a template as a template, not an AI draft
       stubbed,
+      model: model || null,
       draft_only: true,
     });
   } catch (err) {

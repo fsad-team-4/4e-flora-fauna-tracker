@@ -28,7 +28,9 @@ async function generateSummary(stats) {
   const prompt = buildPrompt(stats);
 
   const response = await withTimeout(ai.models.generateContent({
-    model: 'gemini-3.5-flash',
+    // 2.5-flash: the free tier caps requests PER MODEL PER DAY, and 3.5-flash is
+    // only 20/day shared across every call site in the project. Overridable.
+    model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
     contents: prompt,
   }), 20000, 'Gemini weekly summary');
 

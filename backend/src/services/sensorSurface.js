@@ -30,6 +30,11 @@ const { councilFor, inSingapore, haversineKm, BOUNDARIES_ARE_APPROXIMATE } = req
 const INFLUENCE_RADIUS_KM = 1.2;
 const IDW_POWER = 2;
 
+// Fine enough that marching squares yields smooth bands instead of visible
+// steps. Only covered cells carry a number and values are 1dp, so even at the
+// cap the payload stays a few hundred KB.
+const MAX_GRID = 256;
+
 function toTime(v) {
   if (!v) return null;
   const t = new Date(v).getTime();
@@ -107,16 +112,29 @@ function computeSensorSurface({
     readingCount: 0,
     scaleMax: 0,
     bounds: null,
-    cells: [],
+    grid: null,
+    coveredCells: 0,
     councils: [],
   };
   if (sensors.length === 0) return empty;
 
   const lats = sensors.map(s => s.lat);
   const lngs = sensors.map(s => s.lng);
-  // pad so the surface does not stop abruptly at the outermost sensor
-  const padLat = 0.006;
-  const padLng = 0.006;
+  /**
+   * Pad by AT LEAST the influence radius, in degrees.
+   *
+   * This was a flat 0.006 deg (~670m) while sensors influence out to
+   * INFLUENCE_RADIUS_KM (1.2km ~ 0.0108 deg). Any sensor near the bounding box
+   * got its circular footprint sliced off flat by the box, which rendered as
+   * hard straight edges and square corners on the surface - a clip artefact
+   * masquerading as a data boundary. The margin makes every sensor's full
+   * footprint fit inside the grid, so the only edges left are real ones.
+   */
+  const midLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+  const KM_PER_DEG_LAT = 110.574;
+  const KM_PER_DEG_LNG = 111.320 * Math.cos((midLat * Math.PI) / 180);
+  const padLat = (INFLUENCE_RADIUS_KM / KM_PER_DEG_LAT) * 1.08;   // +8% margin
+  const padLng = (INFLUENCE_RADIUS_KM / KM_PER_DEG_LNG) * 1.08;
   const bounds = {
     south: Math.min(...lats) - padLat,
     north: Math.max(...lats) + padLat,
@@ -124,18 +142,21 @@ function computeSensorSurface({
     east: Math.max(...lngs) + padLng,
   };
 
-  const n = Math.max(4, Math.min(80, Math.floor(gridResolution)));
+  // A DENSE grid, not a sparse cell list. The renderer runs marching squares
+  // over this to produce smooth contour bands; a sparse list of coloured
+  // rectangles is exactly what made the old surface read as coarse tiles.
+  // Row-major from the SOUTH edge upward, so row 0 sits at bounds.south.
+  const n = Math.max(4, Math.min(MAX_GRID, Math.floor(gridResolution)));
   const dLat = (bounds.north - bounds.south) / n;
   const dLng = (bounds.east - bounds.west) / n;
 
-  const cells = [];
+  const values = new Array(n * n).fill(null);
   let scaleMax = 0;
+  let coveredCells = 0;
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
-      const south = bounds.south + i * dLat;
-      const west = bounds.west + j * dLng;
-      const cLat = south + dLat / 2;
-      const cLng = west + dLng / 2;
+      const cLat = bounds.south + (i + 0.5) * dLat;
+      const cLng = bounds.west + (j + 0.5) * dLng;
 
       let num = 0;
       let den = 0;
@@ -145,24 +166,27 @@ function computeSensorSurface({
         if (d > INFLUENCE_RADIUS_KM) continue;
         contributing += 1;
         if (d < 1e-6) { num = s.activity_level; den = 1; contributing = 1; break; } // on top of a sensor
-        const w = 1 / d ** IDW_POWER;
+        // Compactly-supported kernel: inverse distance TAPERED to zero at the
+        // influence radius. Plain 1/d^2 with a hard cutoff gave a sensor full
+        // weight at 1.19km and none at 1.21km, so the field cliff-edged mid-ramp
+        // and the surface stopped on an abrupt colour instead of fading out.
+        // The taper does not extend coverage - the radius is unchanged - it only
+        // stops pretending influence is uniform right up to the boundary.
+        const taper = (1 - d / INFLUENCE_RADIUS_KM) ** 2;
+        const w = (1 / d ** IDW_POWER) * taper;
         num += w * s.activity_level;
         den += w;
       }
-      // No sensor within the influence radius: NO DATA. Emitting 0 here would
-      // claim "measured, and it was quiet", which is a different and false claim.
+      // No sensor within the influence radius: NO DATA, held as null.
+      // A 0 here would claim "measured, and it was quiet" - a different and
+      // false claim - and would let the renderer draw a band across ground no
+      // sensor covers.
       if (contributing === 0 || den === 0) continue;
 
       const value = num / den;
       scaleMax = Math.max(scaleMax, value);
-      cells.push({
-        south, west,
-        north: south + dLat,
-        east: west + dLng,
-        value: Math.round(value * 100) / 100,
-        sensors: contributing,
-        town_council: councilFor(cLat, cLng),
-      });
+      coveredCells += 1;
+      values[i * n + j] = Math.round(value * 10) / 10;   // 1dp keeps the payload small
     }
   }
 
@@ -174,7 +198,12 @@ function computeSensorSurface({
     readingCount: readings.length,
     scaleMax: Math.round(scaleMax * 100) / 100,
     bounds,
-    cells,
+    coveredCells,
+    // Row-major, length width*height, null where no sensor is in range. That
+    // null mask IS the coverage boundary: the renderer contours it directly
+    // rather than approximating coverage with a convex hull, which would bridge
+    // the empty ground between distant town councils and imply cover we lack.
+    grid: { width: n, height: n, dLat, dLng, values },
     councils: councilSet,
     sensors: sensors.map(s => ({
       sensor_id: s.sensor_id,
@@ -188,4 +217,4 @@ function computeSensorSurface({
   };
 }
 
-module.exports = { computeSensorSurface, latestPerSensor, INFLUENCE_RADIUS_KM, IDW_POWER };
+module.exports = { computeSensorSurface, latestPerSensor, INFLUENCE_RADIUS_KM, IDW_POWER, MAX_GRID };

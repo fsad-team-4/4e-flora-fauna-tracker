@@ -10,6 +10,9 @@ import {
 import { useTheme } from '@mui/material/styles';
 import { visuallyHidden } from '@mui/utils';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
+import CloudOffOutlinedIcon from '@mui/icons-material/CloudOffOutlined';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -113,6 +116,26 @@ function greeting(hour) {
   return 'Good evening';
 }
 
+// One footer metadatum: a 13px glyph and recessive ink, so every card's footer
+// reads as the same kind of information at the same weight.
+function CardMeta({ icon: Icon, children, strong = false }) {
+  return (
+    <Stack direction="row" spacing={0.4} sx={{ alignItems: 'center', minWidth: 0 }}>
+      <Icon sx={{ fontSize: 13, color: BRAND.textLight, flexShrink: 0 }} aria-hidden />
+      <Typography
+        sx={{
+          fontSize: 11.5, whiteSpace: 'nowrap',
+          fontWeight: strong ? 700 : 500,
+          color: strong ? BRAND.text : BRAND.textLight,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {children}
+      </Typography>
+    </Stack>
+  );
+}
+
 function PriorityChip({ level, size = 'small' }) {
   const m = prio(level);
   return (
@@ -124,36 +147,43 @@ function PriorityChip({ level, size = 'small' }) {
   );
 }
 
-// Whole-card priority wash. Kept at 6% of the priority accent rather than a flat
-// 2% red: --em-prio-* are already scheme-tuned, so color-mix gives the same
-// perceived weight on a dark card as on a white one. Text sits on the card
-// surface underneath, so contrast is unaffected.
-const prioTint = level => `color-mix(in srgb, ${prio(level).accent} 6%, ${BRAND.surface})`;
-
-// Compact hero metric. The value story used to be a run-on text line under the
-// greeting; as tiles it separates "status" from the actionable queue below.
-function MetricCard({ label, value, tip }) {
-  const card = (
-    <Box sx={{ px: 1.5, py: 1, borderRadius: '8px', bgcolor: BRAND.section, border: `1px solid ${BRAND.border}`, minWidth: 0 }}>
-      <Typography sx={{ fontSize: 18, fontWeight: 800, color: BRAND.ink, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </Typography>
-      <Typography sx={{ fontSize: 11, fontWeight: 600, color: BRAND.textLight, lineHeight: 1.3, mt: 0.25 }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-  return tip ? <Tooltip arrow title={tip}>{card}</Tooltip> : card;
-}
-
 /* ------------------------------------------------------ command centre hero -- */
 
+// One field style for every control in the toolbar, so search, both selects and the
+// sort dropdown share an exact height and border. They were only loosely aligned
+// before - MUI gives a TextField and a Select slightly different intrinsic heights
+// at size="small", which read as a ragged row.
+const FIELD_H = 38;
 const FIELD_SX = {
   minWidth: 132,
   bgcolor: BRAND.surface,
+  '& .MuiOutlinedInput-root': { height: FIELD_H },
   '& .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.border },
+  '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: BRAND.textLight },
   '& .MuiSelect-select, & .MuiInputBase-input': { fontSize: 14, fontWeight: 500 },
 };
+
+/**
+ * The board's columns, one per REAL pipeline stage.
+ *
+ * `stage` is the value sent to PATCH /:id/stage. Dropping on "Completed" records
+ * `resolved` (work done, staff may report it) - CLOSING an order is the separate
+ * administrative act and stays on the panel's own admin-gated button.
+ *
+ * BOARD_RANK drives forward-only drag validation and mirrors the backend's STAGES
+ * order, so the UI never offers a drop the server will reject.
+ */
+const BOARD_COLUMNS = [
+  { col: 'pending', title: 'Requires action', accent: 'var(--em-prio-critical)', hint: 'Reports awaiting approval' },
+  { col: 'raised', title: 'Raised', stage: 'raised', accent: 'var(--em-prio-high)', hint: 'Approved, not yet dispatched' },
+  { col: 'dispatched', title: 'Dispatched', stage: 'dispatched', accent: 'var(--em-info-ink)', hint: 'With the contractor' },
+  { col: 'scheduled', title: 'Scheduled', stage: 'scheduled', accent: 'var(--em-info-ink)', hint: 'Attendance date confirmed' },
+  { col: 'in_progress', title: 'On site', stage: 'in_progress', accent: 'var(--em-warn-strong)', hint: 'Contractor attending' },
+  { col: 'done', title: 'Completed', stage: 'resolved', accent: 'var(--em-ok-strong)', hint: 'Work finished or closed' },
+];
+const STAGE_FOR_COLUMN = Object.fromEntries(BOARD_COLUMNS.filter(c => c.stage).map(c => [c.col, c.stage]));
+// 'open' is the legacy pre-pipeline status and ranks with 'raised'
+const BOARD_RANK = { open: 0, raised: 0, dispatched: 1, scheduled: 2, in_progress: 3, resolved: 4, closed: 4 };
 
 const RANGES = [
   { value: 0, label: 'Any date' },
@@ -163,36 +193,76 @@ const RANGES = [
 ];
 
 /**
- * The utilitarian hero: who you are, what is on fire, and every control needed to
- * narrow the queue - all above the fold, all left-aligned on one baseline.
+ * The utilitarian hero: who you are, what is on fire, and the one action to take.
  *
- * The four KPI tiles that used to sit here are gone. Counts now live in the tab
- * labels (intrinsic to the navigation) and the consolidation value story is a
- * single inline line, which is roughly an eighth of the vertical space four
- * cards were spending on four numbers.
+ * WHAT WAS REMOVED, AND WHERE IT WENT:
+ * Four KPI tiles (blocks affected / call-outs avoidable / est. saved / orders in
+ * progress) used to sit under the CTA. They put four numbers nobody acts on in the
+ * one place reserved for the thing you must act on, and they competed with both the
+ * greeting and the queue. Counts still live in the tab labels, where they belong to
+ * the navigation; the consolidation value story (call-outs avoided, est. savings)
+ * is on the Dashboard hero, which is the reporting surface. Nothing was lost.
+ *
+ * The CSV export moved out of the CTA cluster and into the toolbar. A download
+ * glyph immediately beside the primary button read as a second action of equal
+ * rank - and a downward arrow is the wrong signal next to "review urgent".
  */
 function CommandCentre({
-  name, urgentCount, totals, openOrders, q, setQ, priority, setPriority,
-  range, setRange, sort, setSort, sortOptions, primary, onExport,
+  name, urgentCount, totals, q, setQ, priority, setPriority,
+  range, setRange, sort, setSort, sortOptions, primary, onExport, view, onView,
 }) {
   const hour = new Date().getHours();
   return (
-    <Box sx={{ px: { xs: 2, md: 3 }, pt: 3, pb: 2.5 }}>
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ justifyContent: 'space-between', alignItems: { md: 'flex-start' } }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography component="h1" sx={{ fontSize: { xs: 26, md: 32 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.8px', lineHeight: 1.15 }}>
-            {greeting(hour)}{name ? `, ${name}` : ''}.
-          </Typography>
-          {/* the actionable line is the hook, so it outweighs the greeting's
-              supporting text and the count carries the semantic danger ink */}
-          <Typography sx={{ fontSize: { xs: 18, md: 21 }, color: BRAND.text, mt: 0.75, fontWeight: 600, lineHeight: 1.35 }}>
+    <>
+      {/* Functional page title, not a headline. The greeting was 32px of prime
+          vertical space carrying no operational value; it survives as a single
+          line of supporting text and the title now names the page. */}
+      <Box sx={{ px: { xs: 2, md: 3 }, pt: 2.25, pb: 1.75 }}>
+        <Typography component="h1" sx={{ fontSize: { xs: 18, md: 19 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.3px', lineHeight: 1.25 }}>
+          Action Queue
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: BRAND.textLight, mt: 0.25 }}>
+          {greeting(hour)}{name ? `, ${name}` : ''} · {totals?.pending || 0} report{totals?.pending === 1 ? '' : 's'} awaiting review
+        </Typography>
+      </Box>
+
+      {/* ── The hook and the action, in ONE banner ─────────────────────────
+          The alert pill and the primary CTA used to sit at opposite ends of the
+          page, so the problem and its solution never appeared in the same
+          fixation. Full-bleed strip, statement left, button right: the reason to
+          click is literally attached to the thing you click.
+          The strip is always present so the contextual CTA never disappears -
+          only its tone and wording change when nothing is urgent. */}
+      <Stack
+        direction={{ xs: 'column', sm: 'row' }}
+        spacing={1.5}
+        role={urgentCount > 0 ? 'alert' : 'status'}
+        sx={{
+          px: { xs: 2, md: 3 }, py: 1.5,
+          alignItems: { sm: 'center' }, justifyContent: 'space-between',
+          bgcolor: urgentCount > 0 ? INTENT.danger.bg : BRAND.section,
+          borderTop: `1px solid ${urgentCount > 0 ? INTENT.danger.border : BRAND.border}`,
+          borderBottom: `1px solid ${urgentCount > 0 ? INTENT.danger.border : BRAND.border}`,
+        }}
+      >
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+          {urgentCount > 0 && (
+            <ReportProblemOutlinedIcon sx={{ fontSize: 20, color: INTENT.danger.ink, flexShrink: 0 }} aria-hidden />
+          )}
+          <Typography
+            sx={{
+              fontSize: { xs: 14.5, md: 15.5 }, lineHeight: 1.35,
+              fontWeight: urgentCount > 0 ? 600 : 500,
+              color: urgentCount > 0 ? INTENT.danger.ink : BRAND.text,
+            }}
+          >
             {urgentCount > 0 ? (
               <>
                 You have{' '}
-                <Box component="span" sx={{ color: ON_SURFACE.danger, fontWeight: 800 }}>
+                <Box component="span" sx={{ fontWeight: 800 }}>
                   {urgentCount} urgent item{urgentCount === 1 ? '' : 's'}
                 </Box>{' '}
-                requiring approval.
+                requiring immediate approval.
               </>
             ) : totals?.pending ? (
               <>Nothing urgent. {totals.pending} report{totals.pending === 1 ? '' : 's'} still await review.</>
@@ -200,73 +270,54 @@ function CommandCentre({
               <>The queue is clear. Nothing awaits your approval.</>
             )}
           </Typography>
-        </Box>
-
-        {/* macro CTA + the status metrics, stacked opposite the greeting so
-            "what is the state of things" never competes with "what must I do" */}
-        <Stack spacing={1.5} sx={{ flexShrink: 0, alignItems: { md: 'flex-end' } }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Tooltip arrow title="Download the current view as CSV">
-              <IconButton
-                onClick={onExport}
-                aria-label="Export current view to CSV"
-                sx={{ width: 40, height: 40, borderRadius: '8px', border: `1px solid ${BRAND.border}`, color: BRAND.textLight, bgcolor: BRAND.surface }}
-              >
-                <FileDownloadOutlinedIcon sx={{ fontSize: 19 }} />
-              </IconButton>
-            </Tooltip>
-            <Button
-              variant="contained"
-              disableElevation
-              onClick={primary.onClick}
-              disabled={primary.disabled}
-              startIcon={primary.icon}
-              sx={{
-                bgcolor: BRAND.action, color: '#fff', fontWeight: 700, fontSize: 15,
-                px: 2.5, py: 1.15, borderRadius: '8px', whiteSpace: 'nowrap',
-                // brand-tinted glow marks this as the page's one global action.
-                // The pulse is decorative and the theme's prefers-reduced-motion
-                // rule collapses it to a no-op for anyone who asks for less motion.
-                boxShadow: '0 4px 14px rgba(29,78,216,.34)',
-                animation: primary.disabled ? 'none' : 'aqPulse 2.6s ease-in-out infinite',
-                '@keyframes aqPulse': {
-                  '0%,100%': { boxShadow: '0 4px 14px rgba(29,78,216,.34)' },
-                  '50%': { boxShadow: '0 4px 20px rgba(29,78,216,.55)' },
-                },
-                '&:hover': { bgcolor: BRAND.actionHover, animation: 'none' },
-              }}
-            >
-              {primary.label}
-            </Button>
-          </Stack>
-
-          {totals && (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 1, width: { xs: '100%', md: 460 } }}>
-              <MetricCard label="Blocks affected" value={totals.blocks} />
-              <MetricCard
-                label="Call-outs avoidable"
-                value={totals.call_outs_avoidable}
-                tip={`Consolidating same-block reports into single visits, assuming ${money(totals.callout_cost)} per call-out.`}
-              />
-              <MetricCard label="Est. saved" value={money(totals.est_savings)} />
-              <MetricCard label="Orders in progress" value={openOrders} />
-            </Box>
-          )}
         </Stack>
+
+        <Button
+          variant="contained"
+          disableElevation
+          onClick={primary.onClick}
+          disabled={primary.disabled}
+          startIcon={primary.icon}
+          sx={{
+            flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'auto' },
+            bgcolor: BRAND.action, color: '#fff', fontWeight: 700, fontSize: 14.5,
+            px: 2.5, py: 1, borderRadius: '8px', whiteSpace: 'nowrap',
+            // brand-tinted glow marks this as the page's one global action.
+            // The pulse is decorative and the theme's prefers-reduced-motion
+            // rule collapses it to a no-op for anyone who asks for less motion.
+            boxShadow: '0 4px 14px rgba(29,78,216,.34)',
+            animation: primary.disabled ? 'none' : 'aqPulse 2.6s ease-in-out infinite',
+            '@keyframes aqPulse': {
+              '0%,100%': { boxShadow: '0 4px 14px rgba(29,78,216,.34)' },
+              '50%': { boxShadow: '0 4px 20px rgba(29,78,216,.55)' },
+            },
+            '&:hover': { bgcolor: BRAND.actionHover, animation: 'none' },
+          }}
+        >
+          {primary.label}
+        </Button>
       </Stack>
 
-      {/* filter + sort toolbar, horizontally aligned under the statement */}
+      {/* ── Unified toolbar ────────────────────────────────────────────────
+          One full-width bar with its own bottom rule, separating the controls
+          from the board. Inputs cluster left, view controls sit hard right. */}
       <Stack
         direction="row"
-        spacing={1.25}
-        sx={{ mt: 2.5, flexWrap: 'wrap', rowGap: 1.25, alignItems: 'center' }}
+        spacing={1}
+        sx={{
+          px: { xs: 2, md: 3 }, py: 1.5,
+          borderTop: `1px solid ${BRAND.border}`,
+          borderBottom: `1px solid ${BRAND.border}`,
+          bgcolor: BRAND.surface,
+          flexWrap: 'wrap', rowGap: 1.25, alignItems: 'center',
+        }}
       >
         <TextField
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="Search block, observation or contractor"
           size="small"
-          sx={{ ...FIELD_SX, minWidth: { xs: '100%', sm: 320 }, flexGrow: { sm: 1 }, maxWidth: 460 }}
+          sx={{ ...FIELD_SX, minWidth: { xs: '100%', sm: 300 }, maxWidth: 380 }}
           slotProps={{
             input: {
               'aria-label': 'Search the queue',
@@ -299,9 +350,11 @@ function CommandCentre({
         >
           {RANGES.map(r => <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>)}
         </Select>
+
         <Box sx={{ flexGrow: 1 }} />
+
         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-          <Typography sx={{ fontSize: 13, color: BRAND.textLight, fontWeight: 600 }}>Sort by</Typography>
+          <Typography sx={{ fontSize: 13, color: BRAND.textLight, fontWeight: 600, display: { xs: 'none', md: 'block' } }}>Sort by</Typography>
           <Select
             value={sort.key}
             onChange={e => setSort({ key: e.target.value, dir: 'desc' })}
@@ -315,14 +368,55 @@ function CommandCentre({
             <IconButton
               onClick={() => setSort(s => ({ ...s, dir: s.dir === 'desc' ? 'asc' : 'desc' }))}
               aria-label={`Sort direction: ${sort.dir === 'desc' ? 'descending' : 'ascending'}`}
-              sx={{ width: 36, height: 36, borderRadius: '8px', border: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface, color: BRAND.textLight, fontSize: 13, fontWeight: 700 }}
+              sx={{ width: FIELD_H, height: FIELD_H, borderRadius: '8px', border: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface, color: BRAND.textLight, fontSize: 13, fontWeight: 700 }}
             >
               {sort.dir === 'desc' ? '↓' : '↑'}
             </IconButton>
           </Tooltip>
+
+          {/* Connected segmented control, filled-selected rather than outlined, so
+              it reads as one switch with two positions instead of two buttons. */}
+          <ToggleButtonGroup
+            value={view}
+            exclusive
+            onChange={(_, v) => v && onView(v)}
+            size="small"
+            aria-label="Layout"
+            sx={{
+              ml: 0.5, flexShrink: 0, bgcolor: BRAND.section, borderRadius: '8px', p: '3px', gap: '2px',
+              '& .MuiToggleButtonGroup-grouped': {
+                border: 0, marginLeft: 0, height: FIELD_H - 8, px: 1.25,
+                borderRadius: '6px !important', textTransform: 'none',
+                fontSize: 12.5, fontWeight: 700, color: BRAND.textLight,
+                '&:hover': { bgcolor: 'rgba(120,130,145,0.12)' },
+                '&.Mui-selected': {
+                  bgcolor: BRAND.surface, color: BRAND.heading,
+                  boxShadow: '0 1px 3px rgba(16,24,40,.16)',
+                  '&:hover': { bgcolor: BRAND.surface },
+                },
+              },
+            }}
+          >
+            <ToggleButton value="board" aria-label="Board view">
+              <ViewKanbanOutlinedIcon sx={{ fontSize: 16, mr: 0.5 }} /> Board
+            </ToggleButton>
+            <ToggleButton value="list" aria-label="List view">
+              <TableRowsRoundedIcon sx={{ fontSize: 15, mr: 0.5 }} /> List
+            </ToggleButton>
+          </ToggleButtonGroup>
+
+          <Tooltip arrow title="Download the current view as CSV">
+            <IconButton
+              onClick={onExport}
+              aria-label="Export current view to CSV"
+              sx={{ width: FIELD_H, height: FIELD_H, borderRadius: '8px', border: `1px solid ${BRAND.border}`, color: BRAND.textLight, bgcolor: BRAND.surface }}
+            >
+              <FileDownloadOutlinedIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
         </Stack>
       </Stack>
-    </Box>
+    </>
   );
 }
 
@@ -351,52 +445,92 @@ function TaskCard({
       onClick={onOpen}
       onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
       sx={{
-        p: 1.5, borderRadius: '10px', cursor: draggable ? 'grab' : 'pointer',
-        bgcolor: level ? prioTint(level) : BRAND.surface,
+        position: 'relative',
+        // Solid surface, never a tint. A pale priority wash behind the whole card
+        // dropped the effective contrast of every glyph on it, and a column of
+        // pink cards turned the priority signal into wallpaper. The hue is spent
+        // on ONE 4px edge instead, where it is unmissable and touches no text.
+        p: 1.5, pl: 1.75, borderRadius: '10px', cursor: draggable ? 'grab' : 'pointer',
+        bgcolor: BRAND.surface,
+        borderLeft: `4px solid ${level ? prio(level).accent : BRAND.border}`,
         border: `1px solid ${selected ? ON_SURFACE.info : BRAND.border}`,
-        boxShadow: selected ? `0 0 0 1px ${ON_SURFACE.info}` : '0 1px 2px rgba(16,24,40,.06)',
+        borderLeftWidth: 4,
+        borderLeftColor: level ? prio(level).accent : BRAND.border,
+        boxShadow: selected ? `0 0 0 1px ${ON_SURFACE.info}` : '0 1px 3px rgba(0,0,0,0.1)',
         opacity: dragging ? 0.45 : 1,
         transition: 'box-shadow .15s ease, transform .15s ease',
-        '&:hover': { boxShadow: '0 4px 10px rgba(16,24,40,.10)', transform: 'translateY(-1px)' },
+        '&:hover': { boxShadow: '0 4px 10px rgba(16,24,40,.13)', transform: 'translateY(-1px)' },
         '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
+        // reveal the selection control on engagement, never at rest
+        '&:hover .aq-card-check, &:focus-within .aq-card-check': { opacity: 1 },
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-        {onToggle && (
-          <Checkbox
-            size="small"
-            checked={checked}
-            onChange={onToggle}
-            onClick={e => e.stopPropagation()}
-            slotProps={{ input: { 'aria-label': `Select ${title}` } }}
-            sx={{ p: 0.25, mt: -0.25, '&.Mui-checked': { color: ON_SURFACE.info } }}
-          />
-        )}
-        <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-          {/* block name dominant, priority badge immediately beside it */}
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: BRAND.heading, lineHeight: 1.25 }}>{title}</Typography>
-            {level && <PriorityChip level={level} />}
-          </Stack>
+      {/* Selection control, OUT of the layout flow.
+          It used to be the first thing in the row, which put a second click target
+          in the corner the eye reads as the card's identity - and it pushed the
+          block number off the top-left. It is now pinned over the card's own
+          padding, so showing it shifts nothing, and it only appears on hover, on
+          keyboard focus, or once the card is actually selected.
+          focus-within is load-bearing: without it a keyboard user could tab to a
+          control at opacity 0. */}
+      {onToggle && (
+        <Checkbox
+          className="aq-card-check"
+          size="small"
+          checked={checked}
+          onChange={onToggle}
+          onClick={e => e.stopPropagation()}
+          slotProps={{ input: { 'aria-label': `Select ${title}` } }}
+          sx={{
+            position: 'absolute', top: 2, left: 2, p: 0.5, zIndex: 1,
+            bgcolor: BRAND.surface, borderRadius: '6px',
+            opacity: checked ? 1 : 0,
+            transition: 'opacity .12s ease',
+            '&.Mui-checked': { color: ON_SURFACE.info },
+            '&:hover': { bgcolor: BRAND.surface },
+          }}
+        />
+      )}
+
+      {/* TOP ROW: identity hard left, priority hard right. */}
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 15.5, fontWeight: 800, color: BRAND.heading, lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title}
+          </Typography>
           {subtitle && <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 0.25 }}>{subtitle}</Typography>}
-          {observation && (
-            <Typography
-              sx={{
-                fontSize: 13, color: BRAND.text, mt: 0.75, lineHeight: 1.5,
-                display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-              }}
-            >
-              {observation}
-            </Typography>
-          )}
-          {meta && (
-            <Stack direction="row" spacing={1.25} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.5, alignItems: 'center' }}>
-              {meta}
-            </Stack>
-          )}
-          {action && <Box sx={{ mt: 1.25 }}>{action}</Box>}
         </Box>
+        {level && <Box sx={{ flexShrink: 0 }}><PriorityChip level={level} /></Box>}
       </Stack>
+
+      {/* MIDDLE ROW: the summary, clamped to two lines. */}
+      {observation && (
+        <Typography
+          sx={{
+            fontSize: 13, color: BRAND.text, mt: 0.75, lineHeight: 1.5,
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}
+        >
+          {observation}
+        </Typography>
+      )}
+
+      {/* BOTTOM ROW: a distinct metadata footer, separated by a hairline so it
+          reads as the card's chrome rather than as another line of content.
+          Action buttons no longer live on the card - see the board's drag notes. */}
+      {meta && (
+        <Stack
+          direction="row"
+          spacing={1.25}
+          sx={{
+            mt: 1.25, pt: 1, borderTop: `1px solid ${BRAND.section}`,
+            flexWrap: 'wrap', rowGap: 0.5, alignItems: 'center',
+          }}
+        >
+          {meta}
+        </Stack>
+      )}
+      {action && <Box sx={{ mt: 1.25 }}>{action}</Box>}
     </Box>
   );
 }
@@ -417,7 +551,12 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
       onDrop={canDrop ? onDrop : undefined}
       onDragLeave={canDrop ? onDragLeave : undefined}
       sx={{
-        flex: '1 1 0', minWidth: 260, display: 'flex', flexDirection: 'column',
+        // Sized so all six stages fit a 1440px viewport without a horizontal
+        // scroll: ~1392px of usable width across six columns is ~230 each. The
+        // 200px floor keeps them legible and lets the board scroll on narrower
+        // screens rather than crushing the cards.
+        flex: '1 1 0', minWidth: 200, maxWidth: 300,
+        display: 'flex', flexDirection: 'column',
         bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 8%, ${BRAND.section})` : BRAND.section,
         border: `1px solid ${dropActive ? ON_SURFACE.info : BRAND.border}`,
         borderRadius: '12px', minHeight: 0,
@@ -426,10 +565,19 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
     >
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', px: 1.75, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}>
         <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
-        <Typography sx={{ fontSize: 13, fontWeight: 800, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+        <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.7px' }}>
           {title}
         </Typography>
-        <Box component="span" sx={{ fontSize: 12, fontWeight: 700, px: 0.85, borderRadius: '999px', bgcolor: BRAND.surface, color: BRAND.textLight, border: `1px solid ${BRAND.border}` }}>
+        {/* Solid slate pill with white text. The outlined pale badge blended into
+            the column header's own background and read as part of the title. */}
+        <Box
+          component="span"
+          sx={{
+            fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
+            px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
+            fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+          }}
+        >
           {count}
         </Box>
       </Stack>
@@ -602,19 +750,132 @@ function PanelShell({ title, subtitle, chips, onClose, children, footer }) {
         </Stack>
         {chips && <Stack direction="row" spacing={0.75} sx={{ mt: 1.25, flexWrap: 'wrap', rowGap: 0.75 }}>{chips}</Stack>}
       </Box>
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', px: 2.5, py: 2 }}>{children}</Box>
+      <Box sx={{ flexGrow: 1, overflowY: 'auto', px: 3, py: 2.5 }}>{children}</Box>
       {footer && (
-        <Box sx={{ px: 2.5, py: 2, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.section }}>{footer}</Box>
+        // Elevated action shelf: an upward shadow lifts it off the scrolling content
+        // so the CTA reads as pinned rather than as the last item in the list, and
+        // the 24px gutter matches the body so the button lines up with the content
+        // above it instead of being inset differently.
+        <Box
+          sx={{
+            px: 3, py: 2.5, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface,
+            boxShadow: '0 -6px 20px rgba(16,24,40,.10), 0 -1px 3px rgba(16,24,40,.05)',
+            flexShrink: 0, zIndex: 1,
+          }}
+        >
+          {footer}
+        </Box>
       )}
     </Box>
   );
 }
 
-function MetaRow({ label, children }) {
+/**
+ * One cell of the detail grid: a small uppercase label over a solid value.
+ *
+ * Replaces the label-left / value-right split rows. Those put a long value hard
+ * against the panel's right edge and a short one adrift in the middle, so nothing
+ * shared a rail; stacking the pair means every value starts on the same left edge.
+ */
+function MetaCell({ label, children, span = 1 }) {
   return (
-    <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', py: 0.85, borderBottom: `1px solid ${BRAND.section}` }}>
-      <Typography sx={{ fontSize: 13, color: BRAND.textLight, flexShrink: 0 }}>{label}</Typography>
-      <Typography component="div" sx={{ fontSize: 13.5, color: BRAND.heading, fontWeight: 600, textAlign: 'right', minWidth: 0 }}>{children}</Typography>
+    <Box sx={{ minWidth: 0, gridColumn: span === 2 ? { xs: 'span 1', sm: 'span 2' } : 'span 1' }}>
+      <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.6px', mb: 0.25 }}>
+        {label}
+      </Typography>
+      <Typography component="div" sx={{ fontSize: 14, color: BRAND.heading, fontWeight: 600, lineHeight: 1.4, wordBreak: 'break-word' }}>
+        {children}
+      </Typography>
+    </Box>
+  );
+}
+
+const NOT_RECORDED = <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic', fontWeight: 500 }}>not recorded</Box>;
+
+/**
+ * Compact horizontal stepper across the top of the order panel.
+ *
+ * The vertical list this replaces gave each of six stages its own two-line row plus
+ * a rule - roughly 250px of the panel's most valuable space to answer "where are
+ * we?". Horizontally it answers the same question in one band.
+ *
+ * The honesty contract is unchanged and is the reason this is not a plain MUI
+ * Stepper with an activeStep index: a step is filled ONLY where the backend logged
+ * that stage with a timestamp and an actor. A skipped stage stays hollow forever
+ * and is never back-filled, so the connector into a reached stage is only solid
+ * when that stage itself was reached - the bar can legitimately show gaps.
+ */
+// Short forms of the pipeline labels, matched to the board's column titles so the
+// stepper names a stage the same way the column the officer dragged from did.
+const STEP_LABEL = {
+  raised: 'Raised',
+  dispatched: 'Dispatched',
+  scheduled: 'Scheduled',
+  in_progress: 'On site',
+  resolved: 'Completed',
+  closed: 'Closed',
+};
+
+function StageStepper({ stages }) {
+  if (!stages?.length) return null;
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2.5 }}>
+      {stages.map((s, i) => (
+        <Box key={s.stage} sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+            {/* connectors are half-width either side of the dot so the track reads
+                as continuous; the first and last are blanked out */}
+            <Box sx={{ flex: 1, height: 2, bgcolor: i === 0 ? 'transparent' : (s.reached ? ON_SURFACE.info : BRAND.border) }} />
+            <Tooltip
+              arrow
+              title={s.reached
+                ? `${s.label} - ${new Date(s.at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${s.actor_name ? ` by ${s.actor_name}` : ''}`
+                : `${s.label} - not yet`}
+            >
+              <Box
+                sx={{
+                  width: 13, height: 13, borderRadius: '50%', flexShrink: 0, cursor: 'help',
+                  bgcolor: s.reached ? ON_SURFACE.info : BRAND.surface,
+                  border: s.reached ? 'none' : `1.5px dashed ${BRAND.border}`,
+                  boxShadow: s.reached ? `0 0 0 3px color-mix(in srgb, ${ON_SURFACE.info} 18%, transparent)` : 'none',
+                }}
+              />
+            </Tooltip>
+            <Box sx={{ flex: 1, height: 2, bgcolor: i === stages.length - 1 ? 'transparent' : (stages[i + 1]?.reached ? ON_SURFACE.info : BRAND.border) }} />
+          </Box>
+          <Typography
+            sx={{
+              mt: 0.75, fontSize: 10, lineHeight: 1.25, textAlign: 'center',
+              fontWeight: s.reached ? 800 : 500,
+              color: s.reached ? BRAND.heading : BRAND.textLight,
+              textTransform: 'uppercase', letterSpacing: '0.3px',
+            }}
+          >
+            {STEP_LABEL[s.stage] || s.label}
+          </Typography>
+          {/* the date is the evidence the stage really happened, so it stays visible
+              rather than living only in the tooltip */}
+          <Typography sx={{ fontSize: 9.5, color: BRAND.textLight, textAlign: 'center', lineHeight: 1.2 }}>
+            {s.reached ? shortDate(s.at) : '-'}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+/** Neutral empty state - a placeholder that looks designed, not broken. */
+function EmptyNote({ icon: Icon, children }) {
+  return (
+    <Stack
+      spacing={0.75}
+      sx={{
+        alignItems: 'center', textAlign: 'center', py: 3, px: 2,
+        borderRadius: '10px', bgcolor: BRAND.section, border: `1px dashed ${BRAND.border}`,
+      }}
+    >
+      <Icon sx={{ fontSize: 22, color: BRAND.textLight }} aria-hidden />
+      <Typography sx={{ fontSize: 13, color: BRAND.textLight, lineHeight: 1.5, maxWidth: 280 }}>{children}</Typography>
     </Stack>
   );
 }
@@ -797,7 +1058,12 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
           startIcon={busy ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />}
           disabled={busy}
           onClick={async () => { setBusy(true); try { await onCloseOrder(order.id); } finally { setBusy(false); } }}
-          sx={{ bgcolor: BRAND.action, fontWeight: 700, borderRadius: '8px', '&:hover': { bgcolor: BRAND.actionHover } }}
+          sx={{
+            bgcolor: BRAND.action, fontWeight: 800, fontSize: 15, minHeight: 46,
+            borderRadius: '8px', textTransform: 'none',
+            boxShadow: '0 4px 14px rgba(29,78,216,.32)',
+            '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)' },
+          }}
         >
           Mark work order done
         </Button>
@@ -807,54 +1073,36 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
         </Typography>
       )}
     >
-      {/* The tracked pipeline, expanded. Each row is a real logged event or an
-          explicit "not yet" - the panel never fills a stage nobody performed. */}
-      <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 1 }}>
-        Progress
-      </Typography>
-      <Stack spacing={0} sx={{ mb: 2 }}>
-        {(detail?.pipeline || order.pipeline || []).map(stg => (
-          <Stack key={stg.stage} direction="row" spacing={1.25} sx={{ alignItems: 'flex-start', py: 0.75, borderBottom: `1px solid ${BRAND.section}` }}>
-            <Box
-              aria-hidden
-              sx={{
-                width: 9, height: 9, borderRadius: '50%', mt: 0.6, flexShrink: 0,
-                bgcolor: stg.reached ? ON_SURFACE.info : 'transparent',
-                border: stg.reached ? 'none' : `1.5px dashed ${BRAND.border}`,
-              }}
-            />
-            <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-              <Typography sx={{ fontSize: 13.5, fontWeight: stg.reached ? 700 : 500, color: stg.reached ? BRAND.heading : BRAND.textLight }}>
-                {stg.label}
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: BRAND.textLight, fontStyle: stg.reached ? 'normal' : 'italic' }}>
-                {stg.reached
-                  ? `${new Date(stg.at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${stg.actor_name ? ` · ${stg.actor_name}` : ''}`
-                  : 'not yet'}
-              </Typography>
-              {stg.note && <Typography sx={{ fontSize: 12.5, color: BRAND.text, mt: 0.25 }}>{stg.note}</Typography>}
-            </Box>
-          </Stack>
-        ))}
-      </Stack>
+      {/* The tracked pipeline as a horizontal stepper at the very top: "where are
+          we" answered before any scrolling. Each step is a real logged event or an
+          explicit blank - the panel never fills a stage nobody performed. */}
+      <StageStepper stages={detail?.pipeline || order.pipeline || []} />
 
-      <MetaRow label="Town council">
-        {order.town_council || <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic' }}>not recorded</Box>}
-      </MetaRow>
-      <MetaRow label="Scheduled attendance">
-        {order.scheduled_for
-          ? shortDate(order.scheduled_for)
-          : <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic' }}>date not yet confirmed</Box>}
-      </MetaRow>
-      <MetaRow label="Reported by">
-        {(detail?.reporters?.length ? detail.reporters.join(', ') : order.reporter_name)
-          || <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic' }}>not recorded</Box>}
-      </MetaRow>
-      <MetaRow label="Contractor">{order.target_agency}</MetaRow>
-      <MetaRow label="Reports consolidated">{order.consolidated_count}</MetaRow>
-      <MetaRow label="Call-outs avoided">{order.call_outs_avoided} · {money(order.est_savings)}</MetaRow>
-      <MetaRow label="Approved by">{order.approved_by_name || '-'} · {shortDate(order.createdAt)}</MetaRow>
-      {order.dispatched_to && <MetaRow label="Dispatched to">{order.dispatched_to}</MetaRow>}
+      {/* Strict 2-column grid. Notes and any long single value take the full width
+          so they never squeeze a neighbour. */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
+          columnGap: 2.5, rowGap: 2,
+          pt: 2, borderTop: `1px solid ${BRAND.border}`,
+        }}
+      >
+        <MetaCell label="Town council">{order.town_council || NOT_RECORDED}</MetaCell>
+        <MetaCell label="Scheduled attendance">
+          {order.scheduled_for
+            ? shortDate(order.scheduled_for)
+            : <Box component="span" sx={{ color: BRAND.textLight, fontStyle: 'italic', fontWeight: 500 }}>date not yet confirmed</Box>}
+        </MetaCell>
+        <MetaCell label="Contractor">{order.target_agency || NOT_RECORDED}</MetaCell>
+        <MetaCell label="Reported by">
+          {(detail?.reporters?.length ? detail.reporters.join(', ') : order.reporter_name) || NOT_RECORDED}
+        </MetaCell>
+        <MetaCell label="Reports consolidated">{order.consolidated_count}</MetaCell>
+        <MetaCell label="Call-outs avoided">{order.call_outs_avoided} · {money(order.est_savings)}</MetaCell>
+        <MetaCell label="Approved by">{order.approved_by_name || '-'} · {shortDate(order.createdAt)}</MetaCell>
+        {order.dispatched_to && <MetaCell label="Dispatched to">{order.dispatched_to}</MetaCell>}
+      </Box>
       {order.notes && (
         <Box sx={{ mt: 2 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.5 }}>
@@ -874,7 +1122,7 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
       ) : detail?.assessments?.length ? (
         <Stack spacing={0}>
           {detail.assessments.map((a, i) => (
-            <Box key={a.id} sx={{ py: 1.25, borderTop: i === 0 ? 'none' : `1px solid ${BRAND.section}` }}>
+            <Box key={a.id} sx={{ py: 1.5, borderTop: i === 0 ? 'none' : `1px solid ${BRAND.border}` }}>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.35 }}>
                 <PriorityChip level={a.risk_level} />
                 <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>
@@ -885,8 +1133,18 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
             </Box>
           ))}
         </Stack>
+      ) : detail === null ? (
+        // A FAILED FETCH and an order with no linked reports are different facts and
+        // used to share one sentence. `detail` is null only when the request errored,
+        // so the two states are now told apart honestly.
+        <EmptyNote icon={CloudOffOutlinedIcon}>
+          The linked reports could not be loaded. They exist on the order - this is a
+          connection problem, not an empty order. Try refreshing the queue.
+        </EmptyNote>
       ) : (
-        <Typography sx={{ fontSize: 13, color: BRAND.textLight }}>Could not load the linked reports.</Typography>
+        <EmptyNote icon={DescriptionOutlinedIcon}>
+          No reports are linked to this work order.
+        </EmptyNote>
       )}
     </PanelShell>
   );
@@ -938,6 +1196,50 @@ function ApproveDialog({ open, onClose, title, count, avoided, savings, onConfir
           sx={{ bgcolor: BRAND.action, fontWeight: 700, '&:hover': { bgcolor: BRAND.actionHover } }}
         >
           {busy ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : 'Approve'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/**
+ * Attendance date prompt, shown when a card is dropped on Scheduled.
+ *
+ * There is deliberately no default value and no suggestion. The backend refuses
+ * `scheduled` without a date and the pipeline contract forbids inventing one, so
+ * this asks rather than guessing - an officer types the date the contractor
+ * actually gave them, or cancels and the order stays where it was.
+ */
+function ScheduleDialog({ open, onClose, onConfirm }) {
+  const [date, setDate] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ fontWeight: 800, color: BRAND.heading }}>Confirm attendance date</DialogTitle>
+      <DialogContent>
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, mb: 2 }}>
+          Enter the date the contractor confirmed. A work order is only marked scheduled
+          against a real date - nothing is estimated on your behalf.
+        </Typography>
+        <TextField
+          type="date"
+          fullWidth
+          value={date}
+          onChange={e => setDate(e.target.value)}
+          slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'aria-label': 'Confirmed attendance date' } }}
+        />
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2.5 }}>
+        <Button onClick={onClose} disabled={busy} sx={{ textTransform: 'none', color: BRAND.textLight }}>Cancel</Button>
+        <Button
+          variant="contained"
+          disableElevation
+          disabled={!date || busy}
+          onClick={async () => { setBusy(true); try { await onConfirm(date); } finally { setBusy(false); } }}
+          sx={{ textTransform: 'none', fontWeight: 700, bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }}
+        >
+          {busy ? 'Saving…' : 'Mark scheduled'}
         </Button>
       </DialogActions>
     </Dialog>
@@ -1016,6 +1318,8 @@ export default function ActionQueue() {
   const [selectedKey, setSelectedKey] = useState(null);
   const [checked, setChecked] = useState(() => new Set());
   const [bulkApprove, setBulkApprove] = useState(false);
+  // { id } while a drop onto Scheduled is waiting for a REAL attendance date
+  const [scheduleFor, setScheduleFor] = useState(null);
   const [orderDetail, setOrderDetail] = useState({ id: null, data: null });
   const [busyBulk, setBusyBulk] = useState(false);
   const [busyRow, setBusyRow] = useState(null);
@@ -1160,9 +1464,20 @@ export default function ActionQueue() {
     // newest first within a stage, and priority always leads the sort so the
     // column reads as a triage list top-down
     const byPriority = (a, b) => prio(b.risk_level).rank - prio(a.risk_level).rank || new Date(b.createdAt) - new Date(a.createdAt);
+    const at = (...statuses) => workOrders.filter(w => statuses.includes(w.status) && pass(w)).sort(byPriority);
+    // One bucket per REAL pipeline stage. "Open orders" previously merged raised,
+    // dispatched, scheduled and in_progress into a single column, which threw away
+    // stage information the backend records per order - in the live data that
+    // column was hiding the difference between an order nobody has dispatched and
+    // one with a confirmed attendance date.
     return {
-      open: workOrders.filter(w => w.status !== 'closed' && pass(w)).sort(byPriority),
-      closed: workOrders.filter(w => w.status === 'closed' && pass(w)).sort(byPriority),
+      raised: at('raised', 'open'),        // 'open' is the pre-pipeline legacy value
+      dispatched: at('dispatched'),
+      scheduled: at('scheduled'),
+      in_progress: at('in_progress'),
+      // resolved and closed are the only merge: both are terminal, and each card
+      // states which one it is, so nothing is concealed by pairing them.
+      done: at('resolved', 'closed'),
     };
   }, [workOrders, priority, cutoff, needle]);
 
@@ -1319,11 +1634,23 @@ export default function ActionQueue() {
      drag is never the only route - every card keeps its buttons and the
      keyboard-reachable detail panel. --------------------------------------- */
 
+  /**
+   * Which drops are legal.
+   *
+   * Mirrors backend canTransition (services/workOrderStages.js): forward-only,
+   * and skipping ahead IS allowed - a contractor can turn up without anyone
+   * having logged a scheduled date, and forcing a fake 'scheduled' event just to
+   * reach 'in_progress' would be exactly the retro-filling the pipeline forbids.
+   * The server re-checks every one of these; this only stops the UI offering a
+   * drop it knows will be rejected.
+   */
   const allows = (d, col) => {
     if (!d) return false;
-    if (d.type === 'pending') return col === 'open';
-    if (d.type === 'open') return col === 'closed';
-    return false;
+    if (d.type === 'pending') return col === 'raised';   // approving creates the order
+    const from = BOARD_RANK[d.status];
+    const to = BOARD_RANK[col];
+    if (from == null || to == null) return false;
+    return to > from;
   };
   const canDropOn = col => allows(drag, col);
 
@@ -1333,6 +1660,7 @@ export default function ActionQueue() {
     setDrag(null);
     setDropCol(null);
     if (!allows(d, col)) return;
+
     if (d.type === 'pending') {
       // reuse the approve dialog: raising a work order dispatches a contractor,
       // so it keeps its confirmation step even when triggered by a drag
@@ -1341,10 +1669,35 @@ export default function ActionQueue() {
       setBulkApprove(true);
       return;
     }
-    setBusyRow(Number(d.id));
-    try { await closeWo(Number(d.id)); }
-    catch (e) { setToast({ ok: false, msg: e.response?.data?.error || 'Could not close the work order.' }); }
-    finally { setBusyRow(null); }
+
+    // 'scheduled' cannot be entered without a REAL attendance date - the backend
+    // rejects it outright and there is deliberately no default, no "+3 days" and
+    // no estimate. So the drop opens a date prompt instead of guessing one.
+    if (col === 'scheduled') {
+      setScheduleFor({ id: Number(d.id) });
+      return;
+    }
+    await moveStage(Number(d.id), STAGE_FOR_COLUMN[col]);
+  }
+
+  // One stage transition. Every call writes an append-only event server-side with
+  // the acting officer and a real timestamp.
+  async function moveStage(id, stage, extra = {}) {
+    setBusyRow(id);
+    try {
+      const { data } = await http.patch(`/api/work-orders/${id}/stage`, { stage, ...extra });
+      setWorkOrders(list => list.map(w => (w.id === id ? { ...w, ...data } : w)));
+      // the email result is whatever actually happened, never assumed
+      const mail = data.notified?.attempted
+        ? (data.notified.delivered ? ' Resident notified.' : ' Resident email failed.')
+        : '';
+      setToast({ ok: true, msg: `Work order #${id} moved to ${ORDER_STATUS[stage]?.label || stage}.${mail}` });
+      load();
+    } catch (e) {
+      setToast({ ok: false, msg: e.response?.data?.error || 'Could not update the work order stage.' });
+    } finally {
+      setBusyRow(null);
+    }
   }
 
   const dragProps = (type, id) => ({
@@ -1659,7 +2012,6 @@ export default function ActionQueue() {
         name={user?.name?.split(' ')[0]}
         urgentCount={urgentCount}
         totals={totals}
-        openOrders={openCount}
         q={q} setQ={setQ}
         priority={priority} setPriority={setPriority}
         range={range} setRange={setRange}
@@ -1667,6 +2019,8 @@ export default function ActionQueue() {
         sortOptions={tab === 'pending' ? PENDING_SORTS : ORDER_SORTS}
         primary={primary}
         onExport={exportCsv}
+        view={view}
+        onView={switchView}
       />
 
       <Box sx={{ px: { xs: 2, md: 3 } }}>
@@ -1674,9 +2028,10 @@ export default function ActionQueue() {
         {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
       </Box>
 
-      {/* segmented control tabs carry the counts the KPI cards used to. In board
-          view the columns ARE the stages, so the tabs would be a second, weaker
-          copy of the same navigation - only the view switcher remains. */}
+      {/* Tabs carry the counts the removed KPI cards used to. In board view the
+          columns ARE the stages, so tabs would be a second, weaker copy of the same
+          navigation - the row collapses to the drag hint instead. The view switcher
+          itself now lives in the toolbar with the other controls. */}
       <Box sx={{ px: { xs: 2, md: 3 }, borderBottom: `1px solid ${BRAND.border}`, display: 'flex', alignItems: 'center', gap: 2 }}>
         {view === 'board' ? (
           <Typography sx={{ fontSize: 13.5, color: BRAND.textLight, py: 1.25, flexGrow: 1 }}>
@@ -1719,28 +2074,6 @@ export default function ActionQueue() {
           ))}
         </Tabs>
         )}
-        <ToggleButtonGroup
-          value={view}
-          exclusive
-          onChange={(_, v) => switchView(v)}
-          size="small"
-          aria-label="Layout"
-          sx={{
-            flexShrink: 0, alignSelf: 'center',
-            '& .MuiToggleButton-root': {
-              px: 1.25, py: 0.4, textTransform: 'none', fontSize: 12.5, fontWeight: 600,
-              color: BRAND.textLight, borderColor: BRAND.border,
-              '&.Mui-selected': { bgcolor: BRAND.slate, color: '#fff', '&:hover': { bgcolor: BRAND.slateHover } },
-            },
-          }}
-        >
-          <ToggleButton value="board" aria-label="Board view">
-            <ViewKanbanOutlinedIcon sx={{ fontSize: 16, mr: 0.5 }} /> Board
-          </ToggleButton>
-          <ToggleButton value="list" aria-label="List view">
-            <TableRowsRoundedIcon sx={{ fontSize: 15, mr: 0.5 }} /> List
-          </ToggleButton>
-        </ToggleButtonGroup>
       </Box>
 
       {/* master / detail. The grid is the master; at lg+ it compacts to 40% and the
@@ -1761,127 +2094,84 @@ export default function ActionQueue() {
               <Stack spacing={1}>{[0, 1, 2, 3].map(i => <Skeleton key={i} variant="rounded" height={52} />)}</Stack>
             </Box>
           ) : view === 'board' ? (
-            <Box sx={{ display: 'flex', gap: 2, p: { xs: 2, md: 3 }, alignItems: 'stretch', flexGrow: 1, minHeight: 0, overflowX: 'auto' }}>
-              <BoardColumn
-                id="col-pending"
-                title="Requires action"
-                count={boardPending.length}
-                accent="var(--em-prio-critical)"
-                hint={drag?.type === 'pending' ? 'Drop on Open orders to approve' : null}
-                {...colProps('pending')}
-              >
-                {boardPending.length === 0 && (
-                  <Typography sx={{ fontSize: 13, color: BRAND.textLight, textAlign: 'center', py: 3 }}>
-                    Nothing awaiting review.
-                  </Typography>
-                )}
-                {boardPending.map(r => (
-                  <TaskCard
-                    key={r.cluster.block}
-                    title={r.cluster.block}
-                    level={r.cluster.risk_level}
-                    observation={r.cluster.assessments[0]?.observations}
-                    selected={selectedKey === r.cluster.block && selKind === 'pending'}
-                    checked={checked.has(r.cluster.block)}
-                    onToggle={() => toggle(r.cluster.block)}
-                    onOpen={() => { setBoardSelKind('pending'); setSelectedKey(r.cluster.block); }}
-                    {...dragProps('pending', r.cluster.block)}
-                    meta={
-                      <>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
-                          {r.cluster.count} report{r.cluster.count === 1 ? '' : 's'}
-                        </Typography>
-                        {r.cluster.est_savings > 0 && (
-                          <Typography sx={{ fontSize: 12, fontWeight: 600, color: ON_SURFACE.ok, fontVariantNumeric: 'tabular-nums' }}>
-                            {money(r.cluster.est_savings)}
-                          </Typography>
-                        )}
-                        {r.oldest && (
-                          <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>since {shortDate(r.oldest)}</Typography>
-                        )}
-                      </>
-                    }
-                  />
-                ))}
-              </BoardColumn>
+            <Box sx={{ display: 'flex', gap: 1.5, p: { xs: 2, md: 3 }, alignItems: 'stretch', flexGrow: 1, minHeight: 0, overflowX: 'auto' }}>
+              {BOARD_COLUMNS.map(c => {
+                const isPending = c.col === 'pending';
+                const items = isPending ? boardPending : (boardOrders[c.col] || []);
+                return (
+                  <BoardColumn
+                    key={c.col}
+                    id={`col-${c.col}`}
+                    title={c.title}
+                    count={items.length}
+                    accent={c.accent}
+                    hint={dropCol === c.col && canDropOn(c.col) ? `Drop to move to ${c.title}` : c.hint}
+                    {...colProps(c.col)}
+                  >
+                    {items.length === 0 && (
+                      <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, textAlign: 'center', py: 3 }}>
+                        {isPending ? 'Nothing awaiting review.' : 'Nothing at this stage.'}
+                      </Typography>
+                    )}
 
-              <BoardColumn
-                id="col-open"
-                title="Open orders"
-                count={boardOrders.open.length}
-                accent="var(--em-info-ink)"
-                hint={drag?.type === 'open' ? 'Drop on Closed to mark done' : null}
-                {...colProps('open')}
-              >
-                {boardOrders.open.length === 0 && (
-                  <Typography sx={{ fontSize: 13, color: BRAND.textLight, textAlign: 'center', py: 3 }}>
-                    No open work orders.
-                  </Typography>
-                )}
-                {boardOrders.open.map(w => (
-                  <TaskCard
-                    key={w.id}
-                    title={w.block_number || '(No block)'}
-                    subtitle={`Order #${w.id}${w.target_agency ? ` · ${w.target_agency}` : ''}`}
-                    level={w.risk_level}
-                    observation={w.notes}
-                    selected={selectedKey === String(w.id) && selKind === 'order'}
-                    checked={checked.has(String(w.id))}
-                    onToggle={() => toggle(String(w.id))}
-                    onOpen={() => { setBoardSelKind('order'); setSelectedKey(String(w.id)); }}
-                    {...dragProps('open', String(w.id))}
-                    meta={
-                      <>
-                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
-                          {w.consolidated_count} report{w.consolidated_count === 1 ? '' : 's'}
-                        </Typography>
-                        <Typography sx={{ fontSize: 12, color: BRAND.textLight }}>raised {shortDate(w.createdAt)}</Typography>
-                      </>
-                    }
-                    action={
-                      <GhostButton
-                        disabled={busyRow === w.id}
-                        onClick={async e => {
-                          e.stopPropagation();
-                          setBusyRow(w.id);
-                          try { await closeWo(w.id); }
-                          catch (err) { setToast({ ok: false, msg: err.response?.data?.error || 'Could not mark the work order done.' }); }
-                          finally { setBusyRow(null); }
-                        }}
-                        aria-label={`Mark work order ${w.id} done`}
-                      >
-                        {busyRow === w.id ? '…' : 'Mark done'}
-                      </GhostButton>
-                    }
-                  />
-                ))}
-              </BoardColumn>
+                    {isPending && boardPending.map(r => (
+                      <TaskCard
+                        key={r.cluster.block}
+                        title={r.cluster.block}
+                        level={r.cluster.risk_level}
+                        observation={r.cluster.assessments[0]?.observations}
+                        selected={selectedKey === r.cluster.block && selKind === 'pending'}
+                        checked={checked.has(r.cluster.block)}
+                        onToggle={() => toggle(r.cluster.block)}
+                        onOpen={() => { setBoardSelKind('pending'); setSelectedKey(r.cluster.block); }}
+                        {...dragProps('pending', r.cluster.block)}
+                        meta={
+                          <>
+                            <CardMeta icon={DescriptionOutlinedIcon} strong>
+                              {r.cluster.count} report{r.cluster.count === 1 ? '' : 's'}
+                            </CardMeta>
+                            {r.oldest && (
+                              <CardMeta icon={CalendarTodayRoundedIcon}>since {shortDate(r.oldest)}</CardMeta>
+                            )}
+                          </>
+                        }
+                      />
+                    ))}
 
-              <BoardColumn
-                id="col-closed"
-                title="Closed"
-                count={boardOrders.closed.length}
-                accent="var(--em-ok-strong)"
-                {...colProps('closed')}
-              >
-                {boardOrders.closed.length === 0 && (
-                  <Typography sx={{ fontSize: 13, color: BRAND.textLight, textAlign: 'center', py: 3 }}>
-                    No closed work orders yet.
-                  </Typography>
-                )}
-                {boardOrders.closed.map(w => (
-                  <TaskCard
-                    key={w.id}
-                    title={w.block_number || '(No block)'}
-                    subtitle={`Order #${w.id}`}
-                    level={w.risk_level}
-                    observation={w.notes}
-                    selected={selectedKey === String(w.id) && selKind === 'order'}
-                    onOpen={() => { setBoardSelKind('order'); setSelectedKey(String(w.id)); }}
-                    meta={<Typography sx={{ fontSize: 12, color: BRAND.textLight }}>closed {shortDate(w.closed_at || w.updatedAt)}</Typography>}
-                  />
-                ))}
-              </BoardColumn>
+                    {!isPending && items.map(w => (
+                      <TaskCard
+                        key={w.id}
+                        title={w.block_number || '(No block)'}
+                        subtitle={`Order #${w.id}${w.target_agency ? ` \u00b7 ${w.target_agency}` : ''}`}
+                        level={w.risk_level}
+                        observation={w.notes}
+                        selected={selectedKey === String(w.id) && selKind === 'order'}
+                        checked={checked.has(String(w.id))}
+                        onToggle={w.status === 'closed' ? undefined : () => toggle(String(w.id))}
+                        onOpen={() => { setBoardSelKind('order'); setSelectedKey(String(w.id)); }}
+                        // terminal orders are not draggable: there is nowhere
+                        // forward to go, and backwards moves are refused anyway
+                        {...(c.col === 'done' ? {} : dragProps(w.status, String(w.id)))}
+                        meta={
+                          <>
+                            <CardMeta icon={DescriptionOutlinedIcon} strong>
+                              {w.consolidated_count} report{w.consolidated_count === 1 ? '' : 's'}
+                            </CardMeta>
+                            <CardMeta icon={CalendarTodayRoundedIcon}>
+                              {c.col === 'done'
+                                ? `${w.status === 'closed' ? 'closed' : 'completed'} ${shortDate(w.closed_at || w.resolved_at || w.updatedAt)}`
+                                : c.col === 'scheduled' && w.scheduled_for
+                                  ? `attending ${shortDate(w.scheduled_for)}`
+                                  : `raised ${shortDate(w.createdAt)}`}
+                            </CardMeta>
+                            {busyRow === w.id && <CircularProgress size={12} sx={{ color: ON_SURFACE.info }} />}
+                          </>
+                        }
+                      />
+                    ))}
+                  </BoardColumn>
+                );
+              })}
             </Box>
           ) : tableRows.length ? (
             <QueueTable
@@ -1957,6 +2247,17 @@ export default function ActionQueue() {
         avoided={checkedAvoided}
         savings={checkedSavings}
         onConfirm={opts => approveGroups(checkedGroups.map(g => ({ block: g.block, ids: g.ids })), opts)}
+      />
+
+      <ScheduleDialog
+        key={scheduleFor?.id ?? 'none'}
+        open={Boolean(scheduleFor)}
+        onClose={() => setScheduleFor(null)}
+        onConfirm={async date => {
+          const id = scheduleFor.id;
+          setScheduleFor(null);
+          await moveStage(id, 'scheduled', { scheduled_for: date });
+        }}
       />
 
       {/* Floating action bar - appears only once there is a selection, so it

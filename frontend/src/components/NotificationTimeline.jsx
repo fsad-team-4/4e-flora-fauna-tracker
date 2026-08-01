@@ -102,7 +102,8 @@ export default function NotificationTimeline({ logs = [], onSelect, selectedRang
   const yTicks = [0, step, step * 2, niceMax];
 
   return (
-    <Card sx={{ mb: 2.5 }}>
+    // matches the KPI tiles above it: same hairline, same soft elevation
+    <Card sx={{ mb: 2.5, border: `1px solid ${BRAND.border}`, borderRadius: '10px', boxShadow: '0 1px 3px rgba(16,24,40,.08), 0 1px 2px rgba(16,24,40,.04)' }}>
       <CardContent sx={{ p: 3 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, mb: 2.5 }}>
           <Box>
@@ -123,7 +124,7 @@ export default function NotificationTimeline({ logs = [], onSelect, selectedRang
             ))}
           </Stack>
         </Stack>
-        <ResponsiveContainer width="100%" height={160}>
+        <ResponsiveContainer width="100%" height={190}>
           <AreaChart
             data={bins}
             margin={{ top: 8, right: 12, left: -12, bottom: 4 }}
@@ -158,10 +159,10 @@ export default function NotificationTimeline({ logs = [], onSelect, selectedRang
               scale="time"
               domain={['dataMin', 'dataMax']}
               tickFormatter={fmtTick}
-              tick={{ fontSize: 11, fill: CHART[mode].axis }}
+              tick={{ fontSize: 12, fill: CHART[mode].axis }}
               minTickGap={30}
             />
-            <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: CHART[mode].axis }} width={32} domain={[0, niceMax]} ticks={yTicks} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: CHART[mode].axis }} width={36} domain={[0, niceMax]} ticks={yTicks} />
             <Tooltip content={<DispatchTooltip />} cursor={{ stroke: SVG_ACCENT[mode].line, strokeWidth: 1, strokeDasharray: '4 4' }} />
             {/* committed selection - a soft brand band, not a hard line */}
             {selFrom != null && (

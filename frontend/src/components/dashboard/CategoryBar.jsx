@@ -1,9 +1,30 @@
 import { useMemo } from 'react';
-import { Card, CardContent, Box, Stack, Typography, Tooltip } from '@mui/material';
+import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { useTheme } from '@mui/material/styles';
 import { BRAND } from '../../theme';
 import { CATEGORY_LABELS } from '../../constants';
+
+// Recharts writes `stroke` into an SVG attribute, where a var(--em-surface) token
+// never resolves, so the arc separator needs the literal surface colour per scheme.
+const SURFACE = { light: '#FFFFFF', dark: '#1B222D' };
+
+function DonutTooltip({ active, payload, total }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload;
+  if (!d) return null;
+  return (
+    <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 12px 32px rgba(16,24,40,.15)', px: 1.5, py: 1 }}>
+      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+        <Box aria-hidden sx={{ width: 9, height: 9, borderRadius: '2px', bgcolor: d.color, flexShrink: 0 }} />
+        <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 600 }}>
+          {d.label}: {d.count} of {total} ({d.pct}%)
+        </Typography>
+      </Stack>
+    </Box>
+  );
+}
 
 // Monochromatic corporate blue scale. Shades map to categories by IDENTITY, not by
 // rank, so a category keeps its shade as the counts move - a rank-based ramp would
@@ -44,14 +65,19 @@ function roundTo100(rows, total) {
 }
 
 /**
- * One thick horizontal stacked bar with an inline legend.
+ * A thin donut with the legend as a right-hand table.
  *
- * A donut plus its legend spent a large square of grid on four data points; a single
- * bar states the same part-to-whole relationship in roughly a quarter of the space,
- * with the percentage printed inside each segment wide enough to hold it.
+ * The 36px stacked bar carried the same numbers but read as one heavy slab, and it
+ * forced the percentage INSIDE each segment, so any category under 12% silently
+ * lost its label. A thin ring reads as part-to-whole immediately, and moving the
+ * figures into an aligned legend means every category is labelled at any size.
+ *
+ * Arc angles are hard to compare precisely, so the legend - not the ring - carries
+ * the exact percentage and count. The ring is the shape; the table is the data.
  */
 export default function CategoryBar({ casesByCategory = [], embedded = false }) {
   const mode = useTheme().palette.mode;
+  const surface = SURFACE[mode] || SURFACE.light;
   const { data, total } = useMemo(() => {
     const segColors = SEG_COLORS[mode] || SEG_COLORS.light;
     const fallback = SEG_FALLBACK[mode] || SEG_FALLBACK.light;
@@ -66,9 +92,14 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
     return { data: rows, total: sum };
   }, [casesByCategory, mode]);
 
-  // segments are the rounded percentages themselves, so the bar widths and the
+  // segments are the rounded percentages themselves, so the arc angles and the
   // printed figures can never disagree
   const segments = data;
+  // The ring is aria-hidden by nature, so the whole distribution is restated here
+  // for screen readers rather than left as an unlabelled graphic.
+  const ariaSummary = total
+    ? `Case distribution across ${total} cases: ${segments.map(d => `${d.label} ${d.pct} percent, ${d.count} case${d.count === 1 ? '' : 's'}`).join('; ')}.`
+    : 'No cases to display yet.';
 
   const inner = (
     <Box sx={{ p: embedded ? 2 : 0 }}>
@@ -89,39 +120,73 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
           <Typography variant="body2" sx={{ color: BRAND.textLight }}>No cases to display yet.</Typography>
         </Box>
       ) : (
-        <>
-          <Box sx={{ display: 'flex', height: 36, borderRadius: '8px', overflow: 'hidden', bgcolor: BRAND.section }}>
-            {segments.map((d, i) => (
-              <Tooltip key={d.key} title={`${d.label}: ${d.count} of ${total} (${d.pct}%)`}>
-                <Box
-                  sx={{
-                    width: `${d.pct}%`, bgcolor: d.color, display: 'grid', placeItems: 'center',
-                    transition: 'width .5s ease, filter .15s ease', transitionDelay: `${i * 50}ms`,
-                    '&:hover': { filter: 'brightness(1.14)' },
-                  }}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '150px minmax(0, 1fr)' },
+            gap: { xs: 2, sm: 3 }, alignItems: 'center',
+          }}
+        >
+          {/* Ring. 2px of surface between arcs (paddingAngle + a surface stroke)
+              rather than letting neighbouring fills touch, so adjacent categories
+              stay separable without relying on hue contrast alone. */}
+          <Box role="img" aria-label={ariaSummary} sx={{ width: '100%', height: 150, mx: 'auto', maxWidth: 150 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                <Pie
+                  data={segments}
+                  dataKey="count"
+                  nameKey="label"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="66%"
+                  outerRadius="98%"
+                  paddingAngle={2}
+                  stroke={surface}
+                  strokeWidth={2}
+                  isAnimationActive
+                  animationDuration={600}
+                  labelLine={false}
+                  label={false}
                 >
-                  {d.pct >= 12 && (
-                    // dark scheme lifts the fills to mid-tones, so the in-segment
-                    // label flips to a dark ink there to stay readable
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: mode === 'dark' ? '#0F172A' : '#fff', fontVariantNumeric: 'tabular-nums' }}>
-                      {d.pct}%
-                    </Typography>
-                  )}
-                </Box>
-              </Tooltip>
-            ))}
+                  {segments.map(d => <Cell key={d.key} fill={d.color} />)}
+                </Pie>
+                <Tooltip content={<DonutTooltip total={total} />} />
+              </PieChart>
+            </ResponsiveContainer>
+            {/* Total in the hole: the one figure the ring itself cannot state. */}
+            <Box sx={{ mt: '-95px', textAlign: 'center', pointerEvents: 'none' }}>
+              <Typography sx={{ fontSize: 26, fontWeight: 800, lineHeight: 1, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
+                {total}
+              </Typography>
+              <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight }}>
+                cases
+              </Typography>
+            </Box>
           </Box>
-          <Stack direction="row" spacing={2} sx={{ mt: 1.75, flexWrap: 'wrap', rowGap: 1 }}>
+
+          {/* Legend as an aligned table: swatch, label, then percentage and count on
+              their own right-aligned rails so the figures stack vertically. */}
+          <Stack spacing={0.85} sx={{ minWidth: 0 }}>
             {segments.map(d => (
-              <Stack key={d.key} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+              <Box
+                key={d.key}
+                sx={{ display: 'grid', gridTemplateColumns: '10px minmax(0, 1fr) 40px 34px', gap: 1, alignItems: 'center' }}
+              >
                 <Box aria-hidden sx={{ width: 10, height: 10, borderRadius: '3px', bgcolor: d.color, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 500 }}>{d.label}</Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>{d.pct}%</Typography>
-                <Typography sx={{ fontSize: 12, color: BRAND.text, fontVariantNumeric: 'tabular-nums' }}>({d.count})</Typography>
-              </Stack>
+                <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {d.label}
+                </Typography>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: BRAND.heading, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+                  {d.pct}%
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: BRAND.text, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+                  ({d.count})
+                </Typography>
+              </Box>
             ))}
           </Stack>
-        </>
+        </Box>
       )}
     </Box>
   );

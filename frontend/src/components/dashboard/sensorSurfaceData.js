@@ -14,11 +14,21 @@ import http from '../../http';
  */
 export const SIMULATED_LABEL = 'Simulated sensor data (pilot integration not yet live)';
 
-// Grid resolution across the sensors' bounding box. 28 left visibly blocky
-// rectangles at island scale; 52 gives ~250m cells, which reads as the smooth
-// field the weather-map treatment needs while staying well inside the route's
-// cap and only emitting cells that actually have a sensor in range.
-const GRID_RESOLUTION = 52;
+// Grid resolution across the sensors' bounding box. The surface is contoured
+// client-side with marching squares, so this is the sampling density of the
+// field rather than the size of a drawn cell: at 180 the iso-lines are smooth
+// at every usable zoom, and nothing renders per-cell.
+const GRID_RESOLUTION = 180;
+
+/**
+ * Band thresholds, shared by the contour layer AND the legend so they can never
+ * disagree. Bands start above zero because a band at 0 would be indistinguish-
+ * able from unmeasured ground, which is a different claim.
+ */
+export function bandThresholds(scaleMax, steps) {
+  if (!scaleMax || scaleMax <= 0) return [];
+  return Array.from({ length: steps }, (_, i) => ((i + 1) / (steps + 1)) * scaleMax);
+}
 
 export function useSensorSurface({ enabled, windowDays = 30, councils = null, asOf = null }) {
   const [state, setState] = useState({ loading: false, error: false, data: null });

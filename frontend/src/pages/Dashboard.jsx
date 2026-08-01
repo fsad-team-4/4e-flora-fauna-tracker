@@ -4,7 +4,7 @@ import {
   Box, Typography, Button, Alert, Collapse, Stack, IconButton,
   Skeleton, Card, CardContent, LinearProgress, Tooltip,
   Menu, MenuItem,
-  useMediaQuery, useTheme,
+  useMediaQuery, useTheme, useScrollTrigger,
 } from '@mui/material';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
@@ -171,6 +171,10 @@ export default function Dashboard() {
   const [showPreview, setShowPreview] = useState(false);
   const [scorecard, setScorecard] = useState(null);
   const [rangeAnchor, setRangeAnchor] = useState(null);
+  // MUI's own passive scroll listener rather than a hand-rolled one. disableHysteresis
+  // means it tracks absolute position, so the shadow stays put while scrolled down
+  // instead of flickering off whenever the scroll direction reverses.
+  const scrolled = useScrollTrigger({ disableHysteresis: true, threshold: 8 });
 
   const kpis = useMemo(() => buildKpis(metrics, mode), [metrics, mode]);
 
@@ -243,19 +247,31 @@ export default function Dashboard() {
       <Box
         sx={{
           // Sticks BELOW the app bar, not at top: 0. Both were pinned to 0, so the
-          // two bars overlapped the moment the page scrolled. MUI's Toolbar
-          // minHeight is 56 on xs and 64 from sm up, which these offsets track.
-          // It also takes the page-field colour instead of white, so it reads as
-          // part of the page rather than as a second navigation bar.
-          position: 'sticky', top: { xs: 56, sm: 64 }, zIndex: 100,
-          bgcolor: BRAND.section,
+          // two bars overlapped the moment the page scrolled.
+          //
+          // A FLAT 64, not a responsive 56/64: App.jsx pins its Toolbar to
+          // `minHeight: 64, height: 64` at every breakpoint, so the old xs:56
+          // offset left an 8px slot on mobile where page content scrolled through
+          // the gap between the two bars.
+          position: 'sticky', top: 64, zIndex: 100,
+          // Surface, not the page field. It now shares the app bar's background, so
+          // the two read as ONE grounded command bar split by the app bar's own
+          // hairline, rather than a white bar stacked on a grey one.
+          bgcolor: BRAND.surface,
           borderBottom: `1px solid ${BRAND.border}`,
+          // The shadow is the scroll cue and only appears once the page has moved:
+          // at rest the border alone is enough, and a permanent shadow under a
+          // shadowless app bar read as an unexplained seam.
+          boxShadow: scrolled ? '0 4px 12px rgba(16,24,40,.07), 0 1px 3px rgba(16,24,40,.04)' : 'none',
+          transition: 'box-shadow .2s ease',
           px: { xs: 2, md: 1 }, pt: 2, pb: 1.5, mb: 3,
           mx: { xs: -2, md: -1 },
         }}
       >
+        {/* Strict two-cluster flex row. `alignItems: center` on BOTH the row and the
+            left cluster is what puts the live dot on the title's optical centre. */}
         <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0, flexWrap: 'wrap', rowGap: 0.5 }}>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
             <Typography
               component="h1"
               sx={{ fontSize: { xs: 23, md: 28 }, fontWeight: 800, color: BRAND.heading, lineHeight: 1.1, letterSpacing: '-0.8px' }}
@@ -273,10 +289,13 @@ export default function Dashboard() {
                 aria-hidden
                 sx={{
                   width: 9, height: 9, borderRadius: '50%', bgcolor: '#0ca30c', flexShrink: 0,
+                  // Two-part glow: a constant tight halo so the dot reads as lit even
+                  // between pulses, and the expanding ring for the heartbeat. The
+                  // pulse alone left the dot flat at the bottom of its cycle.
                   '@keyframes liveDot': {
-                    '0%': { boxShadow: '0 0 0 0 rgba(12,163,12,.5)' },
-                    '70%': { boxShadow: '0 0 0 7px rgba(12,163,12,0)' },
-                    '100%': { boxShadow: '0 0 0 0 rgba(12,163,12,0)' },
+                    '0%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 0 rgba(12,163,12,.5)' },
+                    '70%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 7px rgba(12,163,12,0)' },
+                    '100%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 0 rgba(12,163,12,0)' },
                   },
                   animation: 'liveDot 2s ease-in-out infinite',
                 }}
@@ -299,19 +318,21 @@ export default function Dashboard() {
 
           {/* Right cluster: the global time window is the focal control, then
               notifications, then identity (which owns the account-level action). */}
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexShrink: 0 }}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
             <Button
               onClick={e => setRangeAnchor(e.currentTarget)}
               startIcon={<CalendarTodayRoundedIcon sx={{ fontSize: 17 }} />}
-              endIcon={<ExpandMoreRoundedIcon />}
+              endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 20, transform: rangeAnchor ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
               aria-haspopup="listbox"
               aria-expanded={Boolean(rangeAnchor)}
-              // ghost button: borderless and low-profile at rest, grey wash on hover,
-              // so the control does not add another rule to the header
+              // A bordered select, not a ghost button. Borderless read as static text
+              // on a white bar - there was nothing to say it could be opened. The
+              // hairline gives it a hit area, and the grey wash on hover confirms it.
               sx={{
                 textTransform: 'none', fontWeight: 600, fontSize: 13.5, color: BRAND.text,
-                px: 1.25, py: 0.6, whiteSpace: 'nowrap',
-                '&:hover': { bgcolor: 'action.hover', color: BRAND.heading },
+                px: 1.5, py: 0.65, whiteSpace: 'nowrap', borderRadius: '8px',
+                border: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface,
+                '&:hover': { bgcolor: BRAND.section, borderColor: BRAND.textLight, color: BRAND.heading },
               }}
             >
               <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>

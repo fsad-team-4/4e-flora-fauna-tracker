@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
-import { Box, Typography, Card, Stack, Chip, Tooltip, Button, Skeleton } from '@mui/material';
+import { Box, Typography, Card, Stack, Tooltip, Button, Skeleton } from '@mui/material';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
@@ -37,51 +37,23 @@ function useCountUp(target, duration = 800) {
   return count;
 }
 
-// Percentage change across the window. Falling risk is good, so it reads green; the
-// word states that outright rather than leaving the colour to be decoded.
-function TrendPill({ scores }) {
-  const trend = TREND[useTheme().palette.mode] || TREND.light;
-  if (!scores || scores.length < 2) return null;
-  const first = scores[0], last = scores[scores.length - 1];
-  const delta = last - first;
-  const pct = first > 0 ? Math.round((delta / first) * 100) : null;
-  const rising = delta > 0;
-  const color = delta === 0 ? trend.neutral : rising ? trend.bad : trend.good;
-  const Icon = delta === 0 ? TrendingFlatRoundedIcon : rising ? ArrowUpwardRoundedIcon : ArrowDownwardRoundedIcon;
-  const word = delta === 0 ? 'No change' : rising ? 'Worsening' : 'Improving';
-
-  return (
-    <Stack direction="row" spacing={0.4} sx={{ alignItems: 'center', color }}>
-      <Icon sx={{ fontSize: 18 }} aria-hidden />
-      <Typography sx={{ fontSize: 15, fontWeight: 800, color: 'inherit', fontVariantNumeric: 'tabular-nums' }}>
-        {pct == null ? `${delta > 0 ? '+' : ''}${delta}` : `${pct > 0 ? '+' : ''}${pct}%`}
-      </Typography>
-      <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'inherit' }}>{word}</Typography>
-      <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>vs {scores.length}d ago</Typography>
-    </Stack>
-  );
-}
-
 /**
- * Prevention impact, as a secondary row INSIDE the command card. Placing it here
- * validates what the officer's past approvals achieved immediately before the card
- * asks them to approve more - it used to be a separate strip that broke the flow
- * between the hero and the KPI grid.
+ * The supplementary stats, as CELLS for the micro-grid rather than a rendered row.
+ *
+ * Returning data instead of JSX is what lets the trend and the prevention figures
+ * share ONE strict 2-column grid. They used to be two separately-laid-out rows -
+ * a baseline-aligned inline list under a flex pill - so nothing lined up
+ * vertically and the block read as scattered.
+ *
+ * Returns null when there is nothing measurable, so the caller can fall back to
+ * saying so rather than rendering an empty grid.
  */
-function ImpactRow({ scorecard }) {
-  const trend = TREND[useTheme().palette.mode] || TREND.light;
+function impactCells(scorecard, trend) {
   const s = scorecard?.summary;
   const r = s?.repeat_risk_reduction;
-  if (!scorecard) return <Skeleton variant="rounded" width="100%" height={74} />;
-  if (r == null) {
-    return (
-      <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>
-        Prevention impact not measurable yet - close out work orders to start tracking it.
-      </Typography>
-    );
-  }
+  if (r == null) return null;
   const improved = r > 0;
-  const widgets = [
+  return [
     {
       v: `${Math.round(Math.abs(r) * 100)}%`,
       l: improved ? 'fewer repeats' : 'change',
@@ -91,20 +63,34 @@ function ImpactRow({ scorecard }) {
     { v: s.call_outs_avoided, l: 'call-outs avoided', ink: BRAND.heading },
     { v: money(s.est_savings), l: 'est. savings', ink: BRAND.heading },
   ];
+}
 
-  // Horizontal inline list: secondary reinforcement sitting alongside the score, not
-  // a stacked panel competing with it.
+// Percentage change across the window, as a grid cell in the same shape as the
+// prevention figures, so all four align on one baseline grid.
+function trendCell(scores, trend) {
+  if (!scores || scores.length < 2) return null;
+  const first = scores[0], last = scores[scores.length - 1];
+  const delta = last - first;
+  const pct = first > 0 ? Math.round((delta / first) * 100) : null;
+  const rising = delta > 0;
+  return {
+    v: pct == null ? `${delta > 0 ? '+' : ''}${delta}` : `${pct > 0 ? '+' : ''}${pct}%`,
+    l: `${delta === 0 ? 'no change' : rising ? 'worsening' : 'improving'} vs ${scores.length}d ago`,
+    ink: delta === 0 ? trend.neutral : rising ? trend.bad : trend.good,
+    icon: delta === 0 ? TrendingFlatRoundedIcon : rising ? ArrowUpwardRoundedIcon : ArrowDownwardRoundedIcon,
+  };
+}
+
+// One cell of the 2-column micro-grid. Fixed structure - icon slot, figure,
+// caption - so every cell occupies the same shape whatever it holds.
+function StatCell({ cell }) {
   return (
-    <Stack direction="row" spacing={2.5} sx={{ alignItems: 'baseline', flexWrap: 'wrap', rowGap: 1 }}>
-      {widgets.map(w => (
-        <Stack key={w.l} direction="row" spacing={0.5} sx={{ alignItems: 'baseline' }}>
-          {w.icon && <w.icon sx={{ color: w.ink, fontSize: 15, alignSelf: 'center' }} />}
-          <Typography sx={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2, color: w.ink, fontVariantNumeric: 'tabular-nums' }}>
-            {w.v}
-          </Typography>
-          <Typography sx={{ fontSize: 12, color: BRAND.text }}>{w.l}</Typography>
-        </Stack>
-      ))}
+    <Stack direction="row" spacing={0.6} sx={{ alignItems: 'baseline', minWidth: 0 }}>
+      {cell.icon && <cell.icon sx={{ color: cell.ink, fontSize: 16, alignSelf: 'center', flexShrink: 0 }} aria-hidden />}
+      <Typography sx={{ fontSize: 19, fontWeight: 800, lineHeight: 1.1, color: cell.ink, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+        {cell.v}
+      </Typography>
+      <Typography sx={{ fontSize: 12.5, color: BRAND.text, lineHeight: 1.3 }}>{cell.l}</Typography>
     </Stack>
   );
 }
@@ -115,28 +101,46 @@ function ImpactRow({ scorecard }) {
  * Right: a distinct Action Area holding the primary CTA.
  */
 export default function EstateHealthHero({ estateHealth, history = [], loading, pendingEscalations = 0, pendingBlocks = 0, scorecard = null }) {
+  const trend = TREND[useTheme().palette.mode] || TREND.light;
   const meta = HEALTH_META[estateHealth?.status] || HEALTH_META.watch;
   const hasScore = estateHealth != null && typeof estateHealth.score === 'number';
   const score = hasScore ? estateHealth.score : null;
   const scores = history.map(h => h.riskScore).filter(v => typeof v === 'number');
   const animatedScore = useCountUp(score ?? 0, 800);
-  const ink = meta.ink;
   const active = pendingEscalations > 0;
   const level = LEVEL_WORD[estateHealth?.status] || 'Elevated';
 
+  // Trend first, then what past action achieved. Nulls are dropped rather than
+  // rendered as blanks, so the grid never shows an empty cell.
+  const impact = impactCells(scorecard, trend);
+  const cells = [trendCell(scores, trend), ...(impact || [])].filter(Boolean);
+
   return (
-    <Card sx={{ overflow: 'hidden', opacity: loading ? 0.6 : 1, transition: 'opacity .2s' }}>
-      {/* ONE continuous surface. The Action Centre used to be a separate white panel
-          behind its own rule, which read as a second box competing with the index.
-          The CTA now sits top-right of this single banner, so the whole card reads as
-          "risk is high -> here is the one thing to do". */}
-      <Box sx={{ p: { xs: 2.5, md: 3 } }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'flex-start' }, mb: 2 }}
-        >
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+    <Card
+      sx={{
+        overflow: 'hidden', opacity: loading ? 0.6 : 1, transition: 'opacity .2s',
+        // A deliberately heavier edge than the KPI tiles below it. The hero used the
+        // same 1px hairline as every other card, so nothing marked it as the thing to
+        // read first; 2px is enough to rank it without resorting to a tinted fill.
+        border: `2px solid ${BRAND.border}`, borderRadius: '14px',
+      }}
+    >
+      {/* SPLIT PANE. Two columns on one grid: the hook on the left, the conversion
+          point on the right, vertically centred against it. Previously the CTA was
+          pinned to the card's top-right while the score sat lower-left, so the eye
+          had to travel diagonally past the supplementary stats to reach the action. */}
+      <Box
+        sx={{
+          p: { xs: 2.5, md: 3.5 },
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+          columnGap: 4, rowGap: 3,
+          alignItems: 'center',
+        }}
+      >
+        {/* ── LEFT: the hook ─────────────────────────────── */}
+        <Box sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 1.25 }}>
             <Typography
               component="h2"
               sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: BRAND.textLight }}
@@ -151,101 +155,123 @@ export default function EstateHealthHero({ estateHealth, history = [], loading, 
             </Tooltip>
           </Stack>
 
-          {/* Primary CTA, anchored top-right: the globally accessible action. */}
-          <Stack spacing={0.5} sx={{ alignItems: { sm: 'flex-end' }, flexShrink: 0 }}>
-            <Button
-              component={RouterLink}
-              to="/action-queue"
-              variant="contained"
-              endIcon={<ArrowForwardRoundedIcon />}
-              sx={{
-                minHeight: 48, px: 2.5, fontSize: 14.5, fontWeight: 700,
-                width: { xs: '100%', sm: 'auto' },
-                bgcolor: active ? BRAND.action : BRAND.slate,
-                boxShadow: active ? '0 0 0 4px rgba(29,78,216,.12), 0 6px 18px rgba(29,78,216,.35)' : 'none',
-                transition: 'transform .15s ease, box-shadow .15s ease, background-color .15s ease',
-                '&:hover': {
-                  bgcolor: active ? BRAND.actionHover : BRAND.slateHover,
-                  transform: 'translateY(-1px)',
-                  boxShadow: '0 0 0 5px rgba(29,78,216,.16), 0 8px 22px rgba(29,78,216,.42)',
-                },
-                '@keyframes ctaPulse': {
-                  '0%': { boxShadow: '0 0 0 0 rgba(193,39,45,.6)' },
-                  '70%': { boxShadow: '0 0 0 7px rgba(193,39,45,0)' },
-                  '100%': { boxShadow: '0 0 0 0 rgba(193,39,45,0)' },
-                },
-              }}
-            >
-              <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-                {active ? 'Process Escalation Queue' : 'Open Queue'}
-                {active && (
-                  <Box
-                    component="span"
-                    sx={{
-                      px: 0.85, py: '1px', borderRadius: '999px', bgcolor: BRAND.primary, color: '#fff',
-                      fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap',
-                      animation: 'ctaPulse 2s ease-out infinite',
-                    }}
-                  >
-                    {pendingEscalations} Pending
-                  </Box>
-                )}
-              </Box>
-            </Button>
-            <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, textAlign: { sm: 'right' } }}>
-              {active
-                ? `${pendingBlocks > 0 ? `Across ${pendingBlocks} block${pendingBlocks === 1 ? '' : 's'} · ` : ''}AI-flagged, none auto-dispatched`
-                : 'Nothing awaiting approval'}
-            </Typography>
-          </Stack>
-        </Stack>
-
-        <Box>
           {hasScore ? (
             <>
-              {/* No gauge. The score is oversized type with a high-contrast status
-                  pill beside it - the same alert, read in one glance, for roughly a
-                  third of the vertical space a 200px dial was taking. */}
-              <Stack direction="row" spacing={{ xs: 2, md: 4 }} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 2 }}>
-                <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
-                  <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline' }}>
-                    <Typography
-                      sx={{
-                        fontSize: { xs: 56, md: 72 }, fontWeight: 800, lineHeight: 0.95,
-                        color: meta.display, letterSpacing: '-3px', fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {animatedScore}
-                    </Typography>
-                    <Typography sx={{ fontSize: 20, fontWeight: 700, color: BRAND.textLight }}>/ 100</Typography>
-                  </Stack>
-                  <Chip
-                    label={`Risk is ${level} - ${meta.label}`}
+              {/* Score + a colour-coded status indicator, not a solid pill. A filled
+                  red lozenge beside a red number was the same alarm stated twice and
+                  the heaviest object on the page. A rule plus the status word in the
+                  SAME ink as the score reads as one unit, and the words carry the
+                  level so colour is never the only cue. */}
+              <Stack direction="row" spacing={{ xs: 1.5, md: 2 }} sx={{ alignItems: 'center', mb: 2 }}>
+                <Stack direction="row" spacing={0.75} sx={{ alignItems: 'baseline', flexShrink: 0 }}>
+                  <Typography
                     sx={{
-                      bgcolor: ink, color: '#fff', fontWeight: 700, borderRadius: '999px',
-                      fontSize: 13, height: 30, px: 0.75, letterSpacing: '0.2px',
+                      fontSize: { xs: 60, md: 80 }, fontWeight: 800,
+                      // tighter than the type size, so the figure sits compactly
+                      // against the stats beneath instead of floating in leading
+                      lineHeight: 0.82,
+                      color: meta.display, letterSpacing: '-3.5px', fontVariantNumeric: 'tabular-nums',
                     }}
-                  />
-                </Stack>
-
-                <Stack spacing={0.75} sx={{ minWidth: 0 }}>
-                  <TrendPill scores={scores} />
-                  <ImpactRow scorecard={scorecard} />
-                  <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>
-                    {GAUGE_ZONES.healthy.label} &lt;{HEALTHY_MAX} · {GAUGE_ZONES.watch.label} {HEALTHY_MAX}-{WATCH_MAX - 1} · {GAUGE_ZONES.critical.label} {WATCH_MAX}+
+                  >
+                    {animatedScore}
                   </Typography>
+                  <Typography sx={{ fontSize: 20, fontWeight: 700, color: BRAND.textLight }}>/ 100</Typography>
                 </Stack>
+                <Box aria-hidden sx={{ width: 4, alignSelf: 'stretch', my: 0.5, borderRadius: '2px', bgcolor: meta.display, flexShrink: 0 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: meta.display, textTransform: 'uppercase', letterSpacing: '0.6px', lineHeight: 1.25 }}>
+                    Risk {level}
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: BRAND.text, lineHeight: 1.25 }}>{meta.label}</Typography>
+                </Box>
               </Stack>
+
+              {/* Strict 2-column micro-grid: every figure starts on one of two
+                  vertical rails, which is what removes the scattered look. */}
+              {cells.length > 0 ? (
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, columnGap: 3, rowGap: 1.25 }}>
+                  {cells.map(c => <StatCell key={c.l} cell={c} />)}
+                </Box>
+              ) : !scorecard ? (
+                <Skeleton variant="rounded" width="100%" height={56} />
+              ) : (
+                <Typography sx={{ fontSize: 12.5, color: BRAND.textLight }}>
+                  Prevention impact not measurable yet - close out work orders to start tracking it.
+                </Typography>
+              )}
+
+              <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, mt: 1.75 }}>
+                {GAUGE_ZONES.healthy.label} &lt;{HEALTHY_MAX} · {GAUGE_ZONES.watch.label} {HEALTHY_MAX}-{WATCH_MAX - 1} · {GAUGE_ZONES.critical.label} {WATCH_MAX}+
+              </Typography>
             </>
           ) : (
             <Box>
               <Typography sx={{ fontSize: 44, fontWeight: 700, lineHeight: 1.1, color: BRAND.textLight }}>No data</Typography>
               <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.5, maxWidth: 380 }}>
-                No scored data yet — this is not a healthy reading, it is an absent one.
+                No scored data yet - this is not a healthy reading, it is an absent one.
               </Typography>
             </Box>
           )}
         </Box>
+
+        {/* ── RIGHT: the conversion point ─────────────────── */}
+        <Stack spacing={0.75} sx={{ alignItems: { md: 'flex-end' }, flexShrink: 0, width: { xs: '100%', md: 'auto' } }}>
+          <Button
+            component={RouterLink}
+            to="/action-queue"
+            variant="contained"
+            endIcon={<ArrowForwardRoundedIcon />}
+            aria-label={active ? `Process escalation queue, ${pendingEscalations} pending` : 'Open queue'}
+            sx={{
+              // Thicker and deeper. The gradient runs from BRAND.action to its own
+              // hover shade, which reads richer than a flat fill while staying inside
+              // the one action-blue the rest of the app uses - a bespoke hex here
+              // would have put a second blue in the palette.
+              minHeight: 54, px: 3, fontSize: 15, fontWeight: 800, letterSpacing: '0.1px',
+              width: { xs: '100%', md: 'auto' },
+              background: active ? `linear-gradient(180deg, ${BRAND.action} 0%, ${BRAND.actionHover} 100%)` : BRAND.slate,
+              boxShadow: active ? '0 0 0 4px rgba(29,78,216,.12), 0 8px 20px rgba(29,78,216,.38)' : 'none',
+              transition: 'transform .15s ease, box-shadow .15s ease, background .15s ease',
+              '&:hover': {
+                background: active ? `linear-gradient(180deg, ${BRAND.actionHover} 0%, #143A9E 100%)` : BRAND.slateHover,
+                transform: 'translateY(-1px)',
+                boxShadow: active ? '0 0 0 5px rgba(29,78,216,.16), 0 10px 24px rgba(29,78,216,.46)' : 'none',
+              },
+              '@keyframes ctaPulse': {
+                '0%': { boxShadow: '0 0 0 0 rgba(193,39,45,.6)' },
+                '70%': { boxShadow: '0 0 0 6px rgba(193,39,45,0)' },
+                '100%': { boxShadow: '0 0 0 0 rgba(193,39,45,0)' },
+              },
+            }}
+          >
+            <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25 }}>
+              {active ? 'Process Escalation Queue' : 'Open Queue'}
+              {active && (
+                // A true circular count badge, the way an unread counter reads. It
+                // held "9 Pending" before, which made it a wide lozenge that competed
+                // with the button label; the word now lives in the caption below.
+                <Box
+                  component="span"
+                  aria-hidden
+                  sx={{
+                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                    bgcolor: BRAND.primary, color: '#fff',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                    animation: 'ctaPulse 2s ease-out infinite',
+                  }}
+                >
+                  {pendingEscalations}
+                </Box>
+              )}
+            </Box>
+          </Button>
+          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, textAlign: { md: 'right' }, maxWidth: 260 }}>
+            {active
+              ? `${pendingEscalations} pending${pendingBlocks > 0 ? ` across ${pendingBlocks} block${pendingBlocks === 1 ? '' : 's'}` : ''} · AI-flagged, none auto-dispatched`
+              : 'Nothing awaiting approval'}
+          </Typography>
+        </Stack>
       </Box>
     </Card>
   );

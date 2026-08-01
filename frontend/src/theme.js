@@ -73,6 +73,12 @@ export const THEME_TOKENS = {
     '--em-ok-bg': '#E7F4E8', '--em-ok-ink': '#1E6023', '--em-ok-border': '#D6E7D9', '--em-ok-strong': '#1E6023',
     '--em-warn-bg': '#FFF4E5', '--em-warn-ink': '#8A5200', '--em-warn-border': '#F0E2C4', '--em-warn-strong': '#8A5200',
     '--em-danger-bg': '#FDECEA', '--em-danger-ink': '#B3261E', '--em-danger-border': '#F5C2C2', '--em-danger-strong': '#B3261E',
+    // Cell/row TINT, deeper than the chip `-bg`. A chip fill only has to separate
+    // from the card, but a tinted table cell also sits on the zebra stripe and the
+    // row-hover wash - and #FDECEA is 1.04:1 against the stripe, so it vanished
+    // there. Measured: 1.46:1 vs card, 1.33:1 vs stripe, 1.24:1 vs navySoft hover,
+    // with the crimson digit ink #8E1038 still at 6.3:1 on it.
+    '--em-danger-tint': '#F7CBCB',
     '--em-info-bg': '#E8F1FB', '--em-info-ink': '#175CD3', '--em-info-border': '#CFE0F5', '--em-info-strong': '#1D4ED8',
     '--em-neutral-bg': '#EEF2F7', '--em-neutral-ink': '#334E68', '--em-neutral-border': '#DCE3EC',
     // priority rules down a table row's leading edge - graphics, so >=3:1 on the
@@ -96,6 +102,12 @@ export const THEME_TOKENS = {
     '--em-ok-bg': '#14301F', '--em-ok-ink': '#7EE0A3', '--em-ok-border': '#2A5238', '--em-ok-strong': '#6EE7A0',
     '--em-warn-bg': '#3A2A0A', '--em-warn-ink': '#FBBF24', '--em-warn-border': '#574010', '--em-warn-strong': '#FBBF24',
     '--em-danger-bg': '#52201C', '--em-danger-ink': '#FF9A94', '--em-danger-border': '#6E2C27', '--em-danger-strong': '#FF8A80',
+    // Dark inverts the stack - the zebra (#161C26) is DARKER than the card
+    // (#1B222D) - and the navySoft hover (#1C2A3D) is lighter again, so the tint
+    // has to clear backdrops on both sides of the card. #52201C sat at 1.09:1
+    // against that hover and disappeared on it. Measured here: 1.38 / 1.47 / 1.25
+    // vs card / stripe / hover, digit ink #FF8FA8 at 5.4:1.
+    '--em-danger-tint': '#5A2B28',
     '--em-info-bg': '#122740', '--em-info-ink': '#8FBCFF', '--em-info-border': '#24405F', '--em-info-strong': '#93B4FF',
     '--em-neutral-bg': '#232D3A', '--em-neutral-ink': '#AEB9C7', '--em-neutral-border': '#35404F',
     '--em-prio-critical': '#F0736B', '--em-prio-high': '#E8695F', '--em-prio-medium': '#F0B33C', '--em-prio-low': '#7D8CA3',
@@ -128,7 +140,7 @@ export const STATUS_META = {
 export const INTENT = {
   success: { bg: 'var(--em-ok-bg)', ink: 'var(--em-ok-ink)', solid: '#2E7D32', border: 'var(--em-ok-border)' },
   warning: { bg: 'var(--em-warn-bg)', ink: 'var(--em-warn-ink)', solid: '#ED9B00', border: 'var(--em-warn-border)' },
-  danger: { bg: 'var(--em-danger-bg)', ink: 'var(--em-danger-ink)', solid: '#B3261E', border: 'var(--em-danger-border)' },
+  danger: { bg: 'var(--em-danger-bg)', ink: 'var(--em-danger-ink)', solid: '#B3261E', border: 'var(--em-danger-border)', tint: 'var(--em-danger-tint)' },
   neutral: { bg: 'var(--em-neutral-bg)', ink: 'var(--em-neutral-ink)', solid: '#64748B', border: 'var(--em-neutral-border)' },
 };
 
@@ -182,7 +194,11 @@ export const CHART = {
     categorical: ['#2a78d6', '#7c4dff', '#00838f', '#c2185b', '#546e7a'],
     series: { primary: '#2a78d6', secondary: '#eb6834' }, // activity chart: cases vs sightings
     grid: '#EEEEF0',
-    axis: '#898781',
+    // Axis TICK LABELS are text, so they answer to the 4.5:1 bar, not the 3:1
+    // graphics one. #898781 measured 3.59:1 on the white card - a real AA failure
+    // on every chart that used it. #61605C is 6.30:1 and stays in the same warm
+    // grey family, so nothing else about the chart's temperature changes.
+    axis: '#61605C',
     ramp: ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf'], // sequential blue (magnitude)
   },
   dark: {
@@ -197,6 +213,55 @@ export const CHART = {
 // the pre-reshape flat keys (CHART.categorical, CHART.ramp, ...). Those files are
 // out of scope to edit, so the light values stay reachable at the old paths.
 Object.assign(CHART, CHART.light);
+
+/**
+ * SENSOR_RAMP - the SIMULATED sensor surface only.
+ *
+ * This is the standard NWS/NEXRAD reflectivity scale, adopted DELIBERATELY at
+ * the client's request so the surface reads exactly like a weather radar image.
+ * Same values in both schemes: a radar scale is absolute, not theme-relative,
+ * and the basemap auto-darkens whenever this layer is on.
+ *
+ * ---------------------------------------------------------------------------
+ * DOCUMENTED EXCEPTION TO THE LOCKED RULE BELOW, AND ITS COST.
+ *
+ * The locked rule reserves red/amber/green for STATUS. This ramp breaks it on
+ * purpose, and the cost is real and known: the rodent pins drawn ON TOP of this
+ * surface use medium #F59E0B, high #EF4444 and critical #B91C1C, so the hot end
+ * of this ramp is close to the colours that mean "real critical report".
+ *
+ * Mitigation, which must survive any restyle: every rodent/feeding pin carries a
+ * heavy white halo (see makeIcon/rodentIcon in RodentRiskMap.jsx) so a discrete
+ * REAL report stays separable from a hot SIMULATED band behind it. The four
+ * "Simulated sensor data" labels (toggle, caption, banner, legend) are what
+ * carry the honesty guarantee - they are not optional and never were.
+ *
+ * If a future reader is tempted to reuse this ramp for anything else: don't.
+ * It is scoped to one simulated layer precisely because it spends the status
+ * hues, and no other surface can afford that.
+ * ---------------------------------------------------------------------------
+ */
+const NEXRAD_REFLECTIVITY = [
+  '#04E9E7', // cyan      - lightest activity
+  '#019FF4', // light blue
+  '#0300F4', // blue
+  '#02FD02', // green
+  '#01C501', // green
+  '#008E00', // dark green
+  '#FDF802', // yellow
+  '#E5BC00', // dark yellow
+  '#FD9500', // orange
+  '#FD0000', // red
+  '#D40000', // dark red
+  '#BC0000', // darker red
+  '#F800FD', // magenta   - extreme
+  '#9854C6', // purple
+  '#FDFDFD', // white     - most intense
+];
+export const SENSOR_RAMP = {
+  light: NEXRAD_REFLECTIVITY,
+  dark: NEXRAD_REFLECTIVITY,
+};
 
 // Categorical identity colours, per scheme. LOCKED RULE: none of these may use the
 // semantic hues (red/amber/green) - those are reserved for status only, so a
