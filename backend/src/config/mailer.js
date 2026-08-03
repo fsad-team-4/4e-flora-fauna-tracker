@@ -14,11 +14,9 @@ async function getTransporter() {
     transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      family: 4,   // force IPv4 - Render free tier can't route IPv6 outbound
     });
     usingEthereal = false;
     console.log('Mailer: using SMTP host', process.env.SMTP_HOST);
