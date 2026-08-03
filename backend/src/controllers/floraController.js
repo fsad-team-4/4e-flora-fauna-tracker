@@ -40,6 +40,7 @@ const createSchema = yup.object({
   species: yup.string().required().trim(),
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
+  location: yup.string().trim(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -58,6 +59,7 @@ const updateSchema = yup.object({
   species: yup.string().trim(),
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
+  location: yup.string().trim(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -100,6 +102,9 @@ async function getAllGreenery(req, res) {
   if (req.query.site_suitability) {
     where.site_suitability = { [Op.substring]: req.query.site_suitability };
   }
+  if (req.query.location) {
+    where.location = { [Op.substring]: req.query.location };
+  }
   if (req.query.color) {
     where.color = req.query.color;
   }
@@ -126,6 +131,7 @@ async function createGreenery(req, res) {
     species: data.species,
     common_name: data.common_name,
     location_zone: data.location_zone,
+    location: data.location,
     health_status: data.health_status,
     health_notes: data.health_notes,
     plant_family: data.plant_family,
