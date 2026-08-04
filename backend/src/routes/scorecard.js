@@ -9,7 +9,7 @@ const { computeScorecard } = require('../services/preventionScorecard');
 const router = express.Router();
 router.use(protect);
 
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const assessments = await RodentAssessment.findAll({
       where: { is_deleted: false },

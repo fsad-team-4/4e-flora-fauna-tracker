@@ -18,7 +18,7 @@ const ONEMAP_SEARCH = 'https://www.onemap.gov.sg/api/common/elastic/search';
 const router = express.Router();
 router.use(protect);
 
-router.get('/search', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/search', restrictTo('manager', 'field_officer'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   // Two characters matches half of Singapore; the officer is still typing.
   if (q.length < 3) return res.json({ query: q, results: [] });

@@ -139,7 +139,7 @@ function blockLabel(block) {
 }
 
 // GET /queue - pending escalations grouped by block, most urgent first.
-router.get('/queue', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/queue', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rows = await RodentAssessment.findAll({
       where: PENDING_WHERE,
@@ -198,7 +198,7 @@ router.get('/queue', restrictTo('admin', 'staff'), async (req, res) => {
 // GET / - raised work orders (audit history).
 // ?status= accepts any pipeline stage; 'open' is kept as a legacy alias meaning
 // "not closed", so existing callers keep working after the open/closed change.
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const where = { is_deleted: false };
     const q = req.query.status;
@@ -253,7 +253,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // GET /:id - one work order with its consolidated assessments
-router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -283,7 +283,7 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
 // This is the human approval step: nothing here runs without an officer's call.
 // Approving commits money, so this is admin-only. Officers (staff) see
 // everything and move the non-financial stages via PATCH /:id/stage.
-router.post('/', restrictTo('admin'), validateBody(approveSchema), async (req, res) => {
+router.post('/', restrictTo('manager'), validateBody(approveSchema), async (req, res) => {
   const { assessment_ids, dispatch, notes, target_agency } = req.body;
   try {
     // only consolidate assessments that are genuinely still pending - guards
@@ -399,7 +399,7 @@ router.post('/', restrictTo('admin'), validateBody(approveSchema), async (req, r
 
 // POST /dismiss - officer reviews a cluster and decides no call-out is warranted
 // (false alarm, will monitor, etc). Records the decision as an audit trail.
-router.post('/dismiss', restrictTo('admin', 'staff'), validateBody(dismissSchema), async (req, res) => {
+router.post('/dismiss', restrictTo('manager', 'field_officer'), validateBody(dismissSchema), async (req, res) => {
   const { assessment_ids, note } = req.body;
   try {
     const [count] = await RodentAssessment.update(
@@ -420,7 +420,7 @@ router.post('/dismiss', restrictTo('admin', 'staff'), validateBody(dismissSchema
 
 // POST /undismiss - reverse a dismissal (the "Undo" affordance), putting the
 // reports back in the pending queue and clearing the decision audit.
-router.post('/undismiss', restrictTo('admin', 'staff'), validateBody(undismissSchema), async (req, res) => {
+router.post('/undismiss', restrictTo('manager', 'field_officer'), validateBody(undismissSchema), async (req, res) => {
   const { assessment_ids } = req.body;
   try {
     const [count] = await RodentAssessment.update(
@@ -443,7 +443,7 @@ router.post('/undismiss', restrictTo('admin', 'staff'), validateBody(undismissSc
  * stage is committed and its true outcome is returned - a mail failure never
  * rolls back a stage that genuinely happened.
  */
-router.patch('/:id/stage', restrictTo('admin', 'staff'), validateBody(stageSchema), async (req, res) => {
+router.patch('/:id/stage', restrictTo('manager', 'field_officer'), validateBody(stageSchema), async (req, res) => {
   const { stage, note, scheduled_for, at } = req.body;
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
@@ -482,7 +482,7 @@ router.patch('/:id/stage', restrictTo('admin', 'staff'), validateBody(stageSchem
  * staff + admin: drafting text costs nothing. Raising the work order is the
  * financial act, and that stays restricted at POST /.
  */
-router.post('/briefing/draft', restrictTo('admin', 'staff'), validateBody(briefingDraftSchema), async (req, res) => {
+router.post('/briefing/draft', restrictTo('manager', 'field_officer'), validateBody(briefingDraftSchema), async (req, res) => {
   try {
     const items = await RodentAssessment.findAll({
       where: { id: { [Op.in]: req.body.assessment_ids }, is_deleted: false },
@@ -543,7 +543,7 @@ router.post('/briefing/draft', restrictTo('admin', 'staff'), validateBody(briefi
  * carries the true outcome and a failure shows as failed - the UI only ever
  * renders "sent HH:MM" off a row that actually sent.
  */
-router.post('/briefing/send', restrictTo('admin', 'staff'), validateBody(briefingSendSchema), async (req, res) => {
+router.post('/briefing/send', restrictTo('manager', 'field_officer'), validateBody(briefingSendSchema), async (req, res) => {
   try {
     const { body, block, assessment_ids, recipient, risk_level } = req.body;
     const to = (recipient && recipient.trim()) || CONTRACTOR_EMAIL;
@@ -577,7 +577,7 @@ router.post('/briefing/send', restrictTo('admin', 'staff'), validateBody(briefin
 
 // PATCH /:id/close - closing terminates a paid engagement, so it stays admin.
 // Delegates to the same stage machine so it is logged like every other scan.
-router.patch('/:id/close', restrictTo('admin'), async (req, res) => {
+router.patch('/:id/close', restrictTo('manager'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -602,7 +602,7 @@ router.patch('/:id/close', restrictTo('admin'), async (req, res) => {
  * untouched and the response names which photos were not stored, so the UI can
  * say so rather than render a broken image.
  */
-router.post('/:id/photos', restrictTo('admin', 'staff'), validateBody(photoSchema), async (req, res) => {
+router.post('/:id/photos', restrictTo('manager', 'field_officer'), validateBody(photoSchema), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -655,7 +655,7 @@ router.post('/:id/photos', restrictTo('admin', 'staff'), validateBody(photoSchem
  * Drafts ONLY. It saves the text on the work order for a human to review and
  * edit; it never emails anyone and is not on the dispatch path.
  */
-router.post('/:id/briefing', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/:id/briefing', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });

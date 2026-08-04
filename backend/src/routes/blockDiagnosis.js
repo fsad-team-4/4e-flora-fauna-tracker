@@ -12,7 +12,7 @@ const { computeFeedingRodentCorrelation } = require('../services/blockDiagnosis'
 const router = express.Router();
 router.use(protect);
 
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     // reviewer can widen/narrow the co-occurrence window, clamped to something sane
     const windowDays = Math.min(90, Math.max(7, parseInt(req.query.windowDays) || 30));

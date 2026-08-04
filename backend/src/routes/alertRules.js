@@ -11,7 +11,7 @@ const router = express.Router();
 router.use(protect);
 
 // list - admin and staff can read
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rules = await AlertRule.findAll({
       where: { is_deleted: false },
@@ -30,7 +30,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 // backfilled or a rule is renamed.
 //
 // MUST stay above '/:id', or Express matches 'activity' as an id.
-router.get('/activity', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/activity', restrictTo('manager', 'field_officer'), async (req, res) => {
   const hours = Math.min(Math.max(parseInt(req.query.hours) || 24, 1), 720);
   try {
     const now = Date.now();
@@ -111,7 +111,7 @@ router.get('/activity', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // get one
-router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },
@@ -125,7 +125,7 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // create - admin only
-router.post('/', restrictTo('admin'), async (req, res) => {
+router.post('/', restrictTo('manager'), async (req, res) => {
   const validation = validateRuleInput(req.body);
   if (!validation.valid) {
     return res.status(400).json({ error: validation.error });
@@ -154,7 +154,7 @@ router.post('/', restrictTo('admin'), async (req, res) => {
 });
 
 // update - admin only
-router.patch('/:id', restrictTo('admin'), async (req, res) => {
+router.patch('/:id', restrictTo('manager'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },
@@ -184,7 +184,7 @@ router.patch('/:id', restrictTo('admin'), async (req, res) => {
 });
 
 // soft delete - admin only
-router.delete('/:id', restrictTo('admin'), async (req, res) => {
+router.delete('/:id', restrictTo('manager'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },

@@ -20,7 +20,7 @@ router.use(protect);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const windowDays = Math.min(90, Math.max(1, parseInt(req.query.windowDays) || 30));
     // Cap follows MAX_GRID in the service: the surface is contoured client-side,

@@ -34,7 +34,7 @@ const csvCell = v => {
 };
 
 // list with optional status filter + date-range + pagination
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 2000);
   const offset = parseInt(req.query.offset) || 0;
   try {
@@ -61,7 +61,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // count for the dashboard kpi
-router.get('/recent-count', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/recent-count', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const count = await NotificationLog.count({
@@ -75,7 +75,7 @@ router.get('/recent-count', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // reliability snapshot for the KPI strip
-router.get('/stats', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/stats', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     res.json(await buildStats());
   } catch (err) {
@@ -86,7 +86,7 @@ router.get('/stats', restrictTo('admin', 'staff'), async (req, res) => {
 
 // CSV export (Excel-compatible) of the dispatch log - the audit record a town
 // council needs, and a bridge into their SharePoint/Excel workflow.
-router.get('/export', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/export', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rows = await NotificationLog.findAll({
       where: buildWhere(req.query),
@@ -114,7 +114,7 @@ router.get('/export', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // re-attempt a dispatch through nodemailer (with critical-alert fallback)
-router.post('/:id/resend', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/:id/resend', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const result = await resend(req.params.id, req.user);
     if (result.error) return res.status(result.code || 400).json({ error: result.error });
@@ -126,7 +126,7 @@ router.post('/:id/resend', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // bulk resend every unresolved failure (the banner's one-click "Resend all")
-router.post('/resend-failed', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/resend-failed', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     res.json(await resendAllFailed());
   } catch (err) {
@@ -136,7 +136,7 @@ router.post('/resend-failed', restrictTo('admin', 'staff'), async (req, res) => 
 });
 
 // close the loop: mark that the notification was acted on
-router.post('/:id/acknowledge', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/:id/acknowledge', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const row = await NotificationLog.findByPk(req.params.id);
     if (!row) return res.status(404).json({ error: 'not found' });
@@ -153,7 +153,7 @@ router.post('/:id/acknowledge', restrictTo('admin', 'staff'), async (req, res) =
 });
 
 // reverse an acknowledgement (the "Undo" affordance)
-router.post('/:id/unacknowledge', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/:id/unacknowledge', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const row = await NotificationLog.findByPk(req.params.id);
     if (!row) return res.status(404).json({ error: 'not found' });

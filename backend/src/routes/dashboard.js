@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(protect);
 
 // metrics - admin and staff see full estate, residents denied
-router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/metrics', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const flora = mock.getFloraRecords();
     const sightings = mock.getFaunaSightings();
@@ -157,7 +157,7 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // trigger summary - admin only (the live demo button)
-router.post('/trigger-summary', aiLimiter, restrictTo('admin'), async (req, res) => {
+router.post('/trigger-summary', aiLimiter, restrictTo('manager'), async (req, res) => {
   try {
     const result = await sendWeeklySummary(req.user.user_id);
     res.json(result);
