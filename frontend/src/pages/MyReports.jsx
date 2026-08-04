@@ -49,7 +49,7 @@ export default function MyReports() {
                   {CATEGORY_LABELS[report.category] || report.category}
                 </Typography>
                 {report.block_number && (
-                  <Typography variant="body2">Block: {report.block_number}</Typography>
+                  <Typography variant="body2">{report.block_number}</Typography>
                 )}
                 <Typography variant="caption" color="text.secondary">
                   {new Date(report.createdAt).toLocaleString()}

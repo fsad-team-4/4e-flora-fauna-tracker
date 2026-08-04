@@ -15,12 +15,12 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { sequelize, User, GreeneryRecord } = require('./models');
 
-// recorded_by is a required FK, so the seed guarantees a staff account exists.
+// recorded_by is a required FK, so the seed guarantees a field_officer account exists.
 // Keyed on email: if the account already exists it is reused untouched.
 const SEED_USER = {
   email: 'staff@emservices.com.sg',
   name: 'Estate Officer',
-  role: 'staff',
+  role: 'field_officer',
   password: 'demo1234',
 };
 
@@ -433,7 +433,7 @@ const GREENERY = [
 async function seed() {
   await sequelize.sync();
 
-  // ensure a staff account exists to own the records; never overwrites an
+  // ensure a field_officer account exists to own the records; never overwrites an
   // existing user with this email
   const [staff] = await User.findOrCreate({
     where: { email: SEED_USER.email },

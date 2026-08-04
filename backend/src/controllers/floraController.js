@@ -8,12 +8,12 @@ const floraQueryService = require('../services/floraQueryService');
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
 
-// Rule-based notification: email all staff/admin when a plant's health becomes
+// Rule-based notification: email all field_officer/manager users when a plant's health becomes
 // at_risk or critical. Fire-and-forget - sendMail swallows its own errors, so
 // callers don't await this and the request returns without waiting on SMTP.
 async function sendHealthAlert(record) {
   const recipients = await User.findAll({
-    where: { role: { [Op.in]: ['staff', 'admin'] } },
+    where: { role: { [Op.in]: ['field_officer', 'manager'] } },
     attributes: ['email'],
   });
   if (recipients.length === 0) return;

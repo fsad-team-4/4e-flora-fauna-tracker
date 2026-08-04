@@ -38,7 +38,9 @@ function Home() {
         Welcome back, {user.name}
       </Typography>
       <Typography color="text.secondary">
-        Use the navigation above to submit or manage reports.
+        {user.role === 'welfare_partner'
+          ? 'Use the navigation above to log and view fauna sightings in your assigned zones.'
+          : 'Use the navigation above to submit or manage reports.'}
       </Typography>
     </Box>
   )
@@ -91,20 +93,30 @@ function NavBar() {
         {/* nav links */}
         {user && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, ml: 3 }}>
-            <NavLinkButton to="/submit-report">Submit Report</NavLinkButton>
-            <NavLinkButton to="/reports">My Reports</NavLinkButton>
-            {(user.role === 'staff' || user.role === 'admin') && (
+            {user.role === 'welfare_partner' ? (
+              /* welfare partners work fauna sightings only - no report links */
               <>
-                <NavLinkButton to="/all-reports">All Reports</NavLinkButton>
-                <NavLinkButton to="/flora">Flora</NavLinkButton>
-                <NavLinkButton to="/handbook">Handbook</NavLinkButton>
-                <NavLinkButton to="/dashboard">Dashboard</NavLinkButton>
-                <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
-                <NavLinkButton to="/notif-log">Log</NavLinkButton>
-                <NavLinkButton to="/rodent">Rodent</NavLinkButton>
                 <NavLinkButton to="/fauna">Fauna Sightings</NavLinkButton>
                 <NavLinkButton to="/fauna/log">Log Sighting</NavLinkButton>
-                <NavLinkButton to="/fauna/hotspots">Fauna Hotspots</NavLinkButton>
+              </>
+            ) : (
+              <>
+                <NavLinkButton to="/submit-report">Submit Report</NavLinkButton>
+                <NavLinkButton to="/reports">My Reports</NavLinkButton>
+                {(user.role === 'field_officer' || user.role === 'manager') && (
+                  <>
+                    <NavLinkButton to="/all-reports">All Reports</NavLinkButton>
+                    <NavLinkButton to="/flora">Flora</NavLinkButton>
+                    <NavLinkButton to="/handbook">Handbook</NavLinkButton>
+                    <NavLinkButton to="/dashboard">Dashboard</NavLinkButton>
+                    <NavLinkButton to="/alert-rules">Alerts</NavLinkButton>
+                    <NavLinkButton to="/notif-log">Log</NavLinkButton>
+                    <NavLinkButton to="/rodent">Rodent</NavLinkButton>
+                    <NavLinkButton to="/fauna">Fauna Sightings</NavLinkButton>
+                    <NavLinkButton to="/fauna/log">Log Sighting</NavLinkButton>
+                    <NavLinkButton to="/fauna/hotspots">Fauna Hotspots</NavLinkButton>
+                  </>
+                )}
               </>
             )}
           </Box>
@@ -159,20 +171,21 @@ function App() {
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
 
-            {/* staff + admin only */}
-            <Route path="/all-reports" element={<ProtectedRoute roles={['staff', 'admin']}><AllReports /></ProtectedRoute>} />
-            <Route path="/flora" element={<ProtectedRoute roles={['staff', 'admin']}><FloraList /></ProtectedRoute>} />
-            <Route path="/flora/add" element={<ProtectedRoute roles={['staff', 'admin']}><AddFlora /></ProtectedRoute>} />
-            <Route path="/flora/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FloraDetail /></ProtectedRoute>} />
-            <Route path="/handbook" element={<ProtectedRoute roles={['staff', 'admin']}><HorticultureHandbook /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute roles={['staff', 'admin']}><Dashboard /></ProtectedRoute>} />
-            <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
-            <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
-            <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
-            <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
-            <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
-            <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
-            <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
+            {/* field_officer + manager only */}
+            <Route path="/all-reports" element={<ProtectedRoute roles={['field_officer', 'manager']}><AllReports /></ProtectedRoute>} />
+            <Route path="/flora" element={<ProtectedRoute roles={['field_officer', 'manager']}><FloraList /></ProtectedRoute>} />
+            <Route path="/flora/add" element={<ProtectedRoute roles={['field_officer', 'manager']}><AddFlora /></ProtectedRoute>} />
+            <Route path="/flora/:id" element={<ProtectedRoute roles={['field_officer', 'manager']}><FloraDetail /></ProtectedRoute>} />
+            <Route path="/handbook" element={<ProtectedRoute roles={['field_officer', 'manager']}><HorticultureHandbook /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute roles={['field_officer', 'manager']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/alert-rules" element={<ProtectedRoute roles={['field_officer', 'manager']}><AlertRules /></ProtectedRoute>} />
+            <Route path="/notif-log" element={<ProtectedRoute roles={['field_officer', 'manager']}><NotificationLog /></ProtectedRoute>} />
+            <Route path="/rodent" element={<ProtectedRoute roles={['field_officer', 'manager']}><RodentAssessment /></ProtectedRoute>} />
+            {/* fauna sightings are also open to welfare_partner, zone-filtered server-side */}
+            <Route path="/fauna" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaSightings /></ProtectedRoute>} />
+            <Route path="/fauna/log" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaLogSighting /></ProtectedRoute>} />
+            <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['field_officer', 'manager']}><FaunaHotspots /></ProtectedRoute>} />
+            <Route path="/fauna/:id" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaSightingDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
       </BrowserRouter>

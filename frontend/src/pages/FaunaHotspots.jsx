@@ -164,7 +164,7 @@ export default function FaunaHotspots() {
                       <Typography variant="body2">Behaviour: {s.behaviour_tags.join(', ')}</Typography>
                     )}
                     {s.floor_level && <Typography variant="body2">Floor: {s.floor_level}</Typography>}
-                    {s.block_number && <Typography variant="body2">Block: {s.block_number}</Typography>}
+                    {s.block_number && <Typography variant="body2">{s.block_number}</Typography>}
                     <Typography variant="caption">{new Date(s.createdAt).toLocaleString()}</Typography>
                   </Tooltip>
                   <Popup>
@@ -173,7 +173,7 @@ export default function FaunaHotspots() {
                       <Typography variant="body2">Behaviour: {s.behaviour_tags.join(', ')}</Typography>
                     )}
                     {s.floor_level && <Typography variant="body2">Floor: {s.floor_level}</Typography>}
-                    {s.block_number && <Typography variant="body2">Block: {s.block_number}</Typography>}
+                    {s.block_number && <Typography variant="body2">{s.block_number}</Typography>}
                     <Typography variant="caption">{new Date(s.createdAt).toLocaleString()}</Typography>
                   </Popup>
                 </Marker>
@@ -192,7 +192,7 @@ export default function FaunaHotspots() {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <LocationOnIcon fontSize="small" color="action" />
-                      <Typography variant="h6">Block {hotspot.block_number}</Typography>
+                      <Typography variant="h6">{hotspot.block_number}</Typography>
                     </Box>
                     <Chip label={`${hotspot.total} total`} size="small" />
                   </Box>
