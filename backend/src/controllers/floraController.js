@@ -223,6 +223,7 @@ async function bulkUploadCSV(req, res) {
       const record = await GreeneryRecord.create({
         species: data.species,
         common_name: data.common_name,
+        location: data.location,
         location_zone: data.location_zone,
         health_status: data.health_status,
         health_notes: data.health_notes,
