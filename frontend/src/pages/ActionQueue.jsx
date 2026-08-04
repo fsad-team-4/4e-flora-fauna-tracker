@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import {
   Box, Typography, Button, Chip, Stack, Checkbox, CircularProgress, Alert,
   Tooltip, Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   FormControlLabel, IconButton, Breadcrumbs, Link, InputAdornment,
-  Select, MenuItem, Table, TableBody, TableCell, TableHead, TableRow,
+  Select, MenuItem, Table, TableBody, TableCell, TableHead, TableRow, useMediaQuery,
   TableContainer, TableSortLabel, Drawer, Skeleton, LinearProgress,
   ToggleButton, ToggleButtonGroup, Paper,
 } from '@mui/material';
@@ -129,13 +131,49 @@ function CardMeta({ icon: Icon, children, strong = false }) {
   );
 }
 
+/**
+ * Priority badge - TINTED at every level, with the ink carrying the urgency.
+ *
+ * Critical and High were briefly given solid fills with white text. On a card that was
+ * wrong, and for a specific reason: the card's identifier is the block number, and a
+ * solid red block beside it out-weighed the very thing the card is FOR. The badge became
+ * the loudest object on a card whose job is to say "Block 125".
+ *
+ * CRITICAL is the one exception and it is now solid, with a warning glyph. Solid was
+ * tried on critical AND high and was correctly called too heavy - two saturated badges per
+ * card is a lot - but at the very top of the scale the weight is the point, and one solid
+ * badge per screen does not flatten anything. The glyph is redundant encoding: the level
+ * then survives shape, word and colour independently, which is what the accessibility note
+ * was really after (the word was always there, so it never rested on colour alone).
+ *
+ * Below critical the fill stays a tint, and the differentiation is a 1px border in the
+ * level's own `accent`.
+ *
+ * That border is doing more than decoration. Critical and High share the SAME `bg` and
+ * the SAME `ink` in the PRIORITY table above - both are the danger pair - so until now
+ * the only thing distinguishing a Critical badge from a High one was the word inside it.
+ * `accent` differs per level (#B3261E vs #D9463C on light), so the hairline is what makes
+ * the two readable as different at a glance. The word still carries it for anyone who
+ * cannot separate the hues.
+ */
 function PriorityChip({ level, size = 'small' }) {
   const m = prio(level);
+  const isCritical = String(level).toLowerCase() === 'critical';
   return (
     <Chip
       label={m.label}
       size={size}
-      sx={{ bgcolor: m.bg, color: m.ink, fontWeight: 700, borderRadius: '6px', height: 22, fontSize: 12 }}
+      variant={isCritical ? 'filled' : 'outlined'}
+      icon={isCritical
+        ? <ReportProblemOutlinedIcon sx={{ fontSize: 14, color: 'inherit !important' }} />
+        : undefined}
+      sx={{
+        bgcolor: isCritical ? m.accent : m.bg,
+        color: isCritical ? '#fff' : m.ink,
+        borderColor: isCritical ? 'transparent' : m.accent,
+        fontWeight: 700, borderRadius: '6px', height: 22, fontSize: 12,
+        '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
+      }}
     />
   );
 }
@@ -217,31 +255,33 @@ const RANGES = [
  * priority the card claims to represent - pressing "7 Urgent" must actually show
  * seven rows, or the card is lying.
  */
+/**
+ * The four summary cards, as MASTER FILTERS.
+ *
+ * These came back after being stripped to plain labels: the counts are wanted, but as a
+ * high-level overview above the grid rather than as pills competing with the search bar.
+ *
+ * FOUR CARDS, FOUR REAL TABS. The brief listed Pending / Critical / In Progress / Est.
+ * Savings, but savings is a METRIC, not a filter - a card you cannot click sitting in a
+ * row of cards you can is a dead control. So Completed takes the fourth slot (it is also
+ * the only route to closed work orders, which nothing else in the UI reaches) and the
+ * savings figure rides on it as a sub-line, which is where it comes from anyway:
+ * consolidation savings are realised when orders close.
+ *
+ * `tab` and `priority` are what each card actually sets, declared here so the mapping is
+ * readable in one place instead of living in an if-chain.
+ */
 const KPI_CARDS = [
-  {
-    key: 'urgent',
-    label: 'Urgent',
-    ink: 'var(--em-prio-critical)',
-    value: ({ urgentCount }) => urgentCount,
-  },
-  {
-    key: 'action',
-    label: 'Requires action',
-    ink: 'var(--em-prio-high)',
-    value: ({ pending }) => pending,
-  },
-  {
-    key: 'done',
-    label: 'Completed',
-    ink: 'var(--em-ok-strong)',
-    value: ({ orders }) => (orders?.done?.length ?? 0),
-  },
+  { key: 'action', label: 'Total pending', hint: 'Awaiting approval', tab: 'pending', priority: 'all' },
+  { key: 'urgent', label: 'Critical actions', hint: 'High or critical risk', tab: 'pending', priority: 'critical', tone: 'danger' },
+  { key: 'progress', label: 'In progress', hint: 'Raised, not yet closed', tab: 'open', priority: 'all' },
+  { key: 'done', label: 'Completed', hint: 'Work finished or closed', tab: 'closed', priority: 'all', tone: 'ok' },
 ];
 
 function CommandCentre({
-  urgentCount, q, setQ, priority, setPriority,
+  q, setQ, priority, setPriority,
   range, setRange, sort, setSort, sortOptions, primary, onExport, view, onView,
-  kpiFilter, applyKpiFilter, boardPending, boardOrders,
+  kpiFilter, applyKpiFilter, kpiValues,
 }) {
   return (
     <>
@@ -250,56 +290,85 @@ function CommandCentre({
           line of supporting text and the title now names the page. */}
       {/* Header AND toolbar stick as one unit, so the primary action and the
           filters both survive a scroll through a long queue. */}
-      <Box sx={{ position: 'sticky', top: 0, zIndex: 20, bgcolor: BRAND.surface, px: { xs: 2, md: 3 }, pt: 2.25, pb: 1.5 }}>
+      {/* The header is a contained surface, not a transparent band: a soft permanent
+          shadow grounds it as a "glass ceiling" over the scrolling queue. */}
+      <Box
+        sx={{
+          position: 'sticky', top: 0, zIndex: 20, bgcolor: BRAND.surface,
+          px: { xs: 2, md: 3 }, pt: 2, pb: 1.25,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+        }}
+      >
         <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', rowGap: 1.5 }}>
           <Box sx={{ minWidth: 0 }}>
-            <Typography component="h1" sx={{ fontSize: { xs: 19, md: 21 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.3px', lineHeight: 1.25 }}>
+            {/* Breadcrumb above the title, muted and small. It tightens the vertical
+                space rather than adding to it - the greeting line it replaces was doing
+                the same job less precisely - and it tells an officer which part of the
+                system they are in, which the drawer-heavy flows otherwise hide. */}
+            <Stack direction="row" spacing={0.6} sx={{ alignItems: 'center', mb: 0.4 }}>
+              <Box component={RouterLink} to="/dashboard" sx={{ fontSize: 12, color: BRAND.textLight, textDecoration: 'none', '&:hover': { color: BRAND.action, textDecoration: 'underline' } }}>
+                Workspace
+              </Box>
+              <Typography aria-hidden sx={{ fontSize: 12, color: BRAND.border }}>/</Typography>
+              <Typography sx={{ fontSize: 12, color: BRAND.text, fontWeight: 600 }}>Action Queue</Typography>
+            </Stack>
+            <Typography component="h1" sx={{ fontSize: { xs: 21, md: 24 }, fontWeight: 800, color: BRAND.ink, letterSpacing: '-0.5px', lineHeight: 1.2 }}>
               Action Queue
             </Typography>
 
-            {/* INLINE INSIGHT STRIP.
-                These were three bordered cards eating a band of the viewport to
-                show three integers. Same figures, same click-to-filter, as a
-                borderless row of pills - the queue itself starts ~15% higher up.
-                The dot is a graphic, so the count and label carry the meaning too. */}
-            <Stack direction="row" spacing={0.5} sx={{ mt: 1, flexWrap: 'wrap', rowGap: 0.75 }}>
-              {KPI_CARDS.map(card => {
-                const active = kpiFilter === card.key;
-                const value = card.value({ urgentCount, pending: boardPending.length, orders: boardOrders });
-                return (
-                  <Stack
-                    key={card.key}
-                    component="button"
-                    type="button"
-                    direction="row"
-                    spacing={0.75}
-                    aria-pressed={active}
-                    onClick={() => applyKpiFilter(card.key)}
-                    sx={{
-                      alignItems: 'center', font: 'inherit', cursor: 'pointer',
-                      px: 1.25, py: 0.5, borderRadius: '999px', border: 0,
-                      bgcolor: active ? BRAND.navySoft : 'transparent',
-                      '&:hover': { bgcolor: active ? BRAND.navySoft : BRAND.section },
-                      '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
-                    }}
-                  >
-                    <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: card.ink, flexShrink: 0 }} />
-                    <Typography component="span" sx={{ fontSize: 14, fontWeight: 800, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
-                      {value}
-                    </Typography>
-                    <Typography component="span" sx={{ fontSize: 13, color: BRAND.text, fontWeight: active ? 700 : 500 }}>
-                      {card.label}
-                    </Typography>
-                  </Stack>
-                );
-              })}
-              {kpiFilter && (
-                <Button size="small" onClick={() => applyKpiFilter(kpiFilter)} sx={{ textTransform: 'none', color: BRAND.textLight, fontSize: 12.5, minWidth: 0 }}>
-                  Clear
-                </Button>
-              )}
-            </Stack>
           </Box>
+
+          {/* ── HEADER METRIC BAR ──────────────────────────────────────────────
+              The summary figures live in the header now, compact, between the title and
+              the CTA - so they are secondary to the primary action by position rather than
+              by being hidden. Each carries a left accent in its own colour.
+
+              It doubles as the queue's TAB CONTROL, which is why it is here in both views
+              rather than list-only: `rows` is `tab === 'pending' ? pendingRows : orderRows`,
+              so list needs it, and putting it in the header means one implementation
+              instead of one per view. On the board the counts do repeat the column headers
+              - that redundancy is accepted deliberately in exchange for the figures being
+              in a fixed, predictable place. */}
+        <Stack
+          direction="row"
+          role="tablist"
+          aria-label="Queue"
+          sx={{ gap: 0.25, flexWrap: 'wrap', minWidth: 0, alignItems: 'stretch' }}
+        >
+          {KPI_CARDS.map(card => {
+            const active = kpiFilter === card.key;
+            return (
+              <Tooltip key={card.key} title={card.hint}>
+                <Stack
+                  component="button"
+                  type="button"
+                  role="tab"
+                  direction="row"
+                  spacing={0.6}
+                  aria-selected={active}
+                  onClick={() => applyKpiFilter(card.key)}
+                  sx={{
+                    alignItems: 'baseline', font: 'inherit', cursor: 'pointer', border: 0,
+                    bgcolor: active ? BRAND.section : 'transparent',
+                    px: 1.25, py: 0.6, borderRadius: '6px',
+                    // a LEFT accent in the metric's own colour, not a full-width cap - the
+                    // same restraint that took the rainbow off the board columns
+                    borderLeft: `3px solid ${card.tone === 'danger' ? 'var(--em-prio-critical)' : card.tone === 'ok' ? 'var(--em-ok-strong)' : BRAND.action}`,
+                    '&:hover': { bgcolor: BRAND.section },
+                    '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: -2 },
+                  }}
+                >
+                  <Typography component="span" sx={{ fontSize: 13.5, fontWeight: active ? 700 : 500, color: active ? BRAND.heading : BRAND.text, whiteSpace: 'nowrap' }}>
+                    {card.label}
+                  </Typography>
+                  <Typography component="span" sx={{ fontSize: 12, fontWeight: 600, color: BRAND.textLight, fontVariantNumeric: 'tabular-nums' }}>
+                    {kpiValues[card.key]}
+                  </Typography>
+                </Stack>
+              </Tooltip>
+            );
+          })}
+        </Stack>
 
           {/* the one global action, level with the title */}
           <Button
@@ -358,7 +427,19 @@ function CommandCentre({
           onChange={e => setQ(e.target.value)}
           placeholder="Search block, observation or contractor"
           size="small"
-          sx={{ ...FIELD_SX, minWidth: { xs: '100%', sm: 300 }, maxWidth: 380 }}
+          /* Collapses to a glyph-width field at rest and expands on focus or once it
+             holds a query, which buys ~150px back for the filters beside it. NOT
+             icon-only-until-clicked: an input that looks like a button is a control
+             people do not find, so the field keeps its shape and only its WIDTH
+             changes. It also stays expanded whenever `q` is non-empty, so an active
+             search is never hidden behind a collapse. */
+          sx={{
+            ...FIELD_SX,
+            width: { xs: '100%', sm: q ? 300 : 168 },
+            maxWidth: 380,
+            transition: 'width .18s ease',
+            '&:focus-within': { width: { xs: '100%', sm: 300 } },
+          }}
           slotProps={{
             input: {
               'aria-label': 'Search the queue',
@@ -487,19 +568,32 @@ function TaskCard({
       onKeyDown={e => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onOpen(); } }}
       sx={{
         position: 'relative',
-        // Solid surface, never a tint - a pale priority wash behind the whole card
-        // dropped the contrast of every glyph on it, and a column of pink cards
-        // turned the priority signal into wallpaper.
-        // The 4px priority edge is gone too: the Critical/High pill already states
-        // urgency in words, so the bar was the same fact a second time and left
-        // every card looking bracketed.
-        p: 1.5, borderRadius: '10px', cursor: draggable ? 'grab' : 'pointer',
+        /* Solid surface, never a tint - a pale priority wash behind the whole card
+         * dropped the contrast of every glyph on it, and a column of pink cards turned
+         * the priority signal into wallpaper.
+         *
+         * THE 3px PRIORITY EDGE IS BACK, and this time it is not redundant with the pill.
+         * It was removed once for stating urgency twice, which was true of a card read one
+         * at a time - but the job it does is different from the pill's: a column of edges
+         * is scannable by SCROLLING, without reading any text, which is how a triage list
+         * is actually used. The pill remains the readable label (and the thing that
+         * survives for anyone who cannot separate the hues); the edge is the scan
+         * affordance. Two cues, two jobs. */
+        p: 1.5, borderRadius: '8px', cursor: draggable ? 'grab' : 'pointer',
+        // a floor, not a fixed height: a card missing an observation or a meta row still
+        // occupies the same block as its neighbours, so the column reads as a grid
+        minHeight: 104,
         bgcolor: BRAND.surface,
+        // shorthand first, then the left edge overrides it - declared in this order so the
+        // `border` shorthand cannot reset the priority colour back to the hairline
         border: `1px solid ${selected ? ON_SURFACE.info : BRAND.border}`,
+        borderLeftWidth: 3,
+        borderLeftColor: prio(level).accent,
         boxShadow: selected ? `0 0 0 1px ${ON_SURFACE.info}` : '0 1px 3px rgba(0,0,0,0.1)',
         opacity: dragging ? 0.45 : 1,
         transition: 'box-shadow .15s ease, transform .15s ease',
-        '&:hover': { boxShadow: '0 4px 10px rgba(16,24,40,.13)', transform: 'translateY(-1px)' },
+        // a bigger shadow on hover is the 'this lifts / this drags' cue
+        '&:hover': { boxShadow: '0 6px 16px rgba(16,24,40,.16)', transform: 'translateY(-1px)' },
         '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
         // reveal the selection control on engagement, never at rest
         '&:hover .aq-card-check, &:focus-within .aq-card-check': { opacity: 1 },
@@ -536,9 +630,11 @@ function TaskCard({
           gutter so the two never occupy the same pixels. */}
       <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', justifyContent: 'space-between', pl: onToggle ? '26px' : 0 }}>
         <Box sx={{ minWidth: 0 }}>
-          {/* smaller than it was, same weight: it stays the anchor without
-              out-shouting the observation underneath it */}
-          <Typography sx={{ fontSize: 14, fontWeight: 800, color: BRAND.heading, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* 15px, not 14: it is the card's identifier and has to win the top row
+              outright. It was reduced to 14 to stop it out-shouting the observation
+              below, but the observation is 13px body text - a 2px step is enough
+              separation, and at 14 the two read as the same rank. */}
+          <Typography sx={{ fontSize: 15, fontWeight: 800, color: BRAND.heading, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {title}
           </Typography>
           {subtitle && <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 0.25 }}>{subtitle}</Typography>}
@@ -551,8 +647,14 @@ function TaskCard({
         <Typography
           sx={{
             fontSize: 13, color: BRAND.text, mt: 0.75, lineHeight: 1.5,
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            /* ONE line on the board, not two. Two lines meant a card was 20px taller
+               whenever an observation happened to wrap, so a column of cards had a ragged
+               right-hand rhythm and the eye had to re-find each block name. The full text
+               is one click away in the detail panel, and the `title` attribute exposes it
+               on hover without opening anything. */
+            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden',
           }}
+          title={observation}
         >
           {observation}
         </Typography>
@@ -587,108 +689,114 @@ function TaskCard({
  * so dragging a card actually does the thing the board implies. Priority is still
  * the primary visual: it tints every card, badges it, and orders the column.
  */
-function BoardColumn({ id, title, count, hint, accent, children, dropActive, canDrop, onDragOver, onDrop, onDragLeave, empty = false }) {
-  // one source of truth - the width, the header layout and the body visibility
-  // all keyed off the same flag so they can never disagree mid-transition
-  const collapsed = empty && !dropActive;
+function BoardColumn({ id, title, count, hint, accent, children, dropActive, canDrop, onDragOver, onDrop, onDragLeave, empty = false, emptyLabel = 'Nothing at this stage' }) {
   return (
     <Box
       onDragOver={canDrop ? onDragOver : undefined}
       onDrop={canDrop ? onDrop : undefined}
       onDragLeave={canDrop ? onDragLeave : undefined}
       sx={{
-        // An EMPTY column collapses to a narrow strip rather than holding a
-        // full-width "Nothing at this stage" placeholder - with six stages, most
-        // are empty most of the time, and they were spending the width of the
-        // board on nothing. It expands on hover, on keyboard focus, and whenever
-        // a card is dragged over it, so it is never a dead end.
-        flex: collapsed ? '0 0 auto' : '1 1 0',
-        width: collapsed ? 56 : 'auto',
-        minWidth: collapsed ? 56 : 200,
-        // NO max width on an expanded column. A 300px cap was sized for six
-        // columns all expanded; the moment two collapse to 56px strips the other
-        // four cannot absorb the width they freed, and the board stops short with
-        // a band of dead space on the right. flex: 1 1 0 shares out whatever is
-        // actually there, so the board fills at any mix of collapsed/expanded.
-        maxWidth: collapsed ? 56 : 'none',
+        /* EQUAL COLUMNS, ALWAYS UPRIGHT.
+         *
+         * This replaces a collapse-to-56px behaviour that rotated the title 90deg
+         * (writingMode: vertical-rl) whenever a stage was empty, and expanded it again on
+         * hover. The intent was sound - with six stages most are empty most of the time,
+         * and they were spending board width on nothing - but the cure was worse:
+         *
+         *   - Dispatched, Scheduled and On site are empty in almost every real state of
+         *     this queue, so the board showed three readable columns and three sideways
+         *     slivers. Rotated text is slow to read at the best of times and there were
+         *     three of them in a row.
+         *   - Because they re-expanded on hover, the whole board reflowed as the pointer
+         *     crossed it. Moving toward a card in Completed shoved it sideways first.
+         *   - The count pill and status dot stayed upright while the label turned, so a
+         *     collapsed column read as three unrelated fragments stacked vertically.
+         *
+         * A pipeline board's empty stages are not waste - they are what shows the pipeline
+         * HAS those stages, and each one is a drop target. So every column now holds an
+         * equal share and says plainly that it is empty.
+         */
+        flex: '1 1 0',
+        // Below this the cards stop being readable, so the board scrolls instead of
+        // crushing. At six columns this only bites under ~1100px of board width.
+        minWidth: 168,
         display: 'flex', flexDirection: 'column',
-        // white surface with a 2px status-coloured cap, replacing the grey fill
-        bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 8%, ${BRAND.surface})` : BRAND.surface,
+        /* THE COLUMN IS A TROUGH, THE CARDS SIT IN IT.
+         * Columns were white on a white page holding white cards, so nothing separated
+         * an interactive card from the static column behind it - the single biggest
+         * reason the board read as unfinished. `BRAND.section` is the recessed step in
+         * both schemes (lighter grey on light, darker charcoal on dark), so the white/
+         * raised cards lift out of it either way without a per-scheme special case. */
+        bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 10%, ${BRAND.section})` : BRAND.section,
+        /* NO COLOURED TOP CAP. Six columns each wearing a 2px status colour produced a
+         * rainbow across the board, and every one of those bars competed with the actual
+         * critical CARDS for the same red. The stage's colour survives on the 8px dot in
+         * the header, which is enough to identify a column without spending a full-width
+         * rule on it - so red on this screen now means "a critical task", nothing else. */
         border: `1px solid ${dropActive ? ON_SURFACE.info : BRAND.border}`,
-        borderTop: `2px solid ${accent}`,
         borderRadius: '10px', minHeight: 0, overflow: 'hidden',
-        transition: 'flex .18s ease, width .18s ease, min-width .18s ease, max-width .18s ease, background-color .15s ease',
-        '&:hover, &:focus-within': {
-          flex: '1 1 0', width: 'auto', minWidth: 200, maxWidth: 300,
-        },
+        // only the drop affordance animates now - nothing resizes on hover, so the board
+        // never moves under the pointer
+        transition: 'background-color .15s ease, border-color .15s ease',
       }}
     >
-      {collapsed ? (
-        /* COLLAPSED: a column, not a rotated row.
-           writingMode was previously set on the whole flex row, which turned the
-           count pill and the status dot on their sides along with the label - the
-           badge rendered sideways and the dot's flow direction flipped. Only the
-           TITLE should rotate; the dot is round and the number must stay upright
-           to be read at a glance. */
-        <Stack
-          spacing={1}
-          sx={{ alignItems: 'center', px: 0.75, py: 1.5, height: '100%', minHeight: 0 }}
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ alignItems: 'center', px: 1.5, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}
+      >
+        <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
+        {/* the title may now wrap to two lines rather than being truncated - at 168px a
+            label like "Requires action" does not fit on one, and an ellipsis on a column
+            heading is worse than a second line */}
+        <Typography
+          sx={{
+            fontSize: 12, fontWeight: 900, color: BRAND.heading, textTransform: 'uppercase',
+            letterSpacing: '0.6px', lineHeight: 1.3, minWidth: 0,
+          }}
         >
-          <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
-          <Typography
-            sx={{
-              writingMode: 'vertical-rl', transform: 'rotate(180deg)',
-              fontSize: 12, fontWeight: 900, color: BRAND.heading,
-              textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap',
-              flexGrow: 1, minHeight: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-            }}
-          >
-            {title}
-          </Typography>
-          <Box
-            component="span"
-            sx={{
-              fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
-              px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
-              fontVariantNumeric: 'tabular-nums', flexShrink: 0,
-            }}
-          >
-            {count}
-          </Box>
-        </Stack>
-      ) : (
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ alignItems: 'center', px: 1.75, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}
+          {title}
+        </Typography>
+        <Box
+          component="span"
+          sx={{
+            ml: 'auto',
+            fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
+            px: 0.7, borderRadius: '999px',
+            // an empty stage gets a quiet outlined zero rather than a solid slate pill -
+            // six filled badges, most of them reading 0, is a lot of ink for no news
+            bgcolor: empty ? 'transparent' : BRAND.slate,
+            color: empty ? BRAND.textLight : '#fff',
+            border: empty ? `1px solid ${BRAND.border}` : 'none',
+            fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+          }}
         >
-          <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
-          <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: BRAND.heading, textTransform: 'uppercase', letterSpacing: '0.7px', whiteSpace: 'nowrap' }}>
-            {title}
-          </Typography>
-          {/* Solid slate pill with white text. The outlined pale badge blended into
-              the column header's own background and read as part of the title. */}
+          {count}
+        </Box>
+      </Stack>
+
+      {hint && (
+        <Typography sx={{ fontSize: 11, color: BRAND.textLight, px: 1.5, pt: 1, lineHeight: 1.4 }}>{hint}</Typography>
+      )}
+
+      <Stack spacing={1.25} id={id} sx={{ p: 1.5, overflowY: 'auto', flexGrow: 1, minHeight: 120 }}>
+        {children}
+        {/* Stated, not implied. An empty column with no text reads as a rendering fault;
+            naming the state also tells an officer mid-drag that this is a valid target. */}
+        {empty && (
           <Box
-            component="span"
             sx={{
-              fontSize: 11.5, fontWeight: 800, lineHeight: '18px', minWidth: 20, textAlign: 'center',
-              px: 0.7, borderRadius: '999px', bgcolor: BRAND.slate, color: '#fff',
-              fontVariantNumeric: 'tabular-nums', flexShrink: 0,
+              flexGrow: 1, display: 'grid', placeItems: 'center',
+              border: `1px dashed ${BRAND.border}`, borderRadius: '8px',
+              minHeight: 88, px: 1,
             }}
           >
-            {count}
+            <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, textAlign: 'center', lineHeight: 1.45 }}>
+              {dropActive ? 'Drop to move here' : emptyLabel}
+            </Typography>
           </Box>
-        </Stack>
-      )}
-      {hint && !collapsed && (
-        <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, px: 1.75, pt: 1 }}>{hint}</Typography>
-      )}
-      {/* the body is dropped entirely while collapsed - no placeholder text */}
-      {!collapsed && (
-        <Stack spacing={1.25} id={id} sx={{ p: 1.5, overflowY: 'auto', flexGrow: 1, minHeight: 120 }}>
-          {children}
-        </Stack>
-      )}
+        )}
+      </Stack>
     </Box>
   );
 }
@@ -696,7 +804,9 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
 /* ------------------------------------------------------------------- table -- */
 
 const HEAD_SX = {
-  fontSize: 12, fontWeight: 600, color: BRAND.textLight, textTransform: 'uppercase',
+  // 700, not 600: the header has to out-rank 14px body rows at 12px, and weight is the
+  // only lever left once the size is smaller than the data it labels
+  fontSize: 12, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase',
   letterSpacing: '0.05em', bgcolor: BRAND.section, borderBottom: `1px solid ${BRAND.border}`,
   py: 1.25, whiteSpace: 'nowrap',
 };
@@ -793,7 +903,7 @@ function QueueTable({ columns, rows, sort, onSort, selectedKey, onSelect, checke
           </TableRow>
         </TableHead>
         <TableBody>
-          {rows.map(row => {
+          {rows.map((row, i) => {
             const selected = row.key === selectedKey;
             return (
               <TableRow
@@ -810,10 +920,20 @@ function QueueTable({ columns, rows, sort, onSort, selectedKey, onSelect, checke
                 }}
                 sx={{
                   cursor: 'pointer',
-                  bgcolor: selected ? BRAND.navySoft : 'transparent',
-                  '&:hover': { bgcolor: selected ? BRAND.navySoft : BRAND.section },
-                  // priority as a rule down the row's leading edge
+                  /* THREE ROW STATES, EACH DISTINGUISHABLE FROM THE OTHER TWO.
+                   * Zebra had to be introduced without colliding with the states already
+                   * here: the stripe was going to be BRAND.section, but hover was ALSO
+                   * BRAND.section, so hovering an odd row would have produced no change at
+                   * all - a dead interaction on half the table. So hover moved up to
+                   * navySoft, and selected keeps navySoft plus an inset accent rule, which
+                   * is what still separates "the row I am pointing at" from "the row whose
+                   * detail is open". */
+                  bgcolor: selected ? BRAND.navySoft : (i % 2 === 1 ? BRAND.section : 'transparent'),
+                  '&:hover': { bgcolor: BRAND.navySoft },
+                  // priority as a rule down the row's leading edge; the selected row adds a
+                  // second inset on the far side so it stays identifiable under the pointer
                   '& > td:first-of-type': { boxShadow: `inset 3px 0 0 ${prio(row.priority).accent}` },
+                  ...(selected ? { '& > td:last-of-type': { boxShadow: `inset -3px 0 0 ${BRAND.action}` } } : null),
                   '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: '-2px' },
                 }}
               >
@@ -1421,6 +1541,7 @@ function csvEscape(v) {
 }
 
 export default function ActionQueue() {
+  const theme = useTheme();
 
   const [queue, setQueue] = useState(null);
   const [workOrders, setWorkOrders] = useState([]);
@@ -1512,21 +1633,59 @@ export default function ActionQueue() {
   const urgentCount = clusters.filter(c => URGENT.has(c.risk_level)).length;
 
   /**
+   * The four hero figures, read live rather than cached, so a card can never state a
+   * number the grid below has already moved past.
+   *
+   * `savings` is the only one that is not a row count: it is the consolidation value the
+   * server reports on the queue payload. It renders as a sub-line on Completed and is
+   * omitted entirely when the server has not reported one - a fabricated S$0 would read
+   * as "we saved nothing" rather than "not measured".
+   */
+  const kpiValues = useMemo(() => {
+    const savings = queue?.totals?.est_savings;
+    return {
+      action: clusters.length,
+      urgent: urgentCount,
+      progress: workOrders.filter(w => !['resolved', 'closed', 'cancelled'].includes(w.status)).length,
+      done: workOrders.filter(w => ['resolved', 'closed'].includes(w.status)).length,
+      savings: typeof savings === 'number' && savings > 0 ? money(savings) : null,
+    };
+  }, [clusters, urgentCount, workOrders, queue]);
+
+  /**
    * Which summary card is engaged, or null.
    *
    * The card does not own a private filter - it drives the SAME tab and priority
    * controls the toolbar uses, so the toolbar always reflects what is actually
    * being shown. Pressing the active card again clears it.
    */
-  const [kpiFilter, setKpiFilter] = useState(null);
+  // 'action' is the state the page actually opens in (pending + all priorities), so the
+  // segmented control starts in agreement with the list rather than showing nothing.
+  const [kpiFilter, setKpiFilter] = useState('action');
+  /**
+   * The queue's three states, as a segmented control.
+   *
+   * NOT A TOGGLE ANY MORE. `kpiFilter` used to flip on and off, so pressing the active
+   * pill cleared it - and because the initial value was null while the page opened on
+   * tab='pending' + priority='all' (which IS the "Requires action" state), a filtered
+   * view rendered on first paint with NO segment selected. The control disagreed with
+   * the list under it before the user touched anything.
+   *
+   * Fixed by defaulting to 'action' - behaviour-neutral, since only 'urgent' is read by
+   * the row filter - and by making a press idempotent instead of a hidden on/off. A
+   * segmented control has to always have exactly one active segment.
+   *
+   * `kpiFilter` stays the source of truth rather than being derived from tab+priority:
+   * 'urgent' spans the URGENT set (high AND critical) in pendingRows below, which is
+   * broader than priority==='critical', so deriving it would silently narrow the view.
+   */
   function applyKpiFilter(key) {
-    const next = kpiFilter === key ? null : key;
-    setKpiFilter(next);
+    const card = KPI_CARDS.find(c => c.key === key);
+    if (!card) return;
+    setKpiFilter(key);
     setSelectedKey(null);
-    if (next === 'urgent') { setTab('pending'); setPriority('critical'); }
-    else if (next === 'action') { setTab('pending'); setPriority('all'); }
-    else if (next === 'done') { setTab('closed'); setPriority('all'); }
-    else { setPriority('all'); }
+    setTab(card.tab);
+    setPriority(card.priority);
   }
 
   /* ---- filtering + sorting ------------------------------------------------ */
@@ -1758,11 +1917,27 @@ export default function ActionQueue() {
   }, [selectedOrderId]);
 
   const detailOpen = Boolean(selectedCluster || selectedOrder);
-  // The 40/60 split is gone: squeezing the grid to 40% defeated the point of a
-  // dense table, and the panel's own content had to reflow every time it opened.
-  // A drawer keeps the queue at full width and unmoved behind it - the pattern
-  // Linear/Jira/Zendesk use for exactly this triage job.
-  const split = false;
+
+  /**
+   * MASTER-DETAIL, gated on the two conditions that make it work.
+   *
+   * The split pane is the Outlook/Jira/Zendesk pattern and it is genuinely faster for
+   * triage: click twenty rows in thirty seconds without opening and closing anything. But
+   * it is only better than a drawer where there is room for it, and it is actively worse
+   * in two places:
+   *
+   *   1. BOARD VIEW. Six pipeline columns squeezed into 40% get about 90px each - the
+   *      cards stop being readable and the columns collapse. The board needs its width, so
+   *      there the detail stays an overlay drawer and the board keeps 100%.
+   *   2. BELOW lg. 40% of a tablet is ~300px of table and 60% is a cramped panel; both
+   *      lose. Under lg the drawer takes over, full-width on xs.
+   *
+   * So: split in list view on a wide screen, drawer everywhere else. `QueueTable`'s
+   * `compact` prop was built for exactly this - it sheds the middle columns rather than
+   * trying to fit eight into 40%.
+   */
+  const wideEnoughToSplit = useMediaQuery(theme.breakpoints.up('lg'));
+  const split = view === 'list' && detailOpen && wideEnoughToSplit;
 
   /* ---- board drag/drop ----------------------------------------------------
      Only forward transitions are droppable, and each one maps to a real
@@ -1894,10 +2069,16 @@ export default function ActionQueue() {
         };
       }
       return {
-        // `count` renders as a badge INSIDE the button; the label stops repeating
-        // it, and the warning glyph is dropped - a hazard icon on the primary
-        // action read as a caution rather than an invitation to act.
-        label: urgentCount > 0 ? 'Review urgent' : 'Start reviewing',
+        /* The label now says what the button DOES. It was "Review urgent", which read as
+         * a filter - press it and you would expect the queue to narrow. It does not: it
+         * selects the highest-priority pending cluster and opens its detail. "Start next
+         * critical review" describes that, and it is accurate rather than aspirational -
+         * the handler below genuinely picks the first URGENT row before falling back to
+         * the first row at all, so when there are no urgent items the label drops the
+         * word too.
+         *
+         * `count` renders as a badge INSIDE the button, so the label does not repeat it. */
+        label: urgentCount > 0 ? 'Start next critical review' : 'Start next review',
         count: urgentCount,
         icon: <ReportProblemOutlinedIcon />,
         onClick: () => {
@@ -2168,7 +2349,6 @@ export default function ActionQueue() {
       {loading && <LinearProgress sx={{ height: 2, '& .MuiLinearProgress-bar': { bgcolor: ON_SURFACE.info } }} />}
 
       <CommandCentre
-        urgentCount={urgentCount}
         q={q} setQ={setQ}
         priority={priority} setPriority={setPriority}
         range={range} setRange={setRange}
@@ -2179,9 +2359,8 @@ export default function ActionQueue() {
         view={view}
         onView={switchView}
         kpiFilter={kpiFilter}
+        kpiValues={kpiValues}
         applyKpiFilter={applyKpiFilter}
-        boardPending={boardPending}
-        boardOrders={boardOrders}
       />
 
       <Box sx={{ px: { xs: 2, md: 3 } }}>
@@ -2210,8 +2389,11 @@ export default function ActionQueue() {
       <Box sx={{ display: 'flex', alignItems: 'stretch', flexGrow: 1, minHeight: 0 }}>
         <Box
           sx={{
-            width: split ? '40%' : '100%', flexShrink: 0, transition: 'width .2s ease, opacity .2s ease',
-            minWidth: 0, opacity: split ? 0.9 : 1, display: 'flex', flexDirection: 'column',
+            width: split ? '40%' : '100%', flexShrink: 0, transition: 'width .2s ease',
+            // NOT dimmed when split. The 0.9 opacity was for a pane sitting BEHIND a
+            // drawer; as the master of a split it is a peer of the detail, not a backdrop,
+            // and dimming it would drop the contrast of every row you are trying to scan.
+            minWidth: 0, display: 'flex', flexDirection: 'column',
             minHeight: 0, overflowY: view === 'board' ? 'hidden' : 'auto',
           }}
         >
@@ -2233,13 +2415,11 @@ export default function ActionQueue() {
                     accent={c.accent}
                     hint={dropCol === c.col && canDropOn(c.col) ? `Drop to move to ${c.title}` : c.hint}
                     empty={items.length === 0}
+                    // the column renders the empty state itself now, inside a dashed
+                    // drop-target frame - this only supplies the wording
+                    emptyLabel={isPending ? 'Nothing awaiting review' : 'Nothing at this stage'}
                     {...colProps(c.col)}
                   >
-                    {items.length === 0 && (
-                      <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, textAlign: 'center', py: 3 }}>
-                        {isPending ? 'Nothing awaiting review.' : 'Nothing at this stage.'}
-                      </Typography>
-                    )}
 
                     {isPending && boardPending.map(r => (
                       <TaskCard
@@ -2301,7 +2481,20 @@ export default function ActionQueue() {
               })}
             </Box>
           ) : tableRows.length ? (
-            <QueueTable
+            <>
+              {/* THE COUNT, WHERE THE DATA IS.
+                  Removing the header pills was right, but the claim that "the table
+                  already shows a row count" was not true - list view showed no count
+                  anywhere, so the figure would simply have been lost in the DEFAULT view.
+                  It lives here now: one muted line, naming what is being counted, so the
+                  header stays clean and the number is still answerable. */}
+              <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, px: { xs: 2, md: 3 }, pt: 1.5, pb: 0.5 }}>
+                {tableRows.length} {tab === 'pending'
+                  ? `block${tableRows.length === 1 ? '' : 's'} awaiting approval`
+                  : `work order${tableRows.length === 1 ? '' : 's'}`}
+                {checked.size > 0 ? ` · ${checked.size} selected` : ''}
+              </Typography>
+              <QueueTable
               columns={tab === 'pending' ? pendingColumns : orderColumns}
               rows={tableRows}
               sort={sort}
@@ -2312,7 +2505,8 @@ export default function ActionQueue() {
               onToggle={toggle}
               onToggleAll={toggleAll}
               compact={split}
-            />
+              />
+            </>
           ) : (
             <Box sx={{ py: 8, px: 3, textAlign: 'center', bgcolor: BRAND.surface }}>
               <ReportProblemOutlinedIcon sx={{ color: BRAND.textLight, fontSize: 30, mb: 1 }} />
@@ -2336,6 +2530,12 @@ export default function ActionQueue() {
           )}
         </Box>
 
+        {/* ── RIGHT PANE: the persistent detail ─────────────────────────────
+            This existed already but was unreachable - it was paired with `split = false`,
+            so the 60% pane had never rendered. Enabling the flag turns it on.
+
+            It renders the SAME `detailNode` the drawer does, so there is one detail
+            implementation with two placements rather than two that can drift apart. */}
         {split && (
           <Box
             sx={{
@@ -2354,11 +2554,13 @@ export default function ActionQueue() {
         )}
       </Box>
 
-      {/* One detail surface at every width. The queue behind it never reflows, so
-          the row you came from is still exactly where you left it. */}
+      {/* The drawer is the FALLBACK surface, not the only one: it handles board view and
+          anything under lg, where a 40/60 split does not fit. In list view on a wide screen
+          the same `detailNode` renders as the right-hand pane instead, so there is one
+          detail implementation and two placements rather than two detail implementations. */}
       <Drawer
         anchor="right"
-        open={detailOpen}
+        open={detailOpen && !split}
         onClose={() => setSelectedKey(null)}
         slotProps={{ paper: { sx: { width: { xs: '100%', sm: 480, lg: 560 } } } }}
       >
@@ -2396,16 +2598,22 @@ export default function ActionQueue() {
           sx={{
             position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 1200,
             display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', rowGap: 1,
-            px: 2, py: 1.25, borderRadius: '12px',
-            bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`,
-            boxShadow: '0 12px 28px rgba(16,24,40,.18)',
+            px: 2, py: 1.25, borderRadius: '10px',
+            /* DARK SLATE, not another white card. On a white queue a white bar with a
+             * hairline read as one more panel that happened to be floating - it did not
+             * announce itself as a mode change. Inverting it makes "you have a selection
+             * and there are bulk actions" unmistakable, and the deeper shadow lifts it
+             * clear of the rows underneath. Slate rather than navy: navy is the app's
+             * structural chrome, and this is a transient state, not chrome. */
+            bgcolor: BRAND.slateHover, border: 'none',
+            boxShadow: '0 16px 36px rgba(16,24,40,.30), 0 2px 6px rgba(16,24,40,.18)',
             maxWidth: 'calc(100vw - 32px)',
           }}
         >
-          <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap' }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 700, color: '#fff', whiteSpace: 'nowrap' }}>
             {visibleSelected} selected
             {tab === 'pending' && checkedReportCount > 0 && (
-              <Box component="span" sx={{ fontWeight: 500, color: BRAND.text }}>
+              <Box component="span" sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.78)' }}>
                 {' '}· {checkedReportCount} report{checkedReportCount === 1 ? '' : 's'}
                 {checkedAvoided > 0 && ` · ${money(checkedSavings)} avoidable`}
               </Box>
@@ -2423,7 +2631,7 @@ export default function ActionQueue() {
               Approve selected
             </Button>
           )}
-          <Button size="small" onClick={() => setChecked(new Set())} sx={{ color: BRAND.textLight, fontWeight: 600 }}>
+          <Button size="small" onClick={() => setChecked(new Set())} sx={{ color: 'rgba(255,255,255,0.75)', fontWeight: 600, '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.1)' } }}>
             Clear
           </Button>
         </Paper>

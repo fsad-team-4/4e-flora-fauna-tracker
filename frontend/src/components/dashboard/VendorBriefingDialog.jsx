@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
 import { BRAND, INTENT } from '../../theme';
@@ -266,16 +267,30 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
               const flagged = splitSentences(text).filter(x => MISSING_RE.test(x));
               if (!flagged.length) return null;
               return (
-                <Box sx={{ mt: 1.5, p: 1.5, borderRadius: '8px', bgcolor: INTENT.warning.bg, border: `1px solid ${INTENT.warning.border}` }}>
-                  <Typography sx={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: INTENT.warning.ink, mb: 0.5 }}>
-                    {flagged.length} missing detail{flagged.length === 1 ? '' : 's'} - check before sending
-                  </Typography>
+                // Softened from an uppercase 800-weight micro-caps heading, which
+                // read as an ERROR - it shouted at the officer about data that is
+                // merely absent, and absent data is the normal case. Sentence case,
+                // an inset accent rather than a full box outline, and the icon
+                // carrying the "this is a warning" signal so the hue is not doing it
+                // alone. The count and "check before sending" are the caveat and are
+                // unchanged.
+                <Box sx={{
+                  mt: 1.5, p: 1.5, borderRadius: '8px',
+                  bgcolor: INTENT.warning.bg,
+                  borderLeft: `3px solid ${INTENT.warning.solid}`,
+                }}>
+                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.75 }}>
+                    <InfoOutlinedIcon sx={{ fontSize: 16, color: INTENT.warning.ink, flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: INTENT.warning.ink }}>
+                      {flagged.length} missing detail{flagged.length === 1 ? '' : 's'} - check before sending
+                    </Typography>
+                  </Stack>
                   {flagged.map((x, i) => (
-                    <Typography key={i} sx={{ fontSize: 12.5, color: INTENT.warning.ink, lineHeight: 1.55 }}>
+                    <Typography key={i} sx={{ fontSize: 12.5, color: INTENT.warning.ink, lineHeight: 1.55, pl: 3 }}>
                       {x.trim()}
                     </Typography>
                   ))}
-                  <Typography sx={{ fontSize: 11.5, color: INTENT.warning.ink, opacity: 0.85, mt: 0.5 }}>
+                  <Typography sx={{ fontSize: 11.5, color: INTENT.warning.ink, opacity: 0.85, mt: 0.5, pl: 3 }}>
                     These are gaps in the recorded data, not doubts about the draft. Fill them in
                     if you know the answer, or leave them as they are.
                   </Typography>

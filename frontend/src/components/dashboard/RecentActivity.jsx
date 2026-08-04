@@ -1,3 +1,4 @@
+import { Link as RouterLink } from 'react-router-dom';
 import { Card, CardContent, Box, Stack, Typography, Tooltip } from '@mui/material';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
@@ -7,7 +8,7 @@ import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
 import PestControlRodentOutlinedIcon from '@mui/icons-material/PestControlRodentOutlined';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { useTheme } from '@mui/material/styles';
-import { BRAND } from '../../theme';
+import { BRAND, SURFACE, RADII, surfaceSx } from '../../theme';
 import { CATEGORY_LABELS } from '../../constants';
 import StatusPill from '../StatusPill';
 
@@ -82,11 +83,13 @@ function Meta({ icon: Icon, children }) {
  * the newest entry in a list rather than a stranded one-off card.
  */
 export default function RecentActivity({ cases = [], limit = 5 }) {
+  const mode = useTheme().palette.mode;
+  const s = SURFACE[mode] || SURFACE.dark;
   const items = cases.slice(0, limit);
 
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ p: 3 }}>
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 }, display: 'flex', flexDirection: 'column', flexGrow: 1, '&:last-child': { pb: { xs: 2.25, md: 2.75 } } }}>
         <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
           Recent Activity
         </Typography>
@@ -101,7 +104,7 @@ export default function RecentActivity({ cases = [], limit = 5 }) {
         ) : (
           // Separation by whitespace, not rules: the row hover gives the grouping
           // cue instead, so five entries do not read as five boxed cells.
-          <Stack spacing={0}>
+          <Stack spacing={0.75} sx={{ flexGrow: 1 }}>
             {items.map((c, i) => (
               <Box
                 key={c.id ?? `${c.title}-${i}`}
@@ -109,9 +112,12 @@ export default function RecentActivity({ cases = [], limit = 5 }) {
                   // Tighter rows: py 1.25 + spacing 0.5 between five entries spent
                   // more of the card on gaps than on content. The hover wash still
                   // groups each row, so the whitespace was doing no work.
-                  py: 0.85, px: 1, mx: -1, borderRadius: '8px',
+                  // Rows on the INSET surface rather than a white wash, so the list
+                  // reads as a set of dark chips inside a dark card.
+                  py: 1, px: 1.25, borderRadius: `${RADII.chip}px`,
+                  bgcolor: s.inset,
                   transition: 'background-color .15s ease',
-                  '&:hover': { bgcolor: BRAND.section },
+                  '&:hover': { bgcolor: s.raised },
                 }}
               >
                 <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
@@ -138,6 +144,24 @@ export default function RecentActivity({ cases = [], limit = 5 }) {
                 </Stack>
               </Box>
             ))}
+
+            {/* Secondary conversion: the full history is a page, so the list does not
+                need to scroll inside a card. Shown only when there is genuinely more
+                than this card holds. */}
+            {cases.length > items.length && (
+              <Box
+                component={RouterLink}
+                to="/all-reports"
+                sx={{
+                  mt: 'auto', pt: 1.25, alignSelf: 'flex-start',
+                  fontSize: 12.5, fontWeight: 600, color: BRAND.action, textDecoration: 'none',
+                  '&:hover': { textDecoration: 'underline' },
+                  '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
+                }}
+              >
+                View all {cases.length} reports →
+              </Box>
+            )}
           </Stack>
         )}
       </CardContent>

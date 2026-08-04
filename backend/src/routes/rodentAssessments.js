@@ -7,7 +7,9 @@ const yup = require('yup');
 const { assessRodentRisk, hasApiKey, stubAssessment } = require('../services/rodentService');
 const { aiLimiter } = require('../utils/rateLimiters');
 const { validateBody } = require('../utils/validate');
-const { Op } = require('sequelize');
+const { Op, fn, col, literal } = require('sequelize');
+const { ROOT_CAUSES, RESOLUTION_TYPES } = require('../models/RodentAssessment');
+const { slaTargetFor, sameBlock } = require('../services/rodentSla');
 
 // SQLite's LIKE is case-insensitive by default; Postgres's is NOT. On Neon the
 // same query would silently return fewer rows - no error, just a filter that
@@ -32,21 +34,32 @@ const hasCloudinary = Boolean(
   process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET
 );
 
-// Look up prior assessments at the SAME block in the last N days, so the AI can
-// judge recurrence rather than treating every note as an isolated incident.
-// Block is free text, so match on a trimmed/lowercased comparison.
+/**
+ * Look up prior assessments at the SAME block in the last N days, so the AI can
+ * judge recurrence rather than treating every note as an isolated incident.
+ * Block is free text, so identity is a trimmed/lower-cased comparison.
+ *
+ * THE BLOCK FILTER IS IN SQL, not in JS afterwards. It used to fetch the 20 most
+ * recent assessments ESTATE-WIDE inside the window and then filter them down to
+ * this block in JavaScript - so on any week with more than 20 reports across the
+ * estate, prior reports at the target block fell off the end and the AI was told
+ * the block had no history. That undercount now also feeds the persisted
+ * `prior_count` and the recurrence chip, which is what turned it from a quiet
+ * inaccuracy into a wrong number on the page.
+ */
 async function getBlockHistory(block, days = 7) {
   if (!block || !block.trim()) return [];
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const rows = await RodentAssessment.findAll({
-    where: { is_deleted: false, createdAt: { [Op.gte]: since } },
+    where: {
+      is_deleted: false,
+      createdAt: { [Op.gte]: since },
+      [Op.and]: [sameBlock(block)],
+    },
     order: [['createdAt', 'DESC']],
     limit: 20,
   });
-  const key = block.trim().toLowerCase();
-  return rows
-    .filter(r => (r.block_number || '').trim().toLowerCase() === key)
-    .map(r => ({ createdAt: r.createdAt, risk_level: r.risk_level, observations: r.observations }));
+  return rows.map(r => ({ createdAt: r.createdAt, risk_level: r.risk_level, observations: r.observations }));
 }
 
 // Accepts a data URL ("data:image/jpeg;base64,...") or a bare base64 string.
@@ -218,13 +231,21 @@ router.post('/', aiLimiter, restrictTo('admin', 'staff'), validateBody(createSch
       escalation_reason: assessment.escalation_reason || null,
       follow_up_notes: null,
       assessed_by: req.user.user_id,
+      // Frozen at create time, both of them, and both derived from what was true
+      // NOW rather than recomputed on read:
+      //  - prior_count is the recurrence context the model was actually given
+      //  - sla_target_at pins the row to the target that applied when it was filed,
+      //    so revising SLA_HOURS later cannot silently restate history
+      prior_count: history.length,
+      sla_target_at: slaTargetFor(assessment.risk_level, new Date()),
     });
     res.status(201).json({
       ...row.toJSON(),
       stubbed,
       confidence: assessment.confidence || null,
       recurrence_note: assessment.recurrence_note || null,
-      prior_count: history.length,
+      // prior_count is no longer restated here - it is a real column now and
+      // arrives via row.toJSON() above, so there is one source for it
       assessed_from_image: Boolean(parsedImage),
       image_stored: parsedImage ? imageStored : null,
     });

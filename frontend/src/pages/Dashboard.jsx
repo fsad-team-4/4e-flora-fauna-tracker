@@ -3,13 +3,9 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, Button, Alert, Collapse, Stack, IconButton,
   Skeleton, Card, CardContent, LinearProgress, Tooltip,
-  Menu, MenuItem,
+  Menu, MenuItem, GlobalStyles,
   useMediaQuery, useTheme, useScrollTrigger,
 } from '@mui/material';
-import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
-import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
-import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
-import MarkEmailReadOutlinedIcon from '@mui/icons-material/MarkEmailReadOutlined';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
@@ -17,15 +13,51 @@ import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useUser } from '../contexts/UserContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import { BRAND, INTENT, ON_SURFACE, KPI_TONE } from '../theme';
+import { alpha } from '@mui/material/styles';
+import { BRAND, SURFACE, RADII } from '../theme';
+
 import http from '../http';
-import EstateHealthHero from '../components/dashboard/EstateHealthHero';
-import KpiCard from '../components/dashboard/KpiCard';
-import ActivityChart from '../components/dashboard/ActivityChart';
+import HeroCommandCard from '../components/dashboard/HeroCommandCard';
+import KpiStack from '../components/dashboard/KpiStack';
 import CategoryBar from '../components/dashboard/CategoryBar';
 import FeedingRodentCorrelation from '../components/dashboard/FeedingRodentCorrelation';
 import BlockPerformance from '../components/dashboard/BlockPerformance';
 import RecentActivity from '../components/dashboard/RecentActivity';
+
+/**
+ * The LIVE indicator, per scheme. Green because "the feed is live" IS a status - the one
+ * thing the status hues are reserved for - and it is the only green on this page.
+ *
+ * PER SCHEME, and not cosmetically. The neon #34D399 that glows correctly on a charcoal
+ * card measures about 1.9:1 as TEXT on white - a clear AA failure - so light drops to a
+ * deep emerald for both the ink and the dot. See the note on the light values for why the
+ * dot had to move too.
+ *
+ * Literals rather than tokens: both go through alpha() for the pulse keyframes, and
+ * alpha() cannot parse a var() string.
+ */
+const LIVE = {
+  dark: { dot: '#34D399', ink: '#34D399' },
+  // The dot sits on a 14%-alpha wash of ITSELF, so on light its backdrop is a very pale
+  // mint (~#E7F8F1), not white - and #10B981 measured only ~2.5:1 against that, under
+  // the 3:1 floor for a graphical object. #047857 measures ~5.3:1 on the same wash.
+  light: { dot: '#047857', ink: '#047857' },
+};
+
+/**
+ * Centred nav tabs.
+ *
+ * The blueprint asked for Overview / Analytics / Map / Reports. "Analytics" HAS NO ROUTE
+ * in this app, and a tab that navigates nowhere is worse than one fewer tab - so these
+ * four map to destinations that exist and are all staff-reachable. Assessments takes the
+ * slot Analytics would have had; it is the closest real thing.
+ */
+const NAV_TABS = [
+  { to: '/dashboard', label: 'Overview' },
+  { to: '/rodent-heatmap', label: 'Risk Map' },
+  { to: '/rodent', label: 'Assessments' },
+  { to: '/all-reports', label: 'Reports' },
+];
 
 // Every content row hangs off one 12-column grid, so card edges line up down the
 // whole page instead of each row picking its own fractional split.
@@ -43,41 +75,34 @@ function seriesOf(history, key) {
   return vals.every(v => typeof v === 'number' && Number.isFinite(v)) ? vals : null;
 }
 
-// `tone` supplies the icon ink and its tinted well per scheme. The ink also becomes
-// the sparkline's SVG stroke, which is why these are literals rather than var()
-// tokens - an SVG presentation attribute cannot resolve a CSS variable.
-function buildKpis(m, mode) {
+/**
+ * The three supporting metrics.
+ *
+ * NO COLOUR, TINT OR ICON in here any more. KpiStack assigns its own neon ink per slot
+ * from NEON[mode], so the tone lookup that used to ride along on each item - and the
+ * per-metric icon - were dead weight passed into a component that ignores them. What is
+ * left is the data: label, value, the week-over-week movement, and the series.
+ */
+function buildKpis(m) {
   const t = m?.trends || {};
   const h = m?.history || [];
   const win = m?.windowDays ?? 7;
-  const tone = KPI_TONE[mode] || KPI_TONE.light;
+  // OPEN CASES IS NOT A TILE. Its figure and its week-over-week delta are the headline of
+  // the hero's activity panel, so a tile repeating both was the same reading twice.
   return [
     {
-      label: 'Open Cases', value: m?.openCases ?? 0, color: tone.warn.ink, tint: tone.warn.tint,
-      icon: <FolderOpenOutlinedIcon />,
-      trend: m ? { delta: t.open_cases?.sinceLastWeek ?? null, improve: 'down', base: m.openCases } : null,
-      series: seriesOf(h, 'openCases'),
-    },
-    {
-      label: 'Critical Flora', value: m?.criticalFlora ?? 0, color: tone.danger.ink, tint: tone.danger.tint,
-      // explicit, rather than KpiCard inferring it by comparing the colour against
-      // BRAND.primary - that identity check silently broke the moment the hue
-      // became scheme-aware.
-      alarm: true,
-      icon: <LocalFloristOutlinedIcon />,
+      label: 'Critical Flora', value: m?.criticalFlora ?? 0,
       trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down', base: m.criticalFlora } : null,
       series: seriesOf(h, 'criticalFlora'),
     },
     {
-      label: 'Active Hotspots', value: m?.activeHotspots ?? 0, color: tone.info.ink, tint: tone.info.tint,
-      icon: <PlaceOutlinedIcon />,
+      label: 'Active Hotspots', value: m?.activeHotspots ?? 0,
       trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down', base: m.activeHotspots } : null,
       series: seriesOf(h, 'hotspots'),
     },
     {
       // tracks the picker: value, delta and sparkline all cover the same window
-      label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0, color: tone.ok.ink, tint: tone.ok.tint,
-      icon: <MarkEmailReadOutlinedIcon />,
+      label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0,
       trend: m ? { delta: (m.notificationsWindow ?? 0) - (m.notificationsPrevWindow ?? 0), improve: null, base: m.notificationsWindow } : null,
       trendLabel: `vs prev ${win} days`,
       series: seriesOf(m?.notificationsByDay || [], 'count'),
@@ -176,14 +201,16 @@ export default function Dashboard() {
   // instead of flickering off whenever the scroll direction reverses.
   const scrolled = useScrollTrigger({ disableHysteresis: true, threshold: 8 });
 
-  const kpis = useMemo(() => buildKpis(metrics, mode), [metrics, mode]);
+  const kpis = useMemo(() => buildKpis(metrics), [metrics]);
+  // Drives the header CTA's badge. Already in the metrics payload, so no extra request.
+  const pendingCount = metrics?.pendingEscalations || 0;
+  const live = LIVE[mode] || LIVE.dark;
 
   // Mobile only: once the hero has scrolled off the top, the queue CTA re-appears
   // pinned to the bottom of the viewport, so the primary action is never more than
   // a thumb away without cluttering the initial view.
   const heroRef = useRef(null);
   const [heroPassed, setHeroPassed] = useState(false);
-  const pendingCount = metrics?.pendingEscalations || 0;
   const showStickyCta = isMobile && heroPassed && pendingCount > 0;
 
   useEffect(() => {
@@ -238,6 +265,11 @@ export default function Dashboard() {
       aria-busy={loading}
     >
 
+      {/* The reference's near-black page field. Set on `body` so it covers the whole
+          viewport including behind the footer, and scoped to this route - it unmounts
+          with the page, so no other screen inherits it while the rebuild is partial. */}
+      <GlobalStyles styles={{ body: { backgroundColor: SURFACE[mode].page } }} />
+
       {/* thin reload progress bar at top of page */}
       {loading && metrics && (
         <LinearProgress sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1400, height: 2 }} />
@@ -254,15 +286,21 @@ export default function Dashboard() {
           // offset left an 8px slot on mobile where page content scrolled through
           // the gap between the two bars.
           position: 'sticky', top: 64, zIndex: 100,
-          // Surface, not the page field. It now shares the app bar's background, so
-          // the two read as ONE grounded command bar split by the app bar's own
-          // hairline, rather than a white bar stacked on a grey one.
-          bgcolor: BRAND.surface,
-          borderBottom: `1px solid ${BRAND.border}`,
-          // The shadow is the scroll cue and only appears once the page has moved:
-          // at rest the border alone is enough, and a permanent shadow under a
-          // shadowless app bar read as an unexplained seam.
-          boxShadow: scrolled ? '0 4px 12px rgba(16,24,40,.07), 0 1px 3px rgba(16,24,40,.04)' : 'none',
+          /* GLASSMORPHIC. Translucent card colour plus a backdrop blur, so content
+             scrolling underneath is sensed rather than seen. The fallback matters: with
+             no `backdrop-filter` support the bar would be plain see-through and the
+             title would sit on moving content, so the colour only goes translucent
+             behind an `@supports` guard and stays fully opaque otherwise. */
+          bgcolor: SURFACE[mode].card,
+          borderBottom: `1px solid ${SURFACE[mode].border}`,
+          '@supports (backdrop-filter: blur(1px))': {
+            bgcolor: mode === 'dark' ? 'rgba(30,30,36,0.72)' : 'rgba(255,255,255,0.72)',
+            backdropFilter: 'blur(16px) saturate(150%)',
+          },
+          // The shadow is the scroll cue and only appears once the page has moved.
+          boxShadow: scrolled
+            ? (mode === 'dark' ? '0 4px 16px rgba(0,0,0,.45)' : '0 4px 6px -1px rgba(16,24,40,.05)')
+            : 'none',
           transition: 'box-shadow .2s ease',
           px: { xs: 2, md: 1 }, pt: 2, pb: 1.5, mb: 3,
           mx: { xs: -2, md: -1 },
@@ -283,24 +321,28 @@ export default function Dashboard() {
             <Stack
               direction="row"
               spacing={0.75}
-              sx={{ alignItems: 'center', pl: 1, pr: 0.25, py: 0.25, borderRadius: '999px', bgcolor: INTENT.success.bg, border: `1px solid ${INTENT.success.border}` }}
+              sx={{
+                alignItems: 'center', pl: 1, pr: 0.25, py: 0.25, borderRadius: `${RADII.pill}px`,
+                bgcolor: alpha(live.dot, 0.14),
+                border: `1px solid ${alpha(live.dot, 0.32)}`,
+              }}
             >
               <Box
                 aria-hidden
                 sx={{
-                  width: 9, height: 9, borderRadius: '50%', bgcolor: '#0ca30c', flexShrink: 0,
+                  width: 9, height: 9, borderRadius: '50%', bgcolor: live.dot, flexShrink: 0,
                   // Two-part glow: a constant tight halo so the dot reads as lit even
                   // between pulses, and the expanding ring for the heartbeat. The
                   // pulse alone left the dot flat at the bottom of its cycle.
                   '@keyframes liveDot': {
-                    '0%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 0 rgba(12,163,12,.5)' },
-                    '70%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 7px rgba(12,163,12,0)' },
-                    '100%': { boxShadow: '0 0 4px 1px rgba(12,163,12,.55), 0 0 0 0 rgba(12,163,12,0)' },
+                    '0%': { boxShadow: `0 0 6px 1px ${alpha(live.dot, 0.7)}, 0 0 0 0 ${alpha(live.dot, 0.5)}` },
+                    '70%': { boxShadow: `0 0 6px 1px ${alpha(live.dot, 0.7)}, 0 0 0 7px ${alpha(live.dot, 0)}` },
+                    '100%': { boxShadow: `0 0 6px 1px ${alpha(live.dot, 0.7)}, 0 0 0 0 ${alpha(live.dot, 0)}` },
                   },
                   animation: 'liveDot 2s ease-in-out infinite',
                 }}
               />
-              <Typography sx={{ color: ON_SURFACE.ok, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.3px' }}>LIVE</Typography>
+              <Typography sx={{ color: live.ink, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.3px' }}>LIVE</Typography>
               <Typography sx={{ color: BRAND.textLight, fontSize: 11 }} aria-live="polite">
                 {syncedAgo || ''}
               </Typography>
@@ -316,9 +358,50 @@ export default function Dashboard() {
             </Stack>
           </Stack>
 
-          {/* Right cluster: the global time window is the focal control, then
-              notifications, then identity (which owns the account-level action). */}
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
+          {/* ── CENTRE: underline tabs ───────────────────────────────────────
+              UNDERLINE, NOT PILLS. The pill group read as a row of disabled buttons:
+              inactive pills sat in muted grey on a tinted track, which is the same
+              treatment this app uses for a disabled control, so the tabs looked
+              unavailable rather than unselected. An underline carries the active state
+              with weight and a 2px rule and needs no container at all - less chrome, and
+              no ambiguity about what is clickable. */}
+          <Stack
+            component="nav"
+            aria-label="Dashboard sections"
+            direction="row"
+            spacing={0.5}
+            sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'stretch', flexShrink: 0, alignSelf: 'stretch' }}
+          >
+            {NAV_TABS.map(tab => {
+              const active = tab.to === '/dashboard';
+              return (
+                <Box
+                  key={tab.to}
+                  component={RouterLink}
+                  to={tab.to}
+                  aria-current={active ? 'page' : undefined}
+                  sx={{
+                    display: 'flex', alignItems: 'center',
+                    px: 1.75, pt: 0.5, pb: 0.75,
+                    fontSize: 13.5, textDecoration: 'none', whiteSpace: 'nowrap',
+                    fontWeight: active ? 700 : 500,
+                    color: active ? BRAND.heading : BRAND.text,
+                    // the rule is always present so the row never shifts by 2px when
+                    // the active tab changes; it is just transparent when inactive
+                    borderBottom: `2px solid ${active ? BRAND.action : 'transparent'}`,
+                    transition: 'color .15s ease, border-color .15s ease',
+                    '&:hover': { color: BRAND.heading, borderBottomColor: active ? BRAND.action : BRAND.border },
+                    '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
+                  }}
+                >
+                  {tab.label}
+                </Box>
+              );
+            })}
+          </Stack>
+
+          {/* Right cluster: the global time window, then the primary action. */}
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0 }}>
             <Button
               onClick={e => setRangeAnchor(e.currentTarget)}
               startIcon={<CalendarTodayRoundedIcon sx={{ fontSize: 17 }} />}
@@ -372,6 +455,54 @@ export default function Dashboard() {
                 </IconButton>
               </Tooltip>
             )}
+
+            {/* ── PRIMARY CTA, always reachable ──────────────────────────────────
+                The blueprint suggested "Dispatch Team" or "Generate Report". Neither
+                exists as an action in this system, and a header button that does
+                nothing is the most expensive kind of decoration - so this is the real
+                primary operational action: the escalation queue, with its live count.
+
+                Gradient in the ACTION BLUE, not purple. Chrome stays brand per the
+                palette decision, and this is the one blue the app already reserves for
+                "the system's biggest action" (see BRAND.action). The count badge is
+                brand red because a pending call-out is a genuine status. */}
+            <Button
+              component={RouterLink}
+              to="/action-queue"
+              variant="contained"
+              endIcon={<ArrowForwardRoundedIcon sx={{ fontSize: 17 }} />}
+              aria-label={pendingCount > 0 ? `Process escalation queue, ${pendingCount} pending` : 'Open escalation queue'}
+              sx={{
+                ml: 0.5, px: 2, py: 0.85, fontWeight: 700, fontSize: 13.5, whiteSpace: 'nowrap', flexShrink: 0,
+                borderRadius: `${RADII.control}px`,
+                background: `linear-gradient(135deg, ${BRAND.action} 0%, ${BRAND.actionHover} 100%)`,
+                boxShadow: 'none',
+                transition: 'transform .15s ease, box-shadow .15s ease',
+                '&:hover': {
+                  background: `linear-gradient(135deg, ${BRAND.actionHover} 0%, #143A9E 100%)`,
+                  transform: 'translateY(-1px)',
+                  boxShadow: `0 8px 18px -6px ${alpha(BRAND.action, 0.55)}`,
+                },
+                '&:active': { transform: 'none' },
+              }}
+            >
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Process Queue</Box>
+              <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Queue</Box>
+              {pendingCount > 0 && (
+                <Box
+                  component="span"
+                  aria-hidden
+                  sx={{
+                    ml: 1, minWidth: 20, height: 20, px: 0.5, borderRadius: `${RADII.pill}px`,
+                    bgcolor: BRAND.primary, color: '#fff',
+                    display: 'inline-grid', placeItems: 'center',
+                    fontSize: 11.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {pendingCount}
+                </Box>
+              )}
+            </Button>
           </Stack>
         </Stack>
       </Box>
@@ -407,43 +538,44 @@ export default function Dashboard() {
 
           {/* ZONE A — the hook. Status, what past action achieved, and the one
               action demanded now, in a single Command Card across all 12. */}
+          {/* ── ZONE A · ONE hero card ─────────────────────────────────────────
+              The risk index and the activity chart were two full-width cards, each
+              spending a screen on a single idea. Merged: instrument left, trend right. */}
           <Box ref={heroRef} sx={span(12)}>
-            <EstateHealthHero
+            <HeroCommandCard
               estateHealth={metrics.estateHealth}
-              history={metrics.history || []}
-              pendingEscalations={metrics.pendingEscalations || 0}
-              pendingBlocks={metrics.pendingEscalationBlocks || 0}
               scorecard={scorecard}
+              trends={metrics.trends}
+              history={metrics.history || []}
+              sightingsByDay={metrics.sightingsByDay || []}
+              openCases={metrics.openCases ?? 0}
+              windowDays={windowDays}
+              onWindowChange={setWindowDays}
               loading={loading}
             />
           </Box>
 
-          {/* ZONE B — scannable insights. 4 KPI tiles, 3 columns each. */}
-          {kpis.map(kpi => (
-            <Box key={kpi.label} sx={span(3, 6, 6)}>
-              <KpiCard {...kpi} loading={loading} />
-            </Box>
-          ))}
-
-          {/* ZONE C - 60/40 asymmetric split. Left is the analytical "why" (case mix
-              and activity over time); right is the actionable "what" (specific recent
-              incidents, then the worst blocks). Risk-by-block and activity-by-block
-              stay merged into one toggled Block Performance widget. */}
-          <Box sx={span(7)}>
-            <Stack spacing={3}>
-              <CategoryBar casesByCategory={metrics.casesByCategory} />
-              <ActivityChart history={metrics.history} />
-            </Stack>
+          {/* ── ZONE B · BENTO ROW ─────────────────────────────────────────────
+              Three panels on one row instead of a row of KPI tiles followed by a row of
+              panels: the three supporting metrics are now a vertical stack occupying one
+              cell, which is what frees the other two. */}
+          <Box sx={span(3, 12, 6)}>
+            <KpiStack items={kpis} loading={loading} />
+          </Box>
+          <Box sx={span(4, 12, 6)}>
+            <CategoryBar casesByCategory={metrics.casesByCategory} />
           </Box>
           <Box sx={span(5)}>
-            <Stack spacing={3}>
-              <RecentActivity cases={metrics.recentCases || []} />
-              <BlockPerformance
-                sightingsByBlock={metrics.sightingsByBlock || []}
-                hotspots={metrics.hotspots || []}
-                topBlock={metrics.estateHealth?.highestRiskBlock}
-              />
-            </Stack>
+            <RecentActivity cases={metrics.recentCases || []} />
+          </Box>
+
+          {/* ── ZONE C · block performance, full width ────────────────────────── */}
+          <Box sx={span(12)}>
+            <BlockPerformance
+              sightingsByBlock={metrics.sightingsByBlock || []}
+              hotspots={metrics.hotspots || []}
+              topBlock={metrics.estateHealth?.highestRiskBlock}
+            />
           </Box>
 
           {/* ZONE D — granular data. The diagnosis table gets all 12 columns; in the

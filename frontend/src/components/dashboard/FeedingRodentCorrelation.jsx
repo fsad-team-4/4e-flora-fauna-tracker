@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useTheme } from '@mui/material/styles';
-import { BRAND, INTENT } from '../../theme';
+import { BRAND, INTENT, SURFACE, RADII, surfaceSx } from '../../theme';
 import http from '../../http';
 
 // The feeding/rodent signal hues, per scheme. In light the inks are deepened
@@ -86,29 +86,42 @@ function NumCell({ value, color, dim = false, tint = false, tintLabel = null }) 
   const cell = (
     <TableCell
       align="right"
-      // A tint is a colour-only signal, which the old dot's tooltip at least
-      // partly mitigated. The label is carried on the cell as an aria-label and a
-      // tooltip, so the meaning survives for screen readers and for anyone who
-      // cannot separate the hues.
+      // The label rides on the cell as an aria-label and a tooltip, so the meaning
+      // survives for screen readers and for anyone who cannot separate the hues.
       aria-label={tint && tintLabel ? `${value}. ${tintLabel}` : undefined}
-      sx={{
-        py: 1.25,
-        // Tint the whole cell rather than sitting a dot beside the digits: the dot
-        // read as a bullet belonging to the number, and at 8px it was the smallest
-        // mark on the densest surface of the page.
-        ...(tint ? { bgcolor: INTENT.danger.tint } : null),
-      }}
+      sx={{ py: 1.25 }}
     >
-      <Typography
+      {/* A BADGE ON THE NUMBER, NOT A FILLED COLUMN.
+          A solid tint across the whole cell drew a red block down the table and broke
+          every horizontal line in it - and because the tint had to survive the zebra
+          stripe and the row hover as well as the card, it needed its own separately
+          measured colour just to stay visible. Wrapping the digits instead keeps the
+          emphasis exactly where the data is: the eye goes to the figure, and the table's
+          rules stay unbroken.
+
+          `display: inline-flex` with a min-width means a flagged 8 and an unflagged 2
+          still share the same right-hand rail, so the column of digits stays aligned. */}
+      <Box
         component="span"
         sx={{
-          fontSize: 15.5, fontWeight: 800,
-          color: flat ? BRAND.textLight : color,
-          fontVariantNumeric: 'tabular-nums',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end',
+          minWidth: 30, px: tint ? 0.85 : 0, py: tint ? 0.25 : 0,
+          borderRadius: `${RADII.chip}px`,
+          bgcolor: tint ? INTENT.danger.bg : 'transparent',
         }}
       >
-        {value}
-      </Typography>
+        <Typography
+          component="span"
+          sx={{
+            fontSize: 15, fontWeight: 700,
+            // flagged figures take the danger ink, so the number itself is the signal
+            color: flat ? BRAND.textLight : (tint ? INTENT.danger.ink : color),
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {value}
+        </Typography>
+      </Box>
     </TableCell>
   );
   return tint && tintLabel ? <Tooltip title={tintLabel}>{cell}</Tooltip> : cell;
@@ -143,24 +156,30 @@ const COLUMNS = [
  * conditional borders bought a second copy of the row. The prose it was built to
  * hold had already been promoted into columns; only the sub-row stayed behind.
  */
-function BlockRow({ block, index }) {
-  const ink = SIGNAL_INK[useTheme().palette.mode] || SIGNAL_INK.light;
+function BlockRow({ block }) {
+  const mode = useTheme().palette.mode;
+  const ink = SIGNAL_INK[mode] || SIGNAL_INK.light;
+  const s = SURFACE[mode] || SURFACE.dark;
+  const dividerInk = mode === 'dark' ? 'rgba(255,255,255,0.06)' : BRAND.border;
+  const rowHover = s.inset;
   const feedDate = fmtDate(block.firstFeedingDate);
   const rodentDate = fmtDate(block.firstRodentDate);
   const small = block.sampleSize < SMALL_SAMPLE;
   const flagged = orderingFlag(block);
 
-  // Zebra striping keyed off the row index, so the eye can track a single row
-  // across the columns. Kept subtle enough not to fight the hover state.
+  /**
+   * MINIMALIST ROWS. The zebra fill is gone: alternating tinted rows are a heavy way to
+   * do what a single hairline divider and a hover wash already do, and on a dark card the
+   * stripe needed its own separately-measured tint to stay visible against three
+   * different backdrops. One divider, one hover state, no vertical rules anywhere.
+   */
   return (
     <TableRow
       hover
       sx={{
-        '& > td': { borderBottom: `1px solid ${BRAND.border}` },
-        bgcolor: index % 2 === 1 ? BRAND.section : 'transparent',
-        // explicit hover wins over the zebra tint, so the eye can still track a
-        // row across every column on a striped table
-        '&:hover': { bgcolor: BRAND.navySoft },
+        '& > td': { borderBottom: `1px solid ${dividerInk}`, borderRight: 'none' },
+        '&:last-of-type > td': { borderBottom: 'none' },
+        '&:hover': { bgcolor: rowHover },
       }}
     >
       <TableCell sx={{ py: 1.25 }}>
@@ -223,9 +242,25 @@ function BlockRow({ block, index }) {
  * keeps the standing caveat under the table.
  */
 export default function FeedingRodentCorrelation() {
+  const mode = useTheme().palette.mode;
   const [state, setState] = useState({ loading: true, error: false, windowDays: 30, blocks: [] });
   const [orderBy, setOrderBy] = useState('rodentAssessmentCount');
   const [order, setOrder] = useState('desc');
+  /**
+   * THE BUBBLE-CHART VIEW HAS BEEN REMOVED, and not for stylistic reasons.
+   *
+   * A scatter needs spread on both axes to show a relationship. This dataset cannot
+   * provide it: blockDiagnosis counts a feeding signal only where a sighting's
+   * `behaviour === 'feeding'`, the fauna source holds exactly TWO such sightings (Block
+   * 456 and Block 789), and the panel then keeps only blocks carrying both signals. So
+   * the chart could plot at most two bubbles, each with feedingCount = 1 - both sitting
+   * on the same vertical line at x = 1, with no horizontal spread to read.
+   *
+   * No amount of styling fixes a two-point scatter. The table renders two rows or two
+   * hundred equally well, and it is the view that carries the per-block caveats an
+   * officer needs before acting. If the feeding signal ever becomes plentiful, the
+   * scatter is worth revisiting - the shape question is real, the data volume is not.
+   */
 
   useEffect(() => {
     let alive = true;
@@ -250,8 +285,8 @@ export default function FeedingRodentCorrelation() {
   };
 
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ p: 3 }}>
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
+      <CardContent sx={{ p: { xs: 2.25, md: 3 }, '&:last-child': { pb: { xs: 2.25, md: 3 } } }}>
         {/* The standing "association, not proof" caveat used to be a grey box nested
             under the table. It is now an (i) beside the title: same guarantee, none
             of the vertical cost, and it reads before the data rather than after it. */}
@@ -266,10 +301,12 @@ export default function FeedingRodentCorrelation() {
             <InfoOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight, cursor: 'help' }} />
           </Tooltip>
         </Stack>
-        <Typography variant="body2" sx={{ color: BRAND.textLight, mb: 2 }}>
-          Blocks where feeding activity co-occurs with rodent risk over the last {state.windowDays} days -
-          worth investigating for food waste as a root cause
-        </Typography>
+        <Stack sx={{ mb: 2 }}>
+          <Typography variant="body2" sx={{ color: BRAND.textLight, minWidth: 0 }}>
+            Blocks where feeding activity co-occurs with rodent risk over the last {state.windowDays} days -
+            worth investigating for food waste as a root cause
+          </Typography>
+        </Stack>
 
         {state.loading ? (
           <Stack spacing={1.5}>
@@ -302,7 +339,10 @@ export default function FeedingRodentCorrelation() {
                         align={c.align}
                         width={c.width}
                         sortDirection={orderBy === c.id ? order : false}
-                        sx={{ py: 1, borderBottom: `2px solid ${BRAND.border}`, bgcolor: BRAND.section }}
+                        sx={{
+                          py: 1.25, bgcolor: 'transparent', borderRight: 'none',
+                          borderBottom: `1px solid ${mode === 'dark' ? 'rgba(255,255,255,0.10)' : BRAND.border}`,
+                        }}
                       >
                         <TableSortLabel
                           active={orderBy === c.id}
@@ -319,7 +359,7 @@ export default function FeedingRodentCorrelation() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {sorted.map((b, i) => <BlockRow key={b.block_number} block={b} index={i} />)}
+                  {sorted.map(b => <BlockRow key={b.block_number} block={b} />)}
                 </TableBody>
               </Table>
             </TableContainer>

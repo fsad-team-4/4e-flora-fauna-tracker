@@ -60,6 +60,35 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
       return { date: key, count: notifByDayMap.get(key) || 0 };
     });
 
+    /**
+     * SIGHTINGS LOGGED PER DAY - a real daily count, densified like the alerts above.
+     *
+     * WHY THIS EXISTS. `history[].sightings` comes from the snapshot column
+     * `total_sightings`, which is `sightings.length` - a CUMULATIVE total of every
+     * sighting ever recorded. The dashboard's activity chart wanted a per-day figure
+     * and had been differencing consecutive snapshots to get one, which is sound
+     * arithmetic on a growing series but produces zero for every day here: the source
+     * is mockDataService.getFaunaSightings(), a fixed seven-row array, so the total is
+     * 7 on every snapshot forever. Every bar came out at height zero and the chart
+     * looked empty.
+     *
+     * The source rows carry `createdAt`, so the honest fix is to bucket them by day
+     * here rather than to derive a daily figure from a total that cannot move. Same
+     * shape and same densify-to-zero rule as notificationsByDay, so a day with no
+     * sightings reads as 0 instead of dropping out of the series.
+     */
+    const sightingDayCounts = new Map();
+    for (const s of sightings) {
+      const t = new Date(s.createdAt);
+      if (Number.isNaN(t.getTime())) continue;
+      const key = dayKey(t);
+      sightingDayCounts.set(key, (sightingDayCounts.get(key) || 0) + 1);
+    }
+    const sightingsByDay = Array.from({ length: windowDays }, (_, i) => {
+      const key = dayKey(new Date(Date.now() - (windowDays - 1 - i) * day));
+      return { date: key, count: sightingDayCounts.get(key) || 0 };
+    });
+
     // rodent escalations the AI has recommended but no officer has actioned yet -
     // drives the dashboard's "awaiting review" call-to-action.
     const pendingRows = await RodentAssessment.findAll({
@@ -115,6 +144,8 @@ router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
       notificationsWindow: notifWindow,
       notificationsPrevWindow: notifPrevWindow,
       notificationsByDay,
+      // real per-day sightings, as opposed to the cumulative `history[].sightings`
+      sightingsByDay,
       pendingEscalations,
       pendingEscalationBlocks,
       recentCases,

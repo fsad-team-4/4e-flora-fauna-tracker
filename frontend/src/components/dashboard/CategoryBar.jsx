@@ -2,13 +2,13 @@ import { useMemo } from 'react';
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { useTheme } from '@mui/material/styles';
-import { BRAND } from '../../theme';
+import { useTheme, alpha } from '@mui/material/styles';
+import { BRAND, SURFACE, NEON, surfaceSx } from '../../theme';
 import { CATEGORY_LABELS } from '../../constants';
 
 // Recharts writes `stroke` into an SVG attribute, where a var(--em-surface) token
 // never resolves, so the arc separator needs the literal surface colour per scheme.
-const SURFACE = { light: '#FFFFFF', dark: '#1B222D' };
+
 
 function DonutTooltip({ active, payload, total }) {
   if (!active || !payload?.length) return null;
@@ -26,32 +26,36 @@ function DonutTooltip({ active, payload, total }) {
   );
 }
 
-// Monochromatic corporate blue scale. Shades map to categories by IDENTITY, not by
-// rank, so a category keeps its shade as the counts move - a rank-based ramp would
-// silently recolour every segment whenever the ordering changed.
-//
-// `pest` is the one exception: it is the escalating, contractor-dispatch category,
-// so it keeps a semantic red.
-//
-// Per scheme: the light set is deep-on-pale; the dark set lifts every slot so the
-// segments and legend dots clear the 3:1 graphics floor on the dark card.
+/**
+ * NEON segment inks, one per category.
+ *
+ * These replace a monochromatic corporate-blue scale, which was chosen so that shades
+ * mapped to categories by IDENTITY rather than rank. That property is kept: each key
+ * below owns a fixed hue, so a category never changes colour as the counts move.
+ *
+ * NO YELLOW, and `pest` is no longer red. The old set gave `pest` a semantic crimson on
+ * the grounds that it is the escalating category - but that put a status hue on a
+ * CATEGORY swatch, so a legend dot and a danger pill were the same colour meaning
+ * different things. Every slot here is off the semantic hues; escalation is carried by
+ * the case's own status pill, which is where status belongs.
+ */
 const SEG_COLORS = {
   light: {
-    community_cat: '#1E3A5F',
-    pigeon: '#2C5687',
-    flora_health: '#4A7CB0',
-    other: '#9FB3C8',
-    pest: '#B3261E',
+    community_cat: NEON.light.cyan,
+    pigeon: NEON.light.purple,
+    flora_health: NEON.light.teal,
+    pest: NEON.light.magenta,
+    other: NEON.light.slate,
   },
   dark: {
-    community_cat: '#5B8FD6',
-    pigeon: '#7FA8D0',
-    flora_health: '#7CC7D8',
-    other: '#B7C4D4',
-    pest: '#F08A8F',
+    community_cat: NEON.dark.cyan,
+    pigeon: NEON.dark.purple,
+    flora_health: NEON.dark.teal,
+    pest: NEON.dark.magenta,
+    other: NEON.dark.slate,
   },
 };
-const SEG_FALLBACK = { light: '#6E88A6', dark: '#9DB0C6' };
+const SEG_FALLBACK = { light: NEON.light.slate, dark: NEON.dark.slate };
 
 function roundTo100(rows, total) {
   if (!total) return rows.map(r => ({ ...r, pct: 0 }));
@@ -77,7 +81,8 @@ function roundTo100(rows, total) {
  */
 export default function CategoryBar({ casesByCategory = [], embedded = false }) {
   const mode = useTheme().palette.mode;
-  const surface = SURFACE[mode] || SURFACE.light;
+  const s = SURFACE[mode] || SURFACE.dark;
+  const surface = s.card;
   const { data, total } = useMemo(() => {
     const segColors = SEG_COLORS[mode] || SEG_COLORS.light;
     const fallback = SEG_FALLBACK[mode] || SEG_FALLBACK.light;
@@ -130,7 +135,15 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
           {/* Ring. 2px of surface between arcs (paddingAngle + a surface stroke)
               rather than letting neighbouring fills touch, so adjacent categories
               stay separable without relying on hue contrast alone. */}
-          <Box role="img" aria-label={ariaSummary} sx={{ width: '100%', height: 150, mx: 'auto', maxWidth: 150 }}>
+          <Box
+            role="img"
+            aria-label={ariaSummary}
+            sx={{
+              width: '100%', height: 150, mx: 'auto', maxWidth: 150,
+              // the arcs bloom on dark; on light a glow renders as a smudge, so none
+              filter: mode === 'dark' ? 'drop-shadow(0 0 8px rgba(34,211,238,.28))' : 'none',
+            }}
+          >
             <ResponsiveContainer width="100%" height="100%">
               <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                 <Pie
@@ -139,9 +152,12 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
                   nameKey="label"
                   cx="50%"
                   cy="50%"
-                  innerRadius="66%"
+                  // THIN RING. 66%->82% inner made the band about a third of the radius,
+                  // which reads as a heavy doughnut; a narrow ring reads as a scale and
+                  // leaves a real hole for the total.
+                  innerRadius="82%"
                   outerRadius="98%"
-                  paddingAngle={2}
+                  paddingAngle={1.5}
                   stroke={surface}
                   strokeWidth={2}
                   isAnimationActive
@@ -155,11 +171,19 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
               </PieChart>
             </ResponsiveContainer>
             {/* Total in the hole: the one figure the ring itself cannot state. */}
+            {/* The total in the hollow centre, with a soft bloom on dark. The ring
+                itself cannot state this figure, which is why it sits in the hole. */}
             <Box sx={{ mt: '-95px', textAlign: 'center', pointerEvents: 'none' }}>
-              <Typography sx={{ fontSize: 26, fontWeight: 800, lineHeight: 1, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
+              <Typography
+                sx={{
+                  fontSize: 28, fontWeight: 700, lineHeight: 1, color: BRAND.heading,
+                  fontVariantNumeric: 'tabular-nums', letterSpacing: '-1px',
+                  textShadow: mode === 'dark' ? `0 0 20px ${alpha(NEON.dark.cyan, 0.4)}` : 'none',
+                }}
+              >
                 {total}
               </Typography>
-              <Typography sx={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: BRAND.textLight }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: BRAND.textLight, mt: 0.25 }}>
                 cases
               </Typography>
             </Box>
@@ -171,7 +195,7 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
             {segments.map(d => (
               <Box
                 key={d.key}
-                sx={{ display: 'grid', gridTemplateColumns: '10px minmax(0, 1fr) 40px 34px', gap: 1, alignItems: 'center' }}
+                sx={{ display: 'grid', gridTemplateColumns: '8px minmax(0, 1fr) 42px 34px', gap: 1, alignItems: 'center' }}
               >
                 <Box aria-hidden sx={{ width: 10, height: 10, borderRadius: '3px', bgcolor: d.color, flexShrink: 0 }} />
                 <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -194,8 +218,8 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
   if (embedded) return inner;
 
   return (
-    <Card sx={{ height: '100%' }}>
-      <CardContent sx={{ p: 3 }}>{inner}</CardContent>
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 }, '&:last-child': { pb: { xs: 2.25, md: 2.75 } } }}>{inner}</CardContent>
     </Card>
   );
 }

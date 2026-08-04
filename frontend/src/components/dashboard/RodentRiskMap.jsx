@@ -30,7 +30,7 @@ import 'leaflet/dist/leaflet.css';
 import { BRAND, CATEGORY_COLORS, ON_SURFACE, SVG_ACCENT, SENSOR_RAMP, TREND } from '../../theme';
 import { useThemeMode } from '../../contexts/ThemeModeContext';
 import { useUser } from '../../contexts/UserContext';
-import { SEVERITY, SG_CENTER, BASEMAPS, TILE_ATTR } from './rodentMapTokens';
+import { SEVERITY, SG_CENTER, BASEMAPS, TILE_ATTR, DENSITY_RAMP, DENSITY_STEP_LABELS, densityStep } from './rodentMapTokens';
 import SensorSurfaceLayer from './SensorSurfaceLayer';
 import VendorBriefingDialog from './VendorBriefingDialog';
 import VenueDetailDrawer from './VenueDetailDrawer';
@@ -727,21 +727,25 @@ function hexBin(points, hexM) {
 
 const SEVERITY_RANK = { low: 0, medium: 1, high: 2, critical: 3 };
 
-function DensityLayer({ points, monoColor = null }) {
+function DensityLayer({ points, monoColor = null, mode = 'light' }) {
   // Re-bin on zoom so the cells stay a usable size on screen at every scale.
   const map = useMap();
   const [zoom, setZoom] = useState(() => map.getZoom());
   useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
   const hexM = hexMetresFor(zoom);
   const cells = useMemo(() => hexBin(points, hexM), [points, hexM]);
-  const max = Math.max(1, ...cells.map(c => c.count));
+  const ramp = DENSITY_RAMP[mode] || DENSITY_RAMP.light;
   return cells.map(c => {
-    // feeding has no severity band of its own, so it bins in one colour
-    const sv = monoColor ? { solid: monoColor } : SEVERITY[c.band];
-    // Intensity is the cell's share of the busiest cell. The floor keeps a
-    // one-report cell clearly visible: "measured, and quiet" must not fade to
-    // nothing, or a sparse cell becomes indistinguishable from no cell at all.
-    const t = c.count / max;
+    // Feeding bins in one flat colour: it has no volume scale of its own on this
+    // page, and a second five-step ramp beside the rodent one would read as a
+    // comparison between two things that are not on the same scale.
+    const step = densityStep(c.count);
+    const fill = monoColor || ramp[step];
+    // Opacity climbs with the SAME variable the hue does, so the two reinforce
+    // instead of encoding different things. The 0.30 floor keeps a one-report cell
+    // clearly visible - "measured, and quiet" must not fade to nothing, or a sparse
+    // cell becomes indistinguishable from no cell at all.
+    const t = monoColor ? 0.5 : step / (ramp.length - 1);
     return (
       <Polygon
         key={`hx-${c.q},${c.r}`}
@@ -750,17 +754,19 @@ function DensityLayer({ points, monoColor = null }) {
         // transition rather than a hard repaint
         className="rk-hex"
         pathOptions={{
-          color: sv.solid,
+          color: fill,
           weight: 1,
           opacity: 0.55,
-          fillColor: sv.solid,
-          fillOpacity: 0.22 + 0.5 * t,
+          fillColor: fill,
+          fillOpacity: 0.3 + 0.32 * t,
         }}
       >
         <LeafletTooltip direction="top" offset={[0, -4]} opacity={1} className="rk-hex-tip">
           <span style={{ fontWeight: 700 }}>{c.count} report{c.count === 1 ? '' : 's'}</span>
           {` across ${c.locations} location${c.locations === 1 ? '' : 's'}`}
           <br />
+          {/* Peak severity is still REPORTED here even though it is no longer drawn -
+              the shading dropped it, the readout must not. */}
           {monoColor ? `${fmtCell(hexM)} cell` : `peak severity ${c.band} · ${fmtCell(hexM)} cell`}
         </LeafletTooltip>
       </Polygon>
@@ -1000,19 +1006,26 @@ function TrendDelta({ current, previous, windowDays }) {
   );
 }
 
-function StatCard({ value, label, accent, hint, loading, trend, alert = false, active = false, onToggle = null }) {
+function StatCard({ value, label, accent, hint, loading, trend, alert = false, active = false, onToggle = null, dense = false }) {
   return (
     // Elevated card on the sheet surface, not a grey well sunk into it. The
     // BRAND.section fill made the four metrics read as one recessed strip; a
     // surface fill plus a hairline and a soft shadow lifts each into its own
-    // object, which is what gives the dock its "command deck" weight.
+    // object, which is what gives the strip its "command deck" weight.
+    //
+    // `dense` is the header-strip form: the figures moved off the page floor to
+    // directly under the header, where they are read before the map rather than
+    // after it. At 38px the four cards needed a 96px band of their own, which is
+    // why they used to live in a collapse - at 24px with the label on the same
+    // optical line they fit a single 58px row that never needs hiding.
     <Box
       component={onToggle ? 'button' : 'div'}
       type={onToggle ? 'button' : undefined}
       onClick={onToggle || undefined}
       aria-pressed={onToggle ? active : undefined}
       sx={{
-        px: 2, py: 1.75, borderRadius: '10px', minWidth: 0,
+        px: dense ? 1.75 : 2, py: dense ? 1.1 : 1.75,
+        borderRadius: dense ? '8px' : '10px', minWidth: 0,
         width: '100%', textAlign: 'left', font: 'inherit',
         cursor: onToggle ? 'pointer' : 'default',
         // ACTIVE = inverted, so a filtered map can never look like an unfiltered
@@ -1020,7 +1033,9 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
         bgcolor: active ? ON_SURFACE.danger : BRAND.surface,
         border: `1px solid ${active ? ON_SURFACE.danger : BRAND.border}`,
         ...(alert && !active ? { borderLeft: `4px solid ${ON_SURFACE.danger}` } : null),
-        boxShadow: '0 4px 12px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06)',
+        boxShadow: dense
+          ? '0 1px 2px rgba(16,24,40,.06)'
+          : '0 4px 12px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06)',
         transition: 'background-color .15s ease, border-color .15s ease',
         ...(onToggle ? { '&:hover': { borderColor: ON_SURFACE.danger } } : null),
         '&:focus-visible': { outline: `2px solid ${ON_SURFACE.danger}`, outlineOffset: 2 },
@@ -1028,7 +1043,7 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
     >
       {loading ? (
         <>
-          <Skeleton variant="text" width={54} height={34} />
+          <Skeleton variant="text" width={54} height={dense ? 24 : 34} />
           <Skeleton variant="text" width="80%" height={14} />
         </>
       ) : (
@@ -1043,7 +1058,12 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
               {trend}
             </Stack>
           </Stack>
-          <Typography sx={{ fontSize: { xs: 30, md: 38 }, fontWeight: 900, lineHeight: 1.05, mt: 0.5, color: active ? '#fff' : (accent || BRAND.ink), fontVariantNumeric: 'tabular-nums', letterSpacing: '-1.5px' }}>
+          <Typography sx={{
+            fontSize: dense ? { xs: 22, md: 25 } : { xs: 30, md: 38 },
+            fontWeight: 900, lineHeight: 1.05, mt: dense ? 0.15 : 0.5,
+            color: active ? '#fff' : (accent || BRAND.ink),
+            fontVariantNumeric: 'tabular-nums', letterSpacing: dense ? '-0.9px' : '-1.5px',
+          }}>
             {value}
           </Typography>
           {/* labels wrap rather than ellipsis: "High-risk locations" truncated to
@@ -1516,6 +1536,13 @@ export default function RodentRiskMap() {
               {coBlocks.length} co-occurrence{coBlocks.length === 1 ? '' : 's'}
             </Button>
           )}
+          {/* Separates a FINDING from the CONTROLS. The co-occurrence button is the
+              only thing in this cluster that reports something about the data rather
+              than changing what is shown, and sitting flush against the window
+              toggle it read as a fourth control. */}
+          {coBlocks.length > 0 && (
+            <Box aria-hidden sx={{ width: '1px', alignSelf: 'stretch', my: 0.25, bgcolor: BRAND.border, flexShrink: 0 }} />
+          )}
           <ToggleButtonGroup value={windowDays} exclusive onChange={changeWindow} size="small" aria-label="Time window"
             sx={{
               bgcolor: BRAND.section, borderRadius: '999px', p: '3px', gap: '2px',
@@ -1553,6 +1580,100 @@ export default function RodentRiskMap() {
         </Stack>
       </Box>
 
+      {/* ── Dense metric strip, directly under the header ─────────────────────
+          These four figures used to live in a collapsible dock at the page floor,
+          below the map. That put the estate's headline numbers last in the reading
+          order and behind a "Show metrics" click, on a page whose whole job is to
+          answer "how bad is it and where". At the dense size they cost one 58px
+          row, so nothing has to be hidden to make room.
+
+          Not sticky and not inside the map's relative container: it is a sibling
+          of the header in the page's flex column, so it never overlays the canvas
+          or the floating controls panel. ──────────────────────────────────────── */}
+      {!state.error && (
+        <Box
+          component="section"
+          aria-label="Estate metrics for the selected window"
+          sx={{
+            flexShrink: 0, zIndex: 4, px: { xs: 2, md: 3 }, py: 1.25,
+            bgcolor: BRAND.section, borderBottom: `1px solid ${BRAND.border}`,
+            display: 'grid', gap: 1.25, alignItems: 'stretch',
+            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+          }}
+        >
+          <StatCard
+            dense
+            loading={state.loading}
+            value={totalAssessments}
+            label="Rodent reports"
+            trend={prev && <TrendDelta current={totalAssessments} previous={prev.totalAssessments} windowDays={windowDays} />}
+          />
+          <StatCard
+            dense
+            loading={state.loading}
+            value={highRiskLocations}
+            label="High-risk locations"
+            accent={highRiskLocations ? ON_SURFACE.danger : BRAND.ink}
+            alert={highRiskLocations > 0}
+            // pressing it filters the map to exactly these locations, and
+            // inverts so the filtered state is never a silent one
+            active={highRiskOnly}
+            onToggle={highRiskLocations > 0 ? () => setHighRiskOnly(v => !v) : null}
+            /* Gated on the prior window having MAPPED reports, not merely any
+               reports. "High-risk locations" is derived from coordinates, so a
+               window where nothing carried a location scores 0 - and comparing
+               against that would read a coverage gap as a fall in risk. */
+            trend={prev?.mappedCount > 0
+              ? <TrendDelta current={highRiskLocations} previous={prev.highRiskLocations} windowDays={windowDays} />
+              : null}
+          />
+          <StatCard
+            dense
+            loading={state.loading}
+            value={feeding.total}
+            label="Feeding sightings"
+            trend={prev && <TrendDelta current={feeding.total} previous={prev.feedingTotal} windowDays={windowDays} />}
+          />
+          {/* The coverage caveat stays a first-class metric, not a footnote: at a
+              glance it says how much of the estate the map is actually able to
+              show. When it is poor the card carries the amber ink, the tooltip and
+              a route to fix it - all three, never colour alone. */}
+          <StatCard
+            dense
+            loading={state.loading}
+            value={`${locatedPct}%`}
+            label={`Located · ${totalMapped}/${totalReports}`}
+            accent={poorCoverage ? COVERAGE_INK : BRAND.ink}
+            hint={poorCoverage ? (
+              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                <Tooltip title={`Only ${locatedPct}% of reports in this window include a location, so the map may under-represent activity.`}>
+                  <InfoOutlinedIcon sx={{ fontSize: 15, color: COVERAGE_INK, cursor: 'help' }} />
+                </Tooltip>
+                {/* The route to FIX the gap, not just a notice of it. Carries its
+                    word at md+ where the column is wide enough; below that the
+                    text drops but the icon keeps the aria-label and the tooltip,
+                    so it is never an unlabelled affordance. */}
+                <Tooltip title="Log positions for the reports that are missing them">
+                  <Button
+                    component={RouterLink}
+                    to="/rodent"
+                    size="small"
+                    aria-label="Add locations to reports missing them"
+                    startIcon={<AddLocationAltOutlinedIcon sx={{ fontSize: 15 }} />}
+                    sx={{
+                      minWidth: 0, px: 0.6, py: 0.1, textTransform: 'none',
+                      fontSize: 11, fontWeight: 700, color: COVERAGE_INK, whiteSpace: 'nowrap',
+                      '& .MuiButton-startIcon': { mr: { xs: 0, md: 0.4 }, ml: 0 },
+                    }}
+                  >
+                    <Box component="span" sx={{ display: { xs: 'none', md: 'inline' } }}>Add</Box>
+                  </Button>
+                </Tooltip>
+              </Stack>
+            ) : null}
+          />
+        </Box>
+      )}
 
       {/* PERSISTENT DISCLOSURE RIBBON.
           Moved off the map canvas (where it floated over the data) into a
@@ -1636,11 +1757,11 @@ export default function RodentRiskMap() {
 
               {viewMode === 'density' ? (
                 <>
-                  {showRodent && <DensityLayer points={shownRodent} />}
+                  {showRodent && <DensityLayer points={shownRodent} mode={resolvedMode} />}
                   {/* feeding bins onto the SAME hex grid, so a rodent cell and a
                       feeding cell are directly comparable rather than one being
                       discs and the other polygons */}
-                  {showFeeding && <DensityLayer points={feedingPoints} monoColor={FEEDING_INK} />}
+                  {showFeeding && <DensityLayer points={feedingPoints} monoColor={FEEDING_INK} mode={resolvedMode} />}
                 </>
               ) : (
                 <>
@@ -1911,9 +2032,39 @@ export default function RodentRiskMap() {
                           </Stack>
                         ))}
                       </Stack>
+                      {/* The sentence is scoped to Pins view, because in Density
+                          view hexagon colour is volume, not severity - leaving it
+                          unconditional would have told the officer to read the
+                          shading as severity when it no longer encodes it. */}
                       <Typography sx={{ fontSize: 11.5, color: BRAND.text, lineHeight: 1.6 }}>
-                        Colour = severity · bigger pin = more reports · ! marks critical.
+                        {viewMode === 'density'
+                          ? 'Pin colour = severity · ! marks critical. Severity bands above apply to pins and popups.'
+                          : 'Colour = severity · bigger pin = more reports · ! marks critical.'}
                       </Typography>
+
+                      {viewMode === 'density' && (
+                        <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${BRAND.border}` }}>
+                          <Typography component="h2" sx={{ ...SECTION_LABEL, mb: 0.75 }}>Cell density (reports)</Typography>
+                          <Box aria-hidden sx={{ display: 'flex', borderRadius: '3px', overflow: 'hidden', height: 12 }}>
+                            {DENSITY_RAMP[resolvedMode].map(c => (
+                              <Box key={c} sx={{ flex: 1, bgcolor: c }} />
+                            ))}
+                          </Box>
+                          {/* Every step labelled with its real count. Five steps fit
+                              at this width, and an unlabelled ramp would make the
+                              hue an opinion rather than a reading. */}
+                          <Stack direction="row" sx={{ justifyContent: 'space-between', mt: 0.25 }}>
+                            {DENSITY_STEP_LABELS.map(l => (
+                              <Typography key={l} sx={{ fontSize: 9.5, color: BRAND.textLight, fontVariantNumeric: 'tabular-nums' }}>{l}</Typography>
+                            ))}
+                          </Stack>
+                          <Typography sx={{ fontSize: 11.5, color: BRAND.text, lineHeight: 1.6, mt: 0.5 }}>
+                            Shading is report VOLUME per cell, not severity - steps are fixed
+                            counts, so a cell only changes colour when its own count does.
+                            {showFeeding && ' Feeding cells bin in one flat teal.'}
+                          </Typography>
+                        </Box>
+                      )}
                       {showSensors && (
                         // No fill and no card border: nested grey-on-grey panels
                         // flattened the drawer. A rule plus the label carries the
@@ -1953,7 +2104,8 @@ export default function RodentRiskMap() {
                       )}
                       {viewMode === 'density' && (
                         <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.6, mt: 0.5 }}>
-                          Density blends overlapping weighted circles - it is not a smoothed kernel estimate.
+                          Reports are binned into fixed hexagonal cells - this is a count per
+                          cell, not a smoothed kernel estimate.
                         </Typography>
                       )}
                       <Divider sx={{ my: 1.25 }} />
@@ -1985,24 +2137,22 @@ export default function RodentRiskMap() {
             ))}
       </Box>
 
-      {/* ── Bottom dock: metrics + temporal scrubber, ~1 row tall ───────────── */}
-      {!state.error && (
-        // The sheet keeps the page field rather than a white fill: the metric cards
-        // are white and elevated, so a white sheet behind them cancelled their
-        // shadows and the four cards merged back into one flat bar.
+      {/* ── Bottom dock: the temporal scrubber, one row tall ──────────────────
+          The four metric figures used to share this dock. They now sit in the
+          dense strip under the header, which leaves the dock doing exactly one
+          job: playing the window back over time. A playback transport belongs on
+          the same edge as a video scrubber, and it is the only thing down here
+          that the officer drags rather than reads. ─────────────────────────── */}
+      {/* Gated on there being more than one day to scrub. The dock's only content
+          is the transport now, so with a single day it would be an empty sheet
+          under a "Show timeline" button that reveals nothing. */}
+      {!state.error && days.length > 1 && (
+        // The sheet keeps the page field rather than a white fill, so the dock
+        // reads as a distinct surface from the map canvas above it.
         <Box sx={{ flexShrink: 0, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.section }}>
           <Collapse in={dockOpen}>
-            <Box sx={{ px: { xs: 2, md: 3 }, py: 1.75 }}>
-              {/* KPI strip on a 4-column grid - the figures are the hook, so they
-                  get the size and the labels recede to micro-type */}
-              {/* strict 4-column grid across the full sheet width - the cards no
-                  longer share a row with the scrubber and drift out of alignment */}
-              {/* Scrubber ABOVE the cards. Time manipulation belongs with the map
-                  it re-draws, not stranded at the very bottom of the sheet below
-                  the figures it changes - the cards are a readout OF the window
-                  the scrubber sets, so it reads top-down now. */}
-              {days.length > 1 && (
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', mb: 1.75, pb: 1.5, borderBottom: `1px solid ${BRAND.border}` }}>
+            <Box sx={{ px: { xs: 2, md: 3 }, py: 1.5 }}>
+                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
                   <Tooltip title={playing ? 'Pause playback' : 'Play activity over time'}>
                     <IconButton size="small" onClick={() => setPlaying(p => !p)} aria-label={playing ? 'Pause' : 'Play'} sx={railBtn}>
                       {playing ? <PauseRoundedIcon sx={{ fontSize: 20 }} /> : <PlayArrowRoundedIcon sx={{ fontSize: 20 }} />}
@@ -2045,58 +2195,6 @@ export default function RodentRiskMap() {
                     </Button>
                   )}
                 </Stack>
-              )}
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1.75 }}>
-                <StatCard
-                  loading={state.loading}
-                  value={totalAssessments}
-                  label="Rodent reports"
-                  trend={prev && <TrendDelta current={totalAssessments} previous={prev.totalAssessments} windowDays={windowDays} />}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={highRiskLocations}
-                  label="High-risk locations"
-                  accent={highRiskLocations ? ON_SURFACE.danger : BRAND.ink}
-                  alert={highRiskLocations > 0}
-                  // pressing it filters the map to exactly these locations, and
-                  // inverts so the filtered state is never a silent one
-                  active={highRiskOnly}
-                  onToggle={highRiskLocations > 0 ? () => setHighRiskOnly(v => !v) : null}
-                  /* Gated on the prior window having MAPPED reports, not merely any
-                     reports. "High-risk locations" is derived from coordinates, so a
-                     window where nothing carried a location scores 0 - and comparing
-                     against that would read a coverage gap as a fall in risk. */
-                  trend={prev?.mappedCount > 0
-                    ? <TrendDelta current={highRiskLocations} previous={prev.highRiskLocations} windowDays={windowDays} />
-                    : null}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={feeding.total}
-                  label="Feeding sightings"
-                  trend={prev && <TrendDelta current={feeding.total} previous={prev.feedingTotal} windowDays={windowDays} />}
-                />
-                <StatCard
-                  loading={state.loading}
-                  value={`${locatedPct}%`}
-                  label={`Located · ${totalMapped}/${totalReports}`}
-                  accent={poorCoverage ? COVERAGE_INK : BRAND.ink}
-                  hint={poorCoverage ? (
-                    <Tooltip title={`Only ${locatedPct}% of reports in this window include a location, so the map may under-represent activity.`}>
-                      <InfoOutlinedIcon sx={{ fontSize: 15, color: COVERAGE_INK, cursor: 'help' }} />
-                    </Tooltip>
-                  ) : null}
-                />
-              </Box>
-
-              {poorCoverage && !state.loading && (
-                <Button component={RouterLink} to="/rodent" size="small" variant="contained" startIcon={<AddLocationAltOutlinedIcon />}
-                  sx={{ alignSelf: { md: 'center' }, flexShrink: 0, textTransform: 'none', fontWeight: 700, borderRadius: '6px', px: 2.5, py: 1, bgcolor: BRAND.action, '&:hover': { bgcolor: BRAND.actionHover } }}>
-                  Add locations
-                </Button>
-              )}
-
             </Box>
           </Collapse>
 
@@ -2112,7 +2210,7 @@ export default function RodentRiskMap() {
               '&:hover': { bgcolor: BRAND.section },
             }}
           >
-            <Typography sx={{ fontSize: 11, fontWeight: 700 }}>{dockOpen ? 'Hide metrics' : 'Show metrics'}</Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 700 }}>{dockOpen ? 'Hide timeline' : 'Show timeline'}</Typography>
             <ExpandMoreRoundedIcon sx={{ fontSize: 16, transform: dockOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />
           </Box>
         </Box>

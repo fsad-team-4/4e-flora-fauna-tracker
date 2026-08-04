@@ -26,6 +26,47 @@ export const SEVERITY = {
 export const SG_CENTER = [1.3690, 103.8456];
 
 /**
+ * DENSITY_RAMP - the hexagon fill scale for Density view. Deep purple to magenta.
+ *
+ * WHY NOT THE SEVERITY HUES. The hexagons used to take `SEVERITY[band].solid`, so
+ * hue said "peak severity in this cell" while opacity said "how many reports". Two
+ * variables on one polygon, pulling against each other: a cell holding one critical
+ * report outranked a cell holding twelve medium ones, so the loudest hexagon was not
+ * the busiest one. Density view now encodes exactly one thing - volume - and severity
+ * stays where it is already unambiguous: the pins, the popups and the legend.
+ *
+ * WHY PURPLE-TO-MAGENTA. Volume is not a status, so it must not borrow the status
+ * hues. Purple and magenta are the two data inks the design system already reserves
+ * for non-semantic encoding (theme.js NEON), and neither collides with the severity
+ * scale (blue/amber/red/crimson) or with feeding (teal). Crimson is deliberately NOT
+ * the top step - crimson is what `critical` means everywhere else on this page.
+ *
+ * WHY FIXED BREAKS, NOT SHARE-OF-MAX. Steps are absolute report counts, so a cell's
+ * colour depends only on that cell. Scaling to the busiest cell would have recoloured
+ * a quiet hexagon whenever a different hexagon got busier, without anything about it
+ * changing - and scrubbing the timeline would have repainted the whole grid. The
+ * legend prints these exact numbers.
+ */
+export const DENSITY_BREAKS = [1, 2, 3, 5, 9];
+export const DENSITY_STEP_LABELS = ['1', '2', '3-4', '5-8', '9+'];
+
+export const DENSITY_RAMP = {
+  // Lifted off true violet-900 at the low end: on the dark basemap a #4C1D95 fill at
+  // 30% opacity was indistinguishable from the ground.
+  dark: ['#6D28D9', '#8B5CF6', '#A855F7', '#D946EF', '#F472B6'],
+  // Deeper throughout, because these are semi-transparent fills over a near-white
+  // Positron ground - the dark set washes out to pastel on it.
+  light: ['#5B21B6', '#7C3AED', '#9333EA', '#C026D3', '#DB2777'],
+};
+
+/** Index into DENSITY_RAMP for an absolute report count. */
+export const densityStep = count => {
+  let i = 0;
+  for (let k = 0; k < DENSITY_BREAKS.length; k++) if (count >= DENSITY_BREAKS[k]) i = k;
+  return i;
+};
+
+/**
  * Basemap options. CARTO styles, so no API key is needed - a Mapbox/MapLibre vector
  * style would require an access token this build does not have. "Muted" drops road
  * labels entirely, which is what actually stops street type competing with the pins.

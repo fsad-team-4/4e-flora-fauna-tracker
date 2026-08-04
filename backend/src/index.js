@@ -5,6 +5,7 @@ const cors = require('cors');
 const { sequelize } = require('./models');
 
 const { ensureWorkOrderColumns } = require('./services/workOrderSchema');
+const { ensureRodentAssessmentColumns } = require('./services/rodentAssessmentSchema');
 const { startCronJobs } = require('./cron');
 
 if (!process.env.JWT_SECRET) {
@@ -58,6 +59,10 @@ async function start() {
   // established dev database.sqlite needs the work order pipeline columns added.
   // Idempotent, SQLite-only, and scoped to the WorkOrders table.
   await ensureWorkOrderColumns();
+  // Same reason, for the root-cause / outcome / SLA columns on RodentAssessments.
+  // Unlike the helper above this one covers Postgres too - those columns land on a
+  // Neon database that already holds rows, where sync() will not add them.
+  await ensureRodentAssessmentColumns();
   app.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);
   });

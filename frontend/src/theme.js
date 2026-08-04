@@ -120,6 +120,144 @@ export const THEME_TOKENS = {
   },
 };
 
+/* ==========================================================================
+ * REFERENCE-DERIVED SURFACE SYSTEM
+ *
+ * Taken from the two dark analytics references (Fitonist, Nexus). What was
+ * extracted is the SYSTEM, not the screenshots:
+ *
+ *   1. A three-step surface ladder - page, card, and an INSET panel nested
+ *      inside a card. Both references put their charts on a slightly different
+ *      surface within the card, which is what stops a big card reading as one
+ *      empty rectangle.
+ *   2. Large radii. 20px cards, 16px insets. This is the single biggest "modern
+ *      product" signal in both references.
+ *   3. NO GREY HAIRLINES ON DARK - that is what makes a dark UI read as a light
+ *      one with the colours flipped. Dark instead gets a white-at-6% INNER
+ *      HIGHLIGHT, which catches the top edge the way a lit surface does. Light
+ *      keeps a real hairline, because white on white has no lightness step left.
+ *
+ * DELIBERATELY NOT TAKEN: the violet + lime accent pair. Those are not EM
+ * Services colours, and the brand is crimson + navy. The forms are borrowed; the
+ * palette stays. Nor is the references' decorative use of green - green means
+ * status here, so it appears on a delta only when a movement has genuinely been
+ * measured as good (see TREND).
+ *
+ * LIGHT IS NOT AN INVERSION. White cards on a white-ish page have no lightness
+ * step left to separate them, so light keeps a hairline where dark has none.
+ * That is the considered equivalent of the rule, not a copy of it.
+ * ========================================================================== */
+/**
+ * RADII - sharpened from the reference's 20/16 down to 8.
+ *
+ * The large radii were lifted from consumer analytics dashboards, where a soft corner
+ * signals "friendly product". This is an estate operations tool: sharper corners read as
+ * utilitarian, which is the right register, and at 8px a card still reads as a card
+ * without looking like a phone widget.
+ */
+export const RADII = { pill: 999, card: 8, inset: 8, control: 8, chip: 6, sm: 6 };
+
+export const SURFACE = {
+  dark: {
+    page: '#121216',   // charcoal, very slightly cool
+    card: '#1E1E24',
+    inset: '#2A2A35',  // the nested panel a chart sits on
+    raised: '#343442', // hover / a pill sitting on the inset
+    // A HIGHLIGHT, not a hairline. The earlier rule banned grey 1px borders on dark
+    // because they made cards read as light-mode cards with the colours flipped. A
+    // white-at-5% inner edge is a different thing: it catches the top of the card the
+    // way a lit surface does, which is what the references actually use.
+    border: 'rgba(255,255,255,0.06)',
+    insetBorder: 'rgba(255,255,255,0.04)',
+  },
+  light: {
+    page: '#F4F5F7',
+    card: '#FFFFFF',
+    inset: '#F7F8FA',
+    raised: '#EEF0F4',
+    // light needs a real hairline - white on white has no lightness step left
+    border: '#EAEAEA',
+    insetBorder: '#EDEFF3',
+  },
+};
+
+/**
+ * Card lift, per scheme.
+ *
+ * Light gets a TIGHT 4px shadow, not a diffuse halo: the border does the separating and
+ * the shadow only lifts the edge a millimetre off the page. A wide soft shadow is the
+ * thing that reads as a template.
+ *
+ * Dark gets none. A black shadow on a charcoal page is invisible, so there the inner
+ * white highlight (SURFACE.dark.border) catches the edge instead.
+ */
+const CARD_SHADOW = { light: '0 2px 4px rgba(0,0,0,0.04)', dark: 'none' };
+
+/**
+ * NEON DATA PALETTE - for CHARTS AND DATA HIGHLIGHTS ONLY.
+ *
+ * Scope is the whole point of this constant. Chrome - nav, buttons, the logo, the
+ * primary CTA - stays EM Services crimson and navy, because this product is delivered
+ * to a Town Council and a fintech-purple button is not their brand. Neon is for the
+ * data layer, where it earns its keep by making a series pop off a charcoal card.
+ *
+ * NO YELLOW. The references pair cyan with electric yellow, but amber is a reserved
+ * status hue in this codebase (see the note on CATEGORY_COLORS), and a categorical
+ * yellow beside a warning amber is exactly the collision that reservation exists to
+ * prevent. Teal takes the second slot instead - same visual register, no clash.
+ *
+ * The LIGHT set is not the same hex at lower opacity. Neon is defined by being bright
+ * against a dark field; on white the identical values are illegible, so each slot is
+ * re-stepped to a deep, saturated equivalent that holds its hue identity while
+ * clearing AA. A series therefore keeps its identity across the toggle without either
+ * scheme getting a colour that does not work on it.
+ */
+export const NEON = {
+  dark: {
+    cyan: '#22D3EE',
+    purple: '#A78BFA',
+    magenta: '#F472B6',
+    teal: '#2DD4BF',
+    slate: '#8B93A7',
+  },
+  light: {
+    cyan: '#0E7490',
+    purple: '#6D28D9',
+    magenta: '#BE185D',
+    teal: '#0F766E',
+    slate: '#5B6470',
+  },
+};
+
+/**
+ * Coloured glow behind a data mark, as an sx `boxShadow` or an SVG `filter` companion.
+ *
+ * Dark only, deliberately: a glow is light bleeding off a bright object onto a dark
+ * field. On white there is nothing for it to bleed into - it renders as a dirty smudge -
+ * so on light this returns `none` and the mark carries itself on contrast alone.
+ */
+export function glow(mode, color, strength = 0.45) {
+  if (mode !== 'dark') return 'none';
+  return `0 0 12px 0 ${color}${Math.round(strength * 255).toString(16).padStart(2, '0')}`;
+}
+
+/**
+ * Card styling for the reference look. Spread into `sx`.
+ * `tone` picks the ladder step: 'card' for a panel, 'inset' for a nested one.
+ */
+export function surfaceSx(mode = 'dark', tone = 'card') {
+  const s = SURFACE[mode] || SURFACE.dark;
+  const isInset = tone === 'inset';
+  return {
+    backgroundColor: isInset ? s.inset : s.card,
+    borderRadius: `${isInset ? RADII.inset : RADII.card}px`,
+    border: `1px solid ${isInset ? s.insetBorder : s.border}`,
+    // an inset sits inside a card that already carries the lift, so it never stacks a
+    // second shadow on top of it
+    boxShadow: isInset ? 'none' : (CARD_SHADOW[mode] || 'none'),
+  };
+}
+
 // Semantic status tokens shared by StatusPill and any status UI.
 // `open` is deliberately NOT red. An open case is the normal state of work, not an
 // error - painting every one red spends the alarm colour on the most common status
@@ -129,6 +267,37 @@ export const STATUS_META = {
   open: { bg: 'var(--em-neutral-bg)', color: 'var(--em-neutral-ink)', label: 'Open' },
   in_progress: { bg: 'var(--em-warn-bg)', color: 'var(--em-warn-ink)', label: 'In Progress' },
   resolved: { bg: 'var(--em-ok-bg)', color: 'var(--em-ok-ink)', label: 'Resolved' },
+};
+
+/**
+ * Status badge FILLS, deepened for the light scheme.
+ *
+ * The `-bg` tokens above are chip washes tuned to sit quietly behind a coloured word.
+ * In a dense list that reads as washed-out - the badge stops looking like a badge. These
+ * are a step deeper, so a status is legible at a glance across a column of rows.
+ *
+ * WHY NOT JUST CHANGE `--em-warn-bg`: those tokens are also the fill for chips, table
+ * cell tints and inline callouts on four other pages, all with contrast measured against
+ * the current value. This is a separate, opt-in set for badges only.
+ *
+ * Each ink still clears 4.5:1 on its own deepened fill:
+ *   open        #334E68 on #DCE5EF -> 6.4:1
+ *   in_progress #7A4A00 on #FCE7BF -> 5.3:1
+ *   resolved    #1E6023 on #CFEAD4 -> 5.6:1
+ */
+export const STATUS_BADGE = {
+  light: {
+    open: { bg: '#DCE5EF', color: '#334E68' },
+    in_progress: { bg: '#FCE7BF', color: '#7A4A00' },
+    resolved: { bg: '#CFEAD4', color: '#1E6023' },
+  },
+  // dark already reads as a badge - a deep tint against a charcoal card has plenty of
+  // separation, so these are the existing token values kept as literals
+  dark: {
+    open: { bg: '#232D3A', color: '#AEB9C7' },
+    in_progress: { bg: '#3A2A0A', color: '#FBBF24' },
+    resolved: { bg: '#14301F', color: '#7EE0A3' },
+  },
 };
 
 /**
