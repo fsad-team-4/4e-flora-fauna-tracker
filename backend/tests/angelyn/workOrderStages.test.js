@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 // Deterministic mail: anything to "broken" throws so a failed send can be asserted.
 jest.mock('../../src/services/emailService', () => ({
@@ -49,8 +49,8 @@ const patchStage = (id, token, body) => request(app)
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'wos-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Officer', 'wos-staff@test.com', 'staff');
+  adminToken = await registerAndLogin('Admin', 'wos-admin@test.com', 'manager');
+  staffToken = await registerAndLogin('Officer', 'wos-staff@test.com', 'field_officer');
   residentToken = await registerAndLogin('Resident', 'wos-res@test.com', 'resident');
   residentId = (await User.findOne({ where: { email: 'wos-res@test.com' } })).id;
 });

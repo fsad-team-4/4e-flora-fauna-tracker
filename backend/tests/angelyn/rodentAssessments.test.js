@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 // Mock the rodent AI service so tests never call the real Gemini API.
 // This makes the create path deterministic, fast and offline regardless of
@@ -32,8 +32,8 @@ async function registerAndLogin(name, email, role) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Staff', 'staff@test.com', 'staff');
+  adminToken = await registerAndLogin('Admin', 'admin@test.com', 'manager');
+  staffToken = await registerAndLogin('Staff', 'staff@test.com', 'field_officer');
   residentToken = await registerAndLogin('Resident', 'resident@test.com', 'resident');
 });
 

@@ -7,8 +7,7 @@ const registerSchema = yup.object({
   name: yup.string().required().min(2),
   email: yup.string().required().email(),
   password: yup.string().required().min(6),
-  role: yup.string().oneOf(['resident', 'staff', 'admin']).default('resident'),
-});
+  role: yup.string().oneOf(['resident', 'staff', 'admin', 'manager', 'field_officer', 'welfare_partner']).default('resident'),});
 
 const loginSchema = yup.object({
   email: yup.string().required(),

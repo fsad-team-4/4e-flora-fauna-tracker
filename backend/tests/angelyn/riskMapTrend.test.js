@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 const request = require('supertest');
 const app = require('../../src/index');
@@ -17,7 +17,7 @@ async function registerAndLogin(name, email, role) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  token = await registerAndLogin('Officer', 'rmt-staff@test.com', 'staff');
+  token = await registerAndLogin('Officer', 'rmt-staff@test.com', 'field_officer');
   staffId = (await User.findOne({ where: { email: 'rmt-staff@test.com' } })).id;
 });
 afterAll(async () => { await sequelize.close(); });

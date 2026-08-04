@@ -5,7 +5,7 @@
 // dismissed are different states, not one blank.
 
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 const request = require('supertest');
 const app = require('../../src/index');
@@ -33,9 +33,9 @@ const detail = (id, token) => request(app).get(`/api/rodent-assessments/${id}`).
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'staff');
+  staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'field_officer');
   // raising a work order commits money, so it is admin-only
-  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'admin');
+  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'manager');
   residentToken = await registerAndLogin('Resident', 'ad-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });

@@ -24,12 +24,18 @@ const User = sequelize.define('User', {
     allowNull: false,
   },
   role: {
-    type: DataTypes.ENUM('resident', 'staff', 'admin'),
+    type: DataTypes.ENUM(
+      'resident', 'staff', 'admin',
+      'manager', 'field_officer', 'welfare_partner'
+    ),
     allowNull: false,
     defaultValue: 'resident',
     // SQLite stores ENUM as TEXT with no value check - enforce it here too
     validate: {
-      isIn: [['resident', 'staff', 'admin']],
+      isIn: [[
+        'resident', 'staff', 'admin',
+        'manager', 'field_officer', 'welfare_partner',
+      ]],
     },
   },
 });

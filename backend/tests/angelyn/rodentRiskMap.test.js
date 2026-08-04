@@ -9,7 +9,7 @@
 // `floor_level`, `risk_level`, `gps_lat`, `gps_lng`, `createdAt`.
 
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 // Mock the rodent AI service so the create-path tests never call the real Gemini
 // API (deterministic, fast, offline regardless of any GEMINI_API_KEY in .env).
@@ -204,7 +204,7 @@ describe('GET /api/rodent-riskmap (RBAC + contract)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'rm-staff@test.com', 'staff');
+    staffToken = await registerAndLogin('Staff', 'rm-staff@test.com', 'field_officer');
     residentToken = await registerAndLogin('Resident', 'rm-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });

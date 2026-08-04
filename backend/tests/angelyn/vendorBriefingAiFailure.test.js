@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 // A CONFIGURED key, so draftBriefing takes the real AI path...
 process.env.GEMINI_API_KEY = 'test-key';
 

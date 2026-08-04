@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 /**
  * THE GUARD.
@@ -70,7 +70,7 @@ async function snapshotMetrics(token) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'sim-admin@test.com', 'admin');
+  adminToken = await registerAndLogin('Admin', 'sim-admin@test.com', 'manager');
   const admin = await User.findOne({ where: { email: 'sim-admin@test.com' } });
 
   // a little real data so the metrics are not all trivially empty

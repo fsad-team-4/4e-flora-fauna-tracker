@@ -9,7 +9,7 @@
 // `risk_level` and `createdAt`.
 
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 
 const request = require('supertest');
 const app = require('../../src/index');
@@ -215,7 +215,7 @@ describe('GET /api/block-diagnosis (RBAC + contract)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'bd-staff@test.com', 'staff');
+    staffToken = await registerAndLogin('Staff', 'bd-staff@test.com', 'field_officer');
     residentToken = await registerAndLogin('Resident', 'bd-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });

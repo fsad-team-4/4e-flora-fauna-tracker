@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 // The AI client is mocked, NOT disabled. Deleting GEMINI_API_KEY here does not
 // work: requiring src/index loads dotenv, which repopulates it, and the suite
 // would then make real >5s network calls to Gemini and time out.
@@ -35,8 +35,8 @@ let lowIds = [];
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'vb-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Officer', 'vb-staff@test.com', 'staff');
+  adminToken = await registerAndLogin('Admin', 'vb-admin@test.com', 'manager');
+  staffToken = await registerAndLogin('Officer', 'vb-staff@test.com', 'field_officer');
   residentToken = await registerAndLogin('Res', 'vb-res@test.com', 'resident');
   adminId = (await User.findOne({ where: { email: 'vb-admin@test.com' } })).id;
 

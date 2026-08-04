@@ -1,5 +1,5 @@
 process.env.DATABASE_URL = 'sqlite::memory:';
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
+process.env.JWT_SECRET = 'test-secret';
 process.env.ALERT_FALLBACK_EMAIL = 'fallback@test.com';
 
 // Control nodemailer so resend outcomes are deterministic: any address containing
@@ -30,8 +30,8 @@ const mkFailed = over => NotificationLog.create({
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'n-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Staff', 'n-staff@test.com', 'staff');
+  adminToken = await registerAndLogin('Admin', 'n-admin@test.com', 'manager');
+  staffToken = await registerAndLogin('Staff', 'n-staff@test.com', 'field_officer');
   residentToken = await registerAndLogin('Resident', 'n-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });
