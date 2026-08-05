@@ -350,6 +350,49 @@ describe('POST /api/flora/:id/care-recommendation', () => {
   });
 });
 
+describe('POST /api/flora/planting-suggestions', () => {
+  test('missing condition -> 400', async () => {
+    const res = await request(app)
+      .post('/api/flora/planting-suggestions')
+      .set('Authorization', tokens.staff)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('condition is required');
+  });
+
+  test('empty condition -> 400', async () => {
+    const res = await request(app)
+      .post('/api/flora/planting-suggestions')
+      .set('Authorization', tokens.staff)
+      .send({ condition: '   ' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('condition is required');
+  });
+
+  test('resident attempts access -> 403', async () => {
+    const res = await request(app)
+      .post('/api/flora/planting-suggestions')
+      .set('Authorization', tokens.res1)
+      .send({ condition: 'full sun, sandy soil' });
+
+    expect(res.status).toBe(403);
+  });
+
+  test('with GEMINI_API_KEY unset -> 503 AI service not configured', async () => {
+    delete process.env.GEMINI_API_KEY;
+
+    const res = await request(app)
+      .post('/api/flora/planting-suggestions')
+      .set('Authorization', tokens.staff)
+      .send({ condition: 'full sun, sandy soil' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('AI service not configured');
+  });
+});
+
 describe('Health-alert email', () => {
   beforeEach(() => {
     sendMail.mockClear();
