@@ -7,7 +7,7 @@ const registerSchema = yup.object({
   name: yup.string().required().min(2),
   email: yup.string().required().email(),
   password: yup.string().required().min(6),
-  role: yup.string().oneOf(['resident', 'staff', 'admin']).default('resident'),
+  // role removed - public registration is always 'resident'
 });
 
 const loginSchema = yup.object({
@@ -29,9 +29,8 @@ async function register(req, res) {
       name: data.name,
       email: data.email,
       password_hash,
-      role: data.role,
+      role: 'resident',   // never from user input
     });
-
     return res.status(201).json({
       user_id: user.id,
       name: user.name,
