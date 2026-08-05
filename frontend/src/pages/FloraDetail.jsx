@@ -6,6 +6,7 @@ import {
   Box, Typography, Button, Chip, Alert, Stack, Divider,
   TextField, MenuItem, Card, CardContent, Dialog, DialogTitle,
   DialogContent, DialogContentText, DialogActions, Skeleton, Snackbar,
+  Autocomplete,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
@@ -24,10 +25,12 @@ import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
+import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
   common_name: yup.string(),
+  location: yup.string(),
   location_zone: yup.string(),
   health_status: yup.string().required('Health status is required'),
   health_notes: yup.string(),
@@ -159,6 +162,7 @@ export default function FloraDetail() {
     initialValues: {
       species: plant?.species || '',
       common_name: plant?.common_name || '',
+      location: plant?.location || '',
       location_zone: plant?.location_zone || '',
       health_status: plant?.health_status || 'healthy',
       health_notes: plant?.health_notes || '',
@@ -303,6 +307,17 @@ export default function FloraDetail() {
                   value={formik.values.common_name}
                   onChange={formik.handleChange}
                   onBlur={formik.handleBlur}
+                />
+                <Autocomplete
+                  freeSolo
+                  fullWidth
+                  options={SINGAPORE_LOCATIONS}
+                  value={formik.values.location}
+                  onChange={(e, newValue) => formik.setFieldValue('location', newValue || '')}
+                  onInputChange={(e, newInputValue) => formik.setFieldValue('location', newInputValue)}
+                  renderInput={(params) => (
+                    <TextField {...params} margin="normal" label="Location" onBlur={formik.handleBlur} name="location" />
+                  )}
                 />
                 <TextField
                   fullWidth
@@ -470,6 +485,13 @@ export default function FloraDetail() {
                 />
 
                 <Stack spacing={2}>
+                  {plant.location && (
+                    <DetailRow
+                      icon={<LocationOnOutlinedIcon fontSize="small" />}
+                      label="Location"
+                      value={plant.location}
+                    />
+                  )}
                   {plant.location_zone && (
                     <DetailRow
                       icon={<LocationOnOutlinedIcon fontSize="small" />}
