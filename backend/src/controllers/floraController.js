@@ -127,6 +127,30 @@ async function getAllGreenery(req, res) {
   return res.status(200).json(records);
 }
 
+// Get distinct species with their botanical fields, for autofill lookups
+async function getSpeciesCatalog(req, res) {
+  const records = await GreeneryRecord.findAll({
+    where: { is_deleted: false },
+    attributes: ['species', 'plant_family', 'site_suitability', 'color', 'max_height_at_maturity'],
+    order: [['createdAt', 'DESC']],
+  });
+
+  const bySpecies = new Map();
+  records.forEach((record) => {
+    if (!bySpecies.has(record.species)) {
+      bySpecies.set(record.species, {
+        species: record.species,
+        plant_family: record.plant_family,
+        site_suitability: record.site_suitability,
+        color: record.color,
+        max_height_at_maturity: record.max_height_at_maturity,
+      });
+    }
+  });
+
+  return res.status(200).json(Array.from(bySpecies.values()));
+}
+
 // Add a new manual record
 async function createGreenery(req, res) {
   let data;
@@ -316,6 +340,7 @@ async function queryHandbook(req, res) {
 
 module.exports = {
   getAllGreenery,
+  getSpeciesCatalog,
   createGreenery,
   updateGreenery,
   softDeleteGreenery,
