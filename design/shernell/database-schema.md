@@ -36,6 +36,8 @@ health status, inspection notes, and an optional AI care recommendation.
 | species | STRING | NOT NULL |
 | common_name | STRING | nullable |
 | location_zone | STRING | nullable |
+| gps_lat | FLOAT | nullable |
+| gps_lng | FLOAT | nullable |
 | location | STRING | nullable |
 | health_status | ENUM('healthy', 'at_risk', 'critical') | NOT NULL, default `'healthy'`, `isIn` validator |
 | health_notes | TEXT | nullable |
@@ -80,6 +82,13 @@ Field notes:
   /api/flora`.
 - `image_url` holds a Cloudinary-hosted photo URL, set via the Add/Edit flora
   forms. Nullable since a photo is optional.
+- `gps_lat`/`gps_lng` are optional coordinates, typically captured via the Add
+  Plant form's "Capture GPS Location" button (browser Geolocation API). They
+  are not stored on Edit, since that feature is Add-form-only - a plant's GPS
+  coordinates cannot currently be added or changed after initial creation
+  (see UC-8 in `use-cases.md`). The `gps_lat`/`gps_lng` naming matches the
+  convention already used in Renee's `FaunaSightings` table
+  (`design/renee/database-schema.md`), for consistency across the app.
 
 ---
 
