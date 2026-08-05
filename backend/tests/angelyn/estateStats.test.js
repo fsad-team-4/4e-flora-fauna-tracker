@@ -135,26 +135,86 @@ describe('computeEstateMetrics', () => {
   });
 });
 
+/**
+ * The score is a weighted SHARE, so every case here supplies denominators.
+ *
+ * It used to be a sum of absolute counts clipped at 100, which measured how much
+ * data an estate had rather than how healthy it was. Against the real tables it
+ * pinned at 100/100 "critical" permanently and flatlined the trend line on the
+ * ceiling. Two tests below changed with that contract, deliberately:
+ *   - "capped at 100" tested the clipping. The score is now bounded by
+ *     construction, so the equivalent assertion is that a maximally bad estate
+ *     reaches exactly 100 without any clamp.
+ *   - the critical-vs-at-risk weighting test needed a totalFlora denominator; with
+ *     none, both readings are correctly 0.
+ */
 describe('computeRiskScore', () => {
-  test('a troubled estate scores higher than a healthy one', () => {
-    const healthy = computeRiskScore({ criticalFlora: 0, activeHotspots: 0, openCases: 0, atRiskFlora: 0 });
-    const troubled = computeRiskScore({ criticalFlora: 5, activeHotspots: 4, openCases: 10, atRiskFlora: 3 });
-    expect(troubled).toBeGreaterThan(healthy);
+  const est = over => computeRiskScore({
+    criticalFlora: 0, atRiskFlora: 0, openCases: 0, activeHotspots: 0,
+    totalFlora: 20, totalCases: 10, ...over,
   });
 
-  test('is capped at 100 for extreme input', () => {
-    const extreme = computeRiskScore({ criticalFlora: 100, activeHotspots: 100, openCases: 100, atRiskFlora: 100 });
-    expect(extreme).toBe(100);
+  test('a troubled estate scores higher than a healthy one', () => {
+    expect(est({ criticalFlora: 5, activeHotspots: 4, openCases: 8, atRiskFlora: 3 }))
+      .toBeGreaterThan(est({}));
   });
 
   test('a perfectly healthy estate scores 0', () => {
-    expect(computeRiskScore({ criticalFlora: 0, activeHotspots: 0, openCases: 0, atRiskFlora: 0 })).toBe(0);
+    expect(est({})).toBe(0);
+  });
+
+  test('a maximally bad estate reaches exactly 100 - bounded, not clipped', () => {
+    expect(est({
+      criticalFlora: 20, atRiskFlora: 0, openCases: 10, activeHotspots: 5,
+      totalFlora: 20, totalCases: 10,
+    })).toBe(100);
+  });
+
+  test('the score never exceeds 100 even past every saturation point', () => {
+    expect(est({
+      criticalFlora: 20, atRiskFlora: 20, openCases: 10, activeHotspots: 99,
+      totalFlora: 20, totalCases: 10,
+    })).toBeLessThanOrEqual(100);
   });
 
   test('weights critical flora more heavily than at-risk flora', () => {
-    const oneCritical = computeRiskScore({ criticalFlora: 1, activeHotspots: 0, openCases: 0, atRiskFlora: 0 });
-    const oneAtRisk = computeRiskScore({ criticalFlora: 0, activeHotspots: 0, openCases: 0, atRiskFlora: 1 });
-    expect(oneCritical).toBeGreaterThan(oneAtRisk);
+    expect(est({ criticalFlora: 1 })).toBeGreaterThan(est({ atRiskFlora: 1 }));
+  });
+
+  /**
+   * THE REGRESSION GUARD - this is the bug that forced the rewrite.
+   *
+   * Under the old count-based formula these two estates scored identically,
+   * because only the problem count fed the score. But 5 critical plants out of 200
+   * is a far healthier estate than 5 out of 10, and a manager reading the hero card
+   * must be able to tell them apart.
+   */
+  test('the same problem count scores lower on a larger, healthier estate', () => {
+    const small = est({ criticalFlora: 5, totalFlora: 10 });
+    const large = est({ criticalFlora: 5, totalFlora: 200 });
+    expect(large).toBeLessThan(small);
+  });
+
+  test('adding healthy plants improves the score - impossible before', () => {
+    const before = est({ criticalFlora: 3, totalFlora: 10 });
+    const after = est({ criticalFlora: 3, totalFlora: 40 });
+    expect(after).toBeLessThan(before);
+  });
+
+  test('resolving cases improves the score', () => {
+    expect(est({ openCases: 2, totalCases: 10 }))
+      .toBeLessThan(est({ openCases: 8, totalCases: 10 }));
+  });
+
+  test('hotspot pressure saturates rather than dominating', () => {
+    // Past the saturation point extra hotspots cannot push the total up further,
+    // so hotspots alone can never account for more than their weight.
+    expect(est({ activeHotspots: 5 })).toBe(est({ activeHotspots: 50 }));
+  });
+
+  test('missing denominators do not produce NaN', () => {
+    const score = computeRiskScore({ criticalFlora: 3, atRiskFlora: 1, openCases: 2, activeHotspots: 1 });
+    expect(Number.isFinite(score)).toBe(true);
   });
 });
 

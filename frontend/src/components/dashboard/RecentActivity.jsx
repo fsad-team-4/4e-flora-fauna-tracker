@@ -8,7 +8,7 @@ import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
 import PestControlRodentOutlinedIcon from '@mui/icons-material/PestControlRodentOutlined';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import { useTheme } from '@mui/material/styles';
-import { BRAND, SURFACE, RADII, surfaceSx } from '../../theme';
+import { BRAND, SURFACE, RADII, surfaceSx, CATEGORY_COLORS } from '../../theme';
 import { CATEGORY_LABELS } from '../../constants';
 import StatusPill from '../StatusPill';
 
@@ -22,24 +22,21 @@ const CATEGORY_ICON = {
   pest: PestControlRodentOutlinedIcon,
   other: HelpOutlineRoundedIcon,
 };
-// Per scheme: the dark inks are lightened so the glyph and its 8% tint well stay
-// visible on the dark card.
-const CATEGORY_INK = {
-  light: {
-    community_cat: '#1E3A5F',
-    pigeon: '#2C5687',
-    flora_health: '#0E8A8A',
-    pest: '#B3261E',
-    other: '#6E88A6',
-  },
-  dark: {
-    community_cat: '#8FB8E8',
-    pigeon: '#9BB8D6',
-    flora_health: '#4FC3C3',
-    pest: '#F08A8F',
-    other: '#9DB0C6',
-  },
-};
+// Category colour comes from the theme, NOT from a private map.
+//
+// This file used to carry its own light/dark table, justified by needing lighter
+// inks so the glyph and its 8% tint stayed visible on the dark card. CATEGORY_COLORS
+// already solves that - it ships lightened dark variants for the same reason - and
+// the private copy had drifted: it disagreed with the theme on four of five
+// categories, so one case category was drawn in two different colours depending on
+// which component you were looking at.
+//
+// The worst of it was `pest: '#B3261E'`, which is the theme's danger/critical ink
+// (--em-danger-strong, INTENT.danger.solid, HEALTH_META.critical.color). A pest case
+// was therefore painted in the colour that means "critical" everywhere else, which is
+// the exact semantic collision the notes in theme.js record deliberately avoiding
+// when they moved flora_health off amber and pest off green.
+const CATEGORY_INK = CATEGORY_COLORS;
 
 function CategoryGlyph({ category }) {
   const inkMap = CATEGORY_INK[useTheme().palette.mode] || CATEGORY_INK.light;

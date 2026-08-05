@@ -1,6 +1,6 @@
 import { Box, Card, CardContent, Stack, Typography, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { BRAND, SURFACE, NEON, RADII, surfaceSx, glow } from '../../theme';
+import { BRAND, SURFACE, NEON, RADII, surfaceSx, glow, ON_SURFACE } from '../../theme';
 
 // The estate's own hotspot rule (backend computeHotspots uses minCount = 3, see
 // backend/src/services/estateStats.js:10, and both production call sites take the
@@ -41,7 +41,11 @@ export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, 
   const mode = useTheme().palette.mode;
   const s = SURFACE[mode] || SURFACE.dark;
   const n = NEON[mode] || NEON.dark;
-  const breach = mode === 'dark' ? '#FF8A80' : '#B3261E';
+  // ON_SURFACE.danger is var(--em-danger-strong), which already resolves to #B3261E
+  // in light and #FF8A80 in dark - exactly the two literals this line used to branch
+  // between by hand. Using the token means a change to the danger ink reaches here
+  // too, instead of leaving this copy behind.
+  const breach = ON_SURFACE.danger;
 
   const ranked = [...sightingsByBlock]
     .filter(b => b.count > 0)

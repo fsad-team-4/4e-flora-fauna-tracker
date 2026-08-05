@@ -14,7 +14,7 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const { sequelize, SensorReading, AlertRule, NotificationLog, User, MetricSnapshot, FaunaSighting, RodentAssessment } = require('./models');
-const mock = require('./services/mockDataService');
+const estateData = require('./services/estateDataService');
 const { computeEstateMetrics, computeRiskScore } = require('./services/estateStats');
 
 // Demo login accounts. Alert Rules, Notification Log and the dashboard all need a
@@ -429,23 +429,32 @@ async function seed() {
   // baseline to diff against on day one. Values drift slightly higher in the past
   // and converge to today's actual numbers, so the estate reads as "improving".
   const today = computeEstateMetrics({
-    flora: mock.getFloraRecords(),
-    sightings: mock.getFaunaSightings(),
-    cases: mock.getCases(),
+    flora: await estateData.getFloraRecords(),
+    sightings: await estateData.getFaunaSightings(),
+    cases: await estateData.getCases(),
   });
   await MetricSnapshot.destroy({ where: {} });
   const snapshots = [];
   for (let d = 10; d >= 1; d--) {
-    // The risk score caps at 100 and today is already 76, so the seeded drift has
-    // to stay inside that ~24pt headroom. Overshoot and computeRiskScore() clamps,
-    // which flatlines the early history at the ceiling and makes the trend line
-    // report the cap rather than the estate.
-    const open_cases = today.openCases + (d >= 7 ? 2 : d >= 4 ? 1 : 0);  // +10 max
+    // The old headroom warning here is gone with the formula it described: the score
+    // is a weighted share now, bounded by construction rather than clipped, so drift
+    // no longer has to be kept inside a gap below the ceiling. The denominators are
+    // held at today's totals - the point of the history is that the estate IMPROVED,
+    // so the same population with fewer problems must score lower.
+    const open_cases = today.openCases + (d >= 7 ? 2 : d >= 4 ? 1 : 0);
     const critical_flora = today.criticalFlora;                          // hold steady
-    const at_risk_flora = today.atRiskFlora + (d >= 8 ? 1 : 0);          // +3 max
-    const active_hotspots = today.activeHotspots + (d >= 5 ? 1 : 0);     // +10 max
+    const at_risk_flora = today.atRiskFlora + (d >= 8 ? 1 : 0);
+    const active_hotspots = today.activeHotspots + (d >= 5 ? 1 : 0);
     const total_sightings = today.totalSightings + Math.round(d / 2);
-    const risk_score = computeRiskScore({ criticalFlora: critical_flora, activeHotspots: active_hotspots, openCases: open_cases, atRiskFlora: at_risk_flora });
+    const risk_score = computeRiskScore({
+      criticalFlora: critical_flora,
+      activeHotspots: active_hotspots,
+      openCases: open_cases,
+      atRiskFlora: at_risk_flora,
+      totalFlora: today.totalFlora,
+      // past open cases are added on top, so the case population grows with them
+      totalCases: today.totalCases + (open_cases - today.openCases),
+    });
     const dt = new Date();
     dt.setDate(dt.getDate() - d);
     snapshots.push({ snapshot_date: dt.toISOString().slice(0, 10), open_cases, critical_flora, at_risk_flora, active_hotspots, total_sightings, risk_score });

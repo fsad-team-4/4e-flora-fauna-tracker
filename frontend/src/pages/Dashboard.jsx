@@ -154,28 +154,31 @@ function DashboardSkeleton() {
         </Card>
       </Box>
 
-      {/* 4 KPI tiles */}
-      {[0, 1, 2, 3].map(i => (
-        <Box key={i} sx={span(3, 6, 6)}>
-          <Card sx={{ p: 3 }}>
-            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.5 }}>
-              <Skeleton variant="rounded" width={28} height={28} sx={{ borderRadius: '8px' }} />
-              <Skeleton variant="text" width={80} />
-            </Stack>
-            <Skeleton variant="text" width={56} height={40} />
-            <Skeleton variant="text" width={72} />
-          </Card>
-        </Box>
-      ))}
-
-      {/* Main 8 | 4 split */}
-      <Box sx={span(8)}><Skeleton variant="rounded" height={280} sx={{ borderRadius: '16px' }} /></Box>
-      <Box sx={span(4)}>
-        <Stack spacing={2.5}>
-          <Skeleton variant="rounded" height={130} sx={{ borderRadius: '16px' }} />
-          <Skeleton variant="rounded" height={130} sx={{ borderRadius: '16px' }} />
+      {/* Zone B · KpiStack | CategoryBar.
+          This block used to draw four separate KPI tiles and then an 8|4 split -
+          the shape of the layout BEFORE the dashboard rebuild. Neither exists on
+          the page any more, so the skeleton promised one arrangement and the loaded
+          page delivered another, and every load shifted. It now tracks the real
+          zones, and the header comment above is true again. */}
+      <Box sx={span(4, 12, 6)}>
+        <Stack spacing={2}>
+          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
+          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
+          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
         </Stack>
       </Box>
+      <Box sx={span(8, 12, 6)}>
+        <Skeleton variant="rounded" height={280} sx={{ borderRadius: '16px' }} />
+      </Box>
+
+      {/* Zone C · block performance */}
+      <Box sx={span(12)}><Skeleton variant="rounded" height={240} sx={{ borderRadius: '16px' }} /></Box>
+
+      {/* Zone D · correlation table */}
+      <Box sx={span(12)}><Skeleton variant="rounded" height={220} sx={{ borderRadius: '16px' }} /></Box>
+
+      {/* Zone E · recent activity detail */}
+      <Box sx={span(12)}><Skeleton variant="rounded" height={200} sx={{ borderRadius: '16px' }} /></Box>
     </Box>
   );
 }
@@ -555,18 +558,18 @@ export default function Dashboard() {
             />
           </Box>
 
-          {/* ── ZONE B · BENTO ROW ─────────────────────────────────────────────
-              Three panels on one row instead of a row of KPI tiles followed by a row of
-              panels: the three supporting metrics are now a vertical stack occupying one
-              cell, which is what frees the other two. */}
-          <Box sx={span(3, 12, 6)}>
+          {/* ── ZONE B · MEASURES ──────────────────────────────────────────────
+              Supporting numbers left, the one summary chart right.
+              RecentActivity used to hold the third cell here, which put a list of
+              individual recent cases ABOVE both aggregate sections. It is row-level
+              detail, so it now sits in Zone E: numbers, then charts, then detail,
+              reading down the page. Leaving the two survivors at 3+4 of 12 would have
+              stranded five empty columns, so they widen to fill the row. */}
+          <Box sx={span(4, 12, 6)}>
             <KpiStack items={kpis} loading={loading} />
           </Box>
-          <Box sx={span(4, 12, 6)}>
+          <Box sx={span(8, 12, 6)}>
             <CategoryBar casesByCategory={metrics.casesByCategory} />
-          </Box>
-          <Box sx={span(5)}>
-            <RecentActivity cases={metrics.recentCases || []} />
           </Box>
 
           {/* ── ZONE C · block performance, full width ────────────────────────── */}
@@ -582,6 +585,16 @@ export default function Dashboard() {
               7-col slot its five columns terminated short of the container edge. */}
           <Box sx={span(12)}>
             <FeedingRodentCorrelation />
+          </Box>
+
+          {/* ── ZONE E · DETAIL ────────────────────────────────────────────────
+              Individual recent cases, last: the page now goes headline instrument ->
+              supporting numbers -> aggregate charts -> individual records, which is
+              the order a manager reads it in. The hero still carries the open-case
+              count and the primary action, so nothing needed for acting quickly moved
+              below the fold. */}
+          <Box sx={span(12)}>
+            <RecentActivity cases={metrics.recentCases || []} />
           </Box>
 
         </Box>
