@@ -107,7 +107,14 @@ export default function FloraDetail() {
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    http.get('/api/flora/species-catalog')
+      .then((res) => setSpeciesCatalog(res.data))
+      .catch(() => setSpeciesCatalog([]));
+  }, []);
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -185,6 +192,19 @@ export default function FloraDetail() {
       }
     },
   });
+
+  const handleSpeciesSelect = (_e, newValue) => {
+    formik.setFieldValue('species', newValue || '');
+
+    const match = speciesCatalog.find((entry) => entry.species === newValue);
+    if (!match) return;
+
+    ['plant_family', 'site_suitability', 'color', 'max_height_at_maturity'].forEach((field) => {
+      if (!formik.values[field] && match[field] != null) {
+        formik.setFieldValue(field, match[field]);
+      }
+    });
+  };
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -288,16 +308,24 @@ export default function FloraDetail() {
                   subtitle="Identifies the plant and its current condition"
                 />
 
-                <TextField
+                <Autocomplete
+                  freeSolo
                   fullWidth
-                  margin="normal"
-                  label="Species"
-                  name="species"
+                  options={speciesCatalog.map((entry) => entry.species)}
                   value={formik.values.species}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  error={formik.touched.species && Boolean(formik.errors.species)}
-                  helperText={formik.touched.species && formik.errors.species}
+                  onChange={handleSpeciesSelect}
+                  onInputChange={(e, newInputValue) => formik.setFieldValue('species', newInputValue)}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      margin="normal"
+                      label="Species"
+                      name="species"
+                      onBlur={formik.handleBlur}
+                      error={formik.touched.species && Boolean(formik.errors.species)}
+                      helperText={formik.touched.species && formik.errors.species}
+                    />
+                  )}
                 />
                 <TextField
                   fullWidth
