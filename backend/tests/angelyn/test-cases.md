@@ -115,3 +115,37 @@ model: admin + staff can create/view; resident forbidden; delete is admin-only.
 - Tests 5 and 42 are regression guards for a field-name bug where the hotspot
   block was read from the wrong field and rendered as "undefined"; they assert
   `block_number` is always defined.
+## Test Data in the Database (`dashboardRealData.test.js`)
+
+Test data is defined once in `src/testData.js` and used two ways: written into the
+real database by `npm run test-data`, and imported by this suite so the expected
+values and the inserted rows can never drift apart. The dataset is 3 accounts
+(admin / staff / resident), 7 greenery records, 7 fauna sightings and 7 resident
+reports, inserted into `GreeneryRecord`, `FaunaSighting` and `ResidentReport`.
+
+Every row carries `[test-data]` in a free-text field, so the script deletes only
+its own rows before re-inserting - re-running never duplicates and never touches
+records created by hand or by `seed.js`.
+
+**Why this suite exists.** The dashboard previously computed its KPIs from
+`mockDataService`, three hardcoded arrays, so every number was a constant that no
+amount of real data could move. `dashboard.test.js` only asserted the fields exist
+and are numeric, which passed either way. These cases assert the KPIs equal what
+the seeded rows imply, so wiring a KPI back to a constant now fails a test.
+
+| # | Function | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 1 | writeTestData | Rows reach the real tables | run the script | 7 greenery, 7 fauna, 7 reports present |
+| 2 | writeTestData | Idempotent on re-run | run it twice | counts unchanged, no duplicates |
+| 3 | writeTestData | Accounts usable | admin account | logs in through the real auth flow |
+| 4 | GET /dashboard/metrics | Critical flora from DB | 2 critical plants seeded | `criticalFlora` = 2 |
+| 5 | GET /dashboard/metrics | At-risk flora from DB | 2 at_risk plants seeded | `atRiskFlora` = 2 |
+| 6 | GET /dashboard/metrics | Open cases from DB | 4 open reports seeded | `openCases` = 4 |
+| 7 | GET /dashboard/metrics | Case breakdown from DB | 4 open, 2 in_progress, 1 resolved | `casesByStatus` matches |
+| 8 | GET /dashboard/metrics | Sighting total from DB | 7 sightings seeded | `totalSightings` = 7 |
+| 9 | GET /dashboard/metrics | Top hotspot from DB | Block 123 has the most | first block is "Block 123" |
+| 10 | GET /dashboard/metrics | KPI is a live count, not a constant | soft-delete a critical plant | `criticalFlora` drops by 1 |
+| 11 | GET /dashboard/metrics | KPI is a live count, not a constant | insert an open case | `openCases` rises by 1 |
+
+Cases 10 and 11 are the important ones: they mutate the database and require the
+KPI to move, which a hardcoded source cannot do.

@@ -3,14 +3,14 @@
 // gathers the week's data, asks gemini to write the briefing, emails it, logs it
 
 const { AlertRule } = require('../models');
-const mock = require('./mockDataService');
+const estateData = require('./estateDataService');
 const gemini = require('./geminiService');
 const email = require('./emailService');
 const { recordDispatch } = require('./notificationService');
 const { computeHotspots } = require('./estateStats');
 
 async function sendWeeklySummary(triggeredByUserId) {
-  const stats = gatherStats();
+  const stats = await gatherStats();
 
   // generate the summary - try gemini first, fall back to stub
   let summary;
@@ -73,10 +73,10 @@ async function sendWeeklySummary(triggeredByUserId) {
   };
 }
 
-function gatherStats() {
-  const flora = mock.getFloraRecords();
-  const sightings = mock.getFaunaSightings();
-  const cases = mock.getCases();
+async function gatherStats() {
+  const flora = await estateData.getFloraRecords();
+  const sightings = await estateData.getFaunaSightings();
+  const cases = await estateData.getCases();
 
   const criticalPlants = flora
     .filter(f => f.health_status === 'critical')

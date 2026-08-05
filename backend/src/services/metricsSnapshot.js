@@ -3,7 +3,7 @@
 // (today vs yesterday, today vs 7 days ago) from the stored history.
 const { Op } = require('sequelize');
 const { MetricSnapshot } = require('../models');
-const mock = require('./mockDataService');
+const estateData = require('./estateDataService');
 const { computeEstateMetrics } = require('./estateStats');
 
 // YYYY-MM-DD for a Date (used as the snapshot's unique key).
@@ -15,9 +15,9 @@ function dayKey(d = new Date()) {
 // it's safe to run on every boot as well as on the daily schedule.
 async function captureSnapshot() {
   const m = computeEstateMetrics({
-    flora: mock.getFloraRecords(),
-    sightings: mock.getFaunaSightings(),
-    cases: mock.getCases(),
+    flora: await estateData.getFloraRecords(),
+    sightings: await estateData.getFaunaSightings(),
+    cases: await estateData.getCases(),
   });
   const values = {
     snapshot_date: dayKey(),

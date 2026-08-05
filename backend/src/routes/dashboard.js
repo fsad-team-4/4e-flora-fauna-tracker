@@ -3,7 +3,7 @@ const express = require('express');
 const { Op, fn, col, literal } = require('sequelize');
 const { NotificationLog, RodentAssessment } = require('../models');
 const { protect, restrictTo } = require('../middleware/auth');
-const mock = require('../services/mockDataService');
+const estateData = require('../services/estateDataService');
 const { sendWeeklySummary } = require('../services/weeklySummary');
 const { computeEstateMetrics } = require('../services/estateStats');
 const { getTrends, getHistory, dayKey } = require('../services/metricsSnapshot');
@@ -14,11 +14,11 @@ const router = express.Router();
 router.use(protect);
 
 // metrics - admin and staff see full estate, residents denied
-router.get('/metrics', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.get('/metrics', restrictTo('admin', 'staff'), async (req, res) => {
   try {
-    const flora = mock.getFloraRecords();
-    const sightings = mock.getFaunaSightings();
-    const cases = mock.getCases();
+    const flora = await estateData.getFloraRecords();
+    const sightings = await estateData.getFaunaSightings();
+    const cases = await estateData.getCases();
 
     const m = computeEstateMetrics({ flora, sightings, cases });
 
@@ -67,10 +67,11 @@ router.get('/metrics', restrictTo('manager', 'field_officer'), async (req, res) 
      * `total_sightings`, which is `sightings.length` - a CUMULATIVE total of every
      * sighting ever recorded. The dashboard's activity chart wanted a per-day figure
      * and had been differencing consecutive snapshots to get one, which is sound
-     * arithmetic on a growing series but produces zero for every day here: the source
-     * is mockDataService.getFaunaSightings(), a fixed seven-row array, so the total is
-     * 7 on every snapshot forever. Every bar came out at height zero and the chart
-     * looked empty.
+     * arithmetic on a growing series but produced zero for every day: the source was
+     * a fixed seven-row array, so the total was 7 on every snapshot forever. Every bar
+     * came out at height zero and the chart looked empty. The source is now the real
+     * FaunaSighting table, but differencing stays wrong for a table that can also
+     * shrink (soft deletes), so the per-day bucketing below remains the honest fix.
      *
      * The source rows carry `createdAt`, so the honest fix is to bucket them by day
      * here rather than to derive a daily figure from a total that cannot move. Same
@@ -157,7 +158,7 @@ router.get('/metrics', restrictTo('manager', 'field_officer'), async (req, res) 
 });
 
 // trigger summary - admin only (the live demo button)
-router.post('/trigger-summary', aiLimiter, restrictTo('manager'), async (req, res) => {
+router.post('/trigger-summary', aiLimiter, restrictTo('admin'), async (req, res) => {
   try {
     const result = await sendWeeklySummary(req.user.user_id);
     res.json(result);
