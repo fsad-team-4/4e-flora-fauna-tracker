@@ -206,6 +206,56 @@ describe('Horticulture Handbook - botanical catalog fields', () => {
     expect(res.body.every((r) => r.color === 'red')).toBe(true);
     expect(res.body.some((r) => r.id === bougainvilleaId)).toBe(false);
   });
+
+  test('create with location and location_zone set to different values -> both saved', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({
+        species: 'Tembusu',
+        location: 'Bishan Park',
+        location_zone: 'Block A',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.location).toBe('Bishan Park');
+    expect(res.body.location_zone).toBe('Block A');
+  });
+});
+
+describe('GET /api/flora?location=', () => {
+  let bishanId;
+
+  test('partial match returns only matching records', async () => {
+    const bishan = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Rain tree', location: 'Bishan Park' });
+    bishanId = bishan.body.id;
+
+    const other = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Angsana', location: 'Toa Payoh Central' });
+
+    const res = await request(app)
+      .get('/api/flora?location=Bishan')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((r) => (r.location || '').includes('Bishan'))).toBe(true);
+    expect(res.body.some((r) => r.id === other.body.id)).toBe(false);
+  });
+
+  test('case-insensitive match: location "Bishan" found by ?location=bishan', async () => {
+    const res = await request(app)
+      .get('/api/flora?location=bishan')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(res.body.some((r) => r.id === bishanId)).toBe(true);
+  });
 });
 
 describe('PATCH /api/flora/:id', () => {
@@ -264,6 +314,26 @@ describe('POST /api/flora/bulk', () => {
     expect(res.status).toBe(201);
     expect(res.body.created).toBe(2);
     expect(res.body.errors).toHaveLength(1);
+  });
+
+  test('CSV with location column -> created record has location saved', async () => {
+    const csv = [
+      'species,common_name,location,health_status',
+      'Angsana,Pterocarpus indicus,Bishan Park,healthy',
+    ].join('\n');
+
+    const res = await request(app)
+      .post('/api/flora/bulk')
+      .set('Authorization', tokens.staff)
+      .attach('file', Buffer.from(csv), 'flora-location.csv');
+
+    expect(res.status).toBe(201);
+    expect(res.body.created).toBe(1);
+
+    const list = await request(app)
+      .get('/api/flora?location=Bishan')
+      .set('Authorization', tokens.staff);
+    expect(list.body.some((r) => r.species === 'Angsana' && r.location === 'Bishan Park')).toBe(true);
   });
 });
 

@@ -19,9 +19,10 @@ payload is `{ user_id, role, name }`.
   is invalid; otherwise attaches the decoded payload to `req.user`. All six
   flora routes use it.
 - `restrictTo('staff', 'admin')` - runs after `protect`; rejects with `403` if
-  `req.user.role` is not staff or admin. Applied to every mutation (create,
-  update, delete, bulk upload, AI recommendation). `GET /api/flora` uses
-  `protect` only, so any logged-in user can read.
+  `req.user.role` is not staff or admin. Residents have no access to the flora
+  module at all - GET, POST, PATCH, and DELETE on `/api/flora` are all
+  restricted to `staff` or `admin` only; a resident attempting any of them
+  receives `403`.
 
 Field validation errors return `400` with `{ error: [ ...messages ] }` (an
 array of yup messages). Unexpected server errors return `500` with
@@ -36,12 +37,13 @@ Health status is one of `healthy`, `at_risk`, `critical` throughout.
 List active greenery records (the plant directory). Soft-deleted records
 (`is_deleted = true`) are always excluded.
 
-- Auth: requires JWT (`protect`); any logged-in role (resident / staff / admin)
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Request body: none
 - Query filters (optional):
   - `?health_status=` - one of `healthy`, `at_risk`, `critical`
-  - `?plant_family=` - partial match (case-sensitivity depends on DB)
-  - `?site_suitability=` - partial match (case-sensitivity depends on DB)
+  - `?plant_family=` - partial match, case-insensitive
+  - `?site_suitability=` - partial match, case-insensitive
+  - `?location=` - partial match, case-insensitive
   - `?color=` - exact match
 - Success: `200` - array of records, each including the `recorder` association
   (`{ id, name }`), ordered by `createdAt` DESC
@@ -64,12 +66,14 @@ Example response (`200`):
     "species": "Palm",
     "common_name": null,
     "location_zone": null,
+    "location": null,
     "health_status": "critical",
     "health_notes": null,
     "care_recommendation": null,
     "last_inspected_at": null,
     "recorded_by": 1,
     "is_deleted": false,
+    "image_url": null,
     "createdAt": "2026-07-03T02:10:00.000Z",
     "updatedAt": "2026-07-03T02:10:00.000Z",
     "recorder": { "id": 1, "name": "staff" }
@@ -93,6 +97,7 @@ If the record is created with health_status of at_risk or critical, an alert ema
   | species | string | yes | trimmed |
   | common_name | string | no | trimmed |
   | location_zone | string | no | trimmed |
+  | location | string | no | trimmed |
   | health_status | string | no | one of `healthy`, `at_risk`, `critical`; defaults to `healthy` |
   | health_notes | string | no | trimmed |
   | plant_family | string | no | trimmed |
@@ -100,6 +105,7 @@ If the record is created with health_status of at_risk or critical, an alert ema
   | color | string | no | trimmed |
   | max_height_at_maturity | number | no | must be positive; omit or leave blank for none |
   | last_inspected_at | date | no | ISO date |
+  | image_url | string | no | trimmed URL; nullable |
 
   `recorded_by` is taken from the JWT (`req.user.user_id`); any value sent in the
   body is ignored.
@@ -134,12 +140,14 @@ Example response (`201`):
   "species": "Ficus benjamina",
   "common_name": "Weeping fig",
   "location_zone": "Block A",
+  "location": "Near Block A playground",
   "health_status": "healthy",
   "health_notes": null,
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
   "care_recommendation": null,
+  "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "updatedAt": "2026-07-03T02:00:00.000Z",
   "createdAt": "2026-07-03T02:00:00.000Z"
 }
@@ -162,6 +170,7 @@ If this update causes a fresh transition to at_risk or critical (the status chan
   | species | string | trimmed |
   | common_name | string | trimmed |
   | location_zone | string | trimmed |
+  | location | string | trimmed |
   | health_status | string | one of `healthy`, `at_risk`, `critical` |
   | health_notes | string | trimmed |
   | plant_family | string | trimmed |
@@ -169,6 +178,7 @@ If this update causes a fresh transition to at_risk or critical (the status chan
   | color | string | trimmed |
   | max_height_at_maturity | number | must be positive; send `null` or omit to clear |
   | last_inspected_at | date | ISO date |
+  | image_url | string | trimmed URL; nullable |
 
 - Success: `200` - the updated record object
 - Errors:
@@ -195,12 +205,14 @@ Example response (`200`):
   "species": "Ficus benjamina",
   "common_name": "Weeping fig",
   "location_zone": "Block A",
+  "location": "Near Block A playground",
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
   "care_recommendation": null,
+  "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:30:00.000Z"
 }
@@ -246,7 +258,7 @@ others fail.
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Request: `multipart/form-data` with a single CSV file in the field named
   `file`. The first row is the header; recognised columns are `species`,
-  `common_name`, `location_zone`, `health_status`, `health_notes`,
+  `common_name`, `location_zone`, `location`, `health_status`, `health_notes`,
   `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
   `last_inspected_at`. Each row is validated with the same schema as create
   (species required, valid `health_status`); `recorded_by` is set from the JWT.
@@ -324,12 +336,14 @@ Example response (`200`):
   "species": "Ficus benjamina",
   "common_name": "Weeping fig",
   "location_zone": "Block A",
+  "location": "Near Block A playground",
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
   "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.",
+  "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:45:00.000Z"
 }

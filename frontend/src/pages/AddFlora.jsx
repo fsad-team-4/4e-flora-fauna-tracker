@@ -4,7 +4,7 @@ import { useFormik } from 'formik';
 import * as yup from 'yup';
 import {
   Box, TextField, Button, Typography, Alert, MenuItem, Stack, Card,
-  CardContent, Divider, Chip,
+  CardContent, Divider, Chip, Autocomplete,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
@@ -14,13 +14,11 @@ import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
 import http from '../http';
 import { HEALTH_STATUS_OPTIONS, HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
+import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
   common_name: yup.string(),
-  location_zone: yup.string(),
-  health_status: yup.string().required('Health status is required'),
-  health_notes: yup.string(),
   plant_family: yup.string(),
   site_suitability: yup.string(),
   color: yup.string(),
@@ -29,6 +27,18 @@ const validationSchema = yup.object({
     .transform((value) => (isNaN(value) ? null : value))
     .positive('Max height must be a positive number')
     .nullable(),
+});
+
+const makeLocation = (key) => ({
+  key,
+  location: '',
+  location_zone: '',
+  health_status: 'healthy',
+  health_notes: '',
+  imageUrl: '',
+  uploading: false,
+  uploadError: '',
+  submitError: '',
 });
 
 // Small colored dot matching the same convention used in FloraList's filter
@@ -172,43 +182,55 @@ function LivePreviewCard({ values }) {
 export default function AddFlora() {
   const navigate = useNavigate();
   const [apiError, setApiError] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState('');
-  const fileInputRef = useRef(null);
+  const [submitErrors, setSubmitErrors] = useState([]);
+  const [savedCount, setSavedCount] = useState(0);
+  const [locations, setLocations] = useState([makeLocation(0)]);
+  const nextKeyRef = useRef(1);
+  const fileInputRefs = useRef({});
 
-  const handleFileChange = async (event) => {
+  const updateLocationField = (key, field, value) => {
+    setLocations((prev) => prev.map((loc) => (loc.key === key ? { ...loc, [field]: value } : loc)));
+  };
+
+  const addLocation = () => {
+    setLocations((prev) => [...prev, makeLocation(nextKeyRef.current++)]);
+  };
+
+  const removeLocation = (key) => {
+    setLocations((prev) => (prev.length > 1 ? prev.filter((loc) => loc.key !== key) : prev));
+  };
+
+  const handleLocationFileChange = async (key, event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    setUploadError('');
-    setUploading(true);
+    updateLocationField(key, 'uploadError', '');
+    updateLocationField(key, 'uploading', true);
     try {
       const formData = new FormData();
       formData.append('image', file);
       const res = await http.post('/api/uploads', formData);
-      setImageUrl(res.data.url);
+      updateLocationField(key, 'imageUrl', res.data.url);
     } catch (err) {
-      setUploadError(err.response?.data?.error || 'Upload failed');
+      updateLocationField(key, 'uploadError', err.response?.data?.error || 'Upload failed');
       // reset the input so the same file can be retried
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      const input = fileInputRefs.current[key];
+      if (input) input.value = '';
     } finally {
-      setUploading(false);
+      updateLocationField(key, 'uploading', false);
     }
   };
 
-  const handleRemovePhoto = () => {
-    setImageUrl('');
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  const handleRemovePhoto = (key) => {
+    updateLocationField(key, 'imageUrl', '');
+    const input = fileInputRefs.current[key];
+    if (input) input.value = '';
   };
 
   const formik = useFormik({
     initialValues: {
       species: '',
       common_name: '',
-      location_zone: '',
-      health_status: 'healthy',
-      health_notes: '',
       plant_family: '',
       site_suitability: '',
       color: '',
@@ -217,15 +239,55 @@ export default function AddFlora() {
     validationSchema,
     onSubmit: async (values) => {
       setApiError('');
-      try {
-        await http.post('/api/flora', { ...values, image_url: imageUrl || null });
-        navigate('/flora');
-      } catch (err) {
-        const data = err.response?.data?.error;
-        setApiError(Array.isArray(data) ? data.join(', ') : data || 'Failed to add plant');
+      setSubmitErrors([]);
+      setSavedCount(0);
+
+      if (locations.some((loc) => !loc.health_status)) {
+        setApiError('Each location must have a health status.');
+        return;
       }
+
+      const results = await Promise.allSettled(
+        locations.map((loc) =>
+          http.post('/api/flora', {
+            ...values,
+            location: loc.location,
+            location_zone: loc.location_zone,
+            health_status: loc.health_status,
+            health_notes: loc.health_notes,
+            image_url: loc.imageUrl || null,
+          })
+        )
+      );
+
+      const failures = [];
+      const remaining = [];
+
+      results.forEach((result, index) => {
+        const loc = locations[index];
+        if (result.status === 'rejected') {
+          const data = result.reason?.response?.data?.error;
+          const message = Array.isArray(data) ? data.join(', ') : data || 'Failed to add plant';
+          failures.push({ label: loc.location_zone.trim() || `Location ${index + 1}`, message });
+          remaining.push({ ...loc, submitError: message });
+        }
+      });
+
+      if (failures.length === 0) {
+        navigate('/flora');
+        return;
+      }
+
+      // Only the failed locations stay on the form - the successful ones are
+      // already saved, so leaving them would let the user accidentally
+      // resubmit and create duplicates.
+      setSavedCount(locations.length - failures.length);
+      setSubmitErrors(failures);
+      setLocations(remaining);
     },
   });
+
+  const anyUploading = locations.some((loc) => loc.uploading);
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
@@ -250,10 +312,27 @@ export default function AddFlora() {
           <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
             {apiError && <Alert severity="error" sx={{ mb: 3 }}>{apiError}</Alert>}
 
+            {submitErrors.length > 0 && (
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                  {savedCount > 0
+                    ? `${savedCount} location(s) were saved successfully and have been removed from this form. The location(s) below failed - fix and resubmit just these:`
+                    : 'The following location(s) failed to save:'}
+                </Typography>
+                <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                  {submitErrors.map((failure, index) => (
+                    <Box component="li" key={index}>
+                      <Typography variant="body2">{failure.label}: {failure.message}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Alert>
+            )}
+
             <SectionHeading
               icon={<ParkOutlinedIcon color="success" />}
-              title="Basic Information"
-              subtitle="Identifies the plant and its current condition"
+              title="Species Details"
+              subtitle="Identifies the species - applies to every location added below"
             />
 
             <TextField
@@ -273,45 +352,6 @@ export default function AddFlora() {
               label="Common Name"
               name="common_name"
               value={formik.values.common_name}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-            />
-            <TextField
-              fullWidth
-              margin="normal"
-              label="Location Zone"
-              name="location_zone"
-              value={formik.values.location_zone}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-            />
-            <TextField
-              select
-              fullWidth
-              margin="normal"
-              label="Health Status"
-              name="health_status"
-              value={formik.values.health_status}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-              error={formik.touched.health_status && Boolean(formik.errors.health_status)}
-              helperText={formik.touched.health_status && formik.errors.health_status}
-            >
-              {HEALTH_STATUS_OPTIONS.map((s) => (
-                <MenuItem key={s.value} value={s.value}>
-                  <StatusDot color={HEALTH_STATUS_COLORS[s.value]} />
-                  {s.label}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              fullWidth
-              multiline
-              minRows={3}
-              margin="normal"
-              label="Health Notes"
-              name="health_notes"
-              value={formik.values.health_notes}
               onChange={formik.handleChange}
               onBlur={formik.handleBlur}
             />
@@ -364,49 +404,129 @@ export default function AddFlora() {
               helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
             />
 
-            <Box sx={{ mt: 2 }}>
-              {uploadError && <Alert severity="error" sx={{ mb: 1 }}>{uploadError}</Alert>}
-              <Button variant="outlined" component="label" disabled={uploading}>
-                {uploading ? 'Uploading...' : 'Add Photo'}
-                <input
-                  type="file"
-                  hidden
-                  accept="image/*"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                />
-              </Button>
-              {imageUrl && (
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
-                  <img
-                    src={imageUrl}
-                    alt="Uploaded preview"
-                    style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4 }}
+            <Divider sx={{ my: 4 }} />
+
+            <SectionHeading
+              icon={<LocationOnOutlinedIcon color="secondary" />}
+              title="Locations"
+              subtitle="Add every location this species is planted at, each with its own health status and photo"
+            />
+
+            {locations.map((loc, index) => (
+              <Card key={loc.key} variant="outlined" sx={{ mb: 3 }}>
+                <CardContent>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography variant="subtitle1">Location {index + 1}</Typography>
+                    {locations.length > 1 && (
+                      <Button color="error" size="small" onClick={() => removeLocation(loc.key)}>
+                        Remove
+                      </Button>
+                    )}
+                  </Stack>
+
+                  {loc.submitError && (
+                    <Alert severity="error" sx={{ mb: 2 }}>{loc.submitError}</Alert>
+                  )}
+
+                  <Autocomplete
+                    freeSolo
+                    fullWidth
+                    options={SINGAPORE_LOCATIONS}
+                    value={loc.location}
+                    onChange={(e, newValue) => updateLocationField(loc.key, 'location', newValue || '')}
+                    onInputChange={(e, newInputValue) => updateLocationField(loc.key, 'location', newInputValue)}
+                    renderInput={(params) => (
+                      <TextField {...params} margin="normal" label="Location" />
+                    )}
                   />
-                  <Button color="error" onClick={handleRemovePhoto} size="small">
-                    Remove
-                  </Button>
-                </Stack>
-              )}
-            </Box>
+                  <TextField
+                    fullWidth
+                    margin="normal"
+                    label="Location Zone"
+                    value={loc.location_zone}
+                    onChange={(e) => updateLocationField(loc.key, 'location_zone', e.target.value)}
+                  />
+                  <TextField
+                    select
+                    fullWidth
+                    margin="normal"
+                    label="Health Status"
+                    value={loc.health_status}
+                    onChange={(e) => updateLocationField(loc.key, 'health_status', e.target.value)}
+                  >
+                    {HEALTH_STATUS_OPTIONS.map((s) => (
+                      <MenuItem key={s.value} value={s.value}>
+                        <StatusDot color={HEALTH_STATUS_COLORS[s.value]} />
+                        {s.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    margin="normal"
+                    label="Health Notes"
+                    value={loc.health_notes}
+                    onChange={(e) => updateLocationField(loc.key, 'health_notes', e.target.value)}
+                  />
+
+                  <Box sx={{ mt: 2 }}>
+                    {loc.uploadError && <Alert severity="error" sx={{ mb: 1 }}>{loc.uploadError}</Alert>}
+                    <Button variant="outlined" component="label" disabled={loc.uploading}>
+                      {loc.uploading ? 'Uploading...' : 'Add Photo'}
+                      <input
+                        type="file"
+                        hidden
+                        accept="image/*"
+                        ref={(el) => { fileInputRefs.current[loc.key] = el; }}
+                        onChange={(e) => handleLocationFileChange(loc.key, e)}
+                      />
+                    </Button>
+                    {loc.imageUrl && (
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                        <img
+                          src={loc.imageUrl}
+                          alt="Uploaded preview"
+                          style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 4 }}
+                        />
+                        <Button color="error" onClick={() => handleRemovePhoto(loc.key)} size="small">
+                          Remove
+                        </Button>
+                      </Stack>
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            ))}
+
+            <Button variant="text" startIcon={<AddIcon />} onClick={addLocation} sx={{ mb: 2 }}>
+              Add Another Location
+            </Button>
 
             <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
               <Button
                 variant="outlined"
                 color="secondary"
                 onClick={() => navigate('/flora')}
-                disabled={formik.isSubmitting || uploading}
+                disabled={formik.isSubmitting || anyUploading}
               >
                 Cancel
               </Button>
-              <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting || uploading}>
+              <Button fullWidth type="submit" variant="contained" disabled={formik.isSubmitting || anyUploading}>
                 {formik.isSubmitting ? 'Saving...' : 'Add Plant'}
               </Button>
             </Stack>
           </CardContent>
         </Card>
 
-        <LivePreviewCard values={formik.values} />
+        <LivePreviewCard
+          values={{
+            ...formik.values,
+            location_zone: locations[0].location_zone,
+            health_status: locations[0].health_status,
+          }}
+        />
       </Box>
     </Box>
   );

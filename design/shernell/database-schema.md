@@ -13,6 +13,10 @@ Notes:
 - The `health_status` ENUM also carries an `isIn` validator. SQLite stores ENUM
   as plain TEXT with no value check, so the validator enforces the allowed
   values for SQLite/PostgreSQL parity.
+- Postgres' `LIKE` is case-sensitive (unlike SQLite's), so the partial-match
+  filters (`plant_family`, `site_suitability`, `location`) use a dialect-aware
+  operator to keep results consistent across environments - see the
+  case-insensitivity note in `use-cases.md`.
 - Dual validation: the controller (`floraController.js`) validates incoming
   request bodies with yup (`species` required, `health_status` restricted to the
   three values) before writing, and the model re-enforces `allowNull` and the
@@ -32,6 +36,7 @@ health status, inspection notes, and an optional AI care recommendation.
 | species | STRING | NOT NULL |
 | common_name | STRING | nullable |
 | location_zone | STRING | nullable |
+| location | STRING | nullable |
 | health_status | ENUM('healthy', 'at_risk', 'critical') | NOT NULL, default `'healthy'`, `isIn` validator |
 | health_notes | TEXT | nullable |
 | plant_family | STRING | nullable |
@@ -39,6 +44,7 @@ health status, inspection notes, and an optional AI care recommendation.
 | color | STRING | nullable |
 | max_height_at_maturity | FLOAT | nullable (metres) |
 | care_recommendation | TEXT | nullable (populated by the AI care-recommendation endpoint) |
+| image_url | STRING | nullable |
 | last_inspected_at | DATE | nullable |
 | recorded_by | INTEGER | NOT NULL, FK -> `Users.id` |
 | is_deleted | BOOLEAN | NOT NULL, default `false` (soft-delete flag) |
@@ -67,6 +73,13 @@ Field notes:
   optional on both create and CSV bulk upload, and support partial-match filtering
   (`plant_family`, `site_suitability`) and exact-match filtering (`color`) via
   query parameters on `GET /api/flora`, powering the Handbook browse view.
+- `location` is a broader area (e.g. "Bishan"), distinct from `location_zone`
+  (a specific spot within it, e.g. "Block 123 Void Deck"). It's optional on
+  both create and CSV bulk upload, and supports the same case-insensitive
+  partial-match filtering as `plant_family`/`site_suitability` via `GET
+  /api/flora`.
+- `image_url` holds a Cloudinary-hosted photo URL, set via the Add/Edit flora
+  forms. Nullable since a photo is optional.
 
 ---
 

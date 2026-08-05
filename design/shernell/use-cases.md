@@ -16,40 +16,63 @@ PATCH, and DELETE on `/api/flora` are all restricted to `staff` or `admin`
 only (`restrictTo('staff', 'admin')`); a resident attempting any of them
 receives `403`.
 
+Case-insensitivity note (applies to the `plant_family`, `site_suitability`,
+and `location` filters, used in UC-6 and UC-7): these filters use a
+dialect-aware operator - `Op.iLike` on Postgres, `Op.substring` on SQLite - so
+searches match regardless of casing on both databases. This was fixed because
+Postgres/Neon's `LIKE` is case-sensitive unlike SQLite's, which would have
+silently broken these filters after deployment.
+
 ---
 
-## UC-1: Staff records a single plant observation
+## UC-1: Staff records a plant observation across one or more locations
 
 - Actor: staff (or admin)
 - Precondition: the user is logged in with role staff or admin.
 
 Main flow:
 
-1. The staff member opens the Add a Plant form and enters species (required),
-   and optionally common name, location zone, health status (defaults to
-   `healthy`), and health notes.
-2. The frontend validates the input (species required, health status required)
-   and submits to `POST /api/flora`.
-3. The backend re-validates with yup, sets `recorded_by` from the JWT
-   (`req.user.user_id`), and creates the `GreeneryRecord` with `is_deleted`
-   defaulting to `false`, returning `201`.
-4. The frontend redirects to the Flora list, where the new plant appears at the
-   top (newest first) with a colour-coded health chip.
+1. The staff member opens the Add a Plant form and enters species (required,
+   shared across every location in this submission), and optionally common
+   name, plant family, site suitability, colour, and max height at maturity.
+2. For each place the species was observed, the staff member fills in a
+   location entry: location (broad area, e.g. "Bishan", picked from an
+   Autocomplete of Singapore's 55 URA planning areas or typed freely),
+   location zone (specific spot, e.g. a block or planter box), health status
+   (defaults to `healthy`), health notes, and an optional photo (uploaded to
+   Cloudinary via `POST /api/uploads`, returning an image URL). Clicking
+   "Add Another Location" appends a further blank location card; any card can
+   be removed once there is more than one.
+3. The frontend validates the input (species required, health status required
+   per location) and submits one `POST /api/flora` request per location, each
+   carrying the shared species/botanical fields plus that location's own
+   fields and photo URL.
+4. The backend re-validates each request with yup, sets `recorded_by` from the
+   JWT (`req.user.user_id`), and creates one `GreeneryRecord` per location with
+   `is_deleted` defaulting to `false`, returning `201`.
+5. Once every location has saved successfully, the frontend redirects to the
+   Flora list, where the new plants appear at the top (newest first) with
+   colour-coded health chips.
 
 Alternate / edge flows:
 
 - Missing species or an invalid `health_status` (not one of `healthy`,
-  `at_risk`, `critical`) -> `400`, field-level validation errors; no record
-  created.
+  `at_risk`, `critical`) on any location -> `400` for that location's request,
+  field-level validation errors; no record created for that location.
 - A `recorded_by` value sent in the request body is ignored; the recorder is
   always taken from the token (verified by test).
 - A resident attempting to submit -> `403`; the Add Plant control leads to a
   staff/admin-only action.
+- Partial failure across locations: if some locations save and others fail,
+  the locations that saved are dropped from the form and only the failed
+  ones remain, each showing its error, so the staff member can fix and
+  resubmit just those without accidentally re-creating the ones that already
+  saved (preventing duplicate submissions).
 
 Postcondition: 
-A new greenery record exists, owned by the staff member who created it, and is visible in the plant directory. 
+One new greenery record exists per successfully-submitted location, each owned by the staff member who created it, and visible in the plant directory. 
 
-If the record is created directly with health_status of at_risk or critical, an alert email is also dispatched to all staff/admin users. 
+If a record is created directly with health_status of at_risk or critical, an alert email is also dispatched to all staff/admin users. 
 
 ---
 
@@ -63,9 +86,9 @@ Main flow:
 
 1. The staff member opens the Flora list and, in the CSV Upload card, selects a
    `.csv` file. The first row is treated as the header; recognised columns are
-   `species`, `common_name`, `location_zone`, `health_status`, `health_notes`,
-   `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
-   `last_inspected_at`.
+   `species`, `common_name`, `location`, `location_zone`, `health_status`,
+   `health_notes`, `plant_family`, `site_suitability`, `color`,
+   `max_height_at_maturity`, `last_inspected_at`.
 2. The frontend submits the file as `multipart/form-data` (field `file`) to
    `POST /api/flora/bulk`.
 3. The backend parses the CSV, then validates and inserts each data row
@@ -99,8 +122,10 @@ per-row report of which rows failed and why.
 Main flow:
 
 1. The staff member opens a plant's detail page and clicks Edit.
-2. They change the health status (e.g. `healthy` -> `at_risk`) and/or health
-   notes and submit `PATCH /api/flora/:id`.
+2. They change the health status (e.g. `healthy` -> `at_risk`), health notes,
+   location, or other editable fields, and/or upload a new photo, replace the
+   existing one, or remove it (via Cloudinary), then submit
+   `PATCH /api/flora/:id`.
 3. The backend validates the fields, looks up the record with
    `is_deleted = false`, applies only the supplied fields, saves, and returns
    `200` with the updated record.
@@ -210,7 +235,8 @@ Main flow:
    the matching records.
 4. The frontend renders each match as a card showing species, common name,
    family, site suitability, colour, max height at maturity, and a small
-   health-status badge for context.
+   health-status badge for context; a photo is also shown on the card when
+   one has been recorded for the plant.
 5. Clicking a card navigates to that plant's detail page (`/flora/:id`),
    where the same botanical fields can be viewed in full or edited.
 
@@ -225,3 +251,38 @@ Alternate / edge flows:
 
 Postcondition: the staff member has identified a plant matching their
 criteria and can navigate to its full detail page for further action.
+
+---
+
+## UC-7: Staff filters flora records by location
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin.
+
+Main flow:
+
+1. On the Flora Management page's Search & Filter toolbar, the staff member
+   types into the Location field, alongside the existing species search and
+   health status filter.
+2. The frontend calls `GET /api/flora` with a `location` query parameter set
+   to the typed text.
+3. The backend filters active (non-deleted) records where `location` matches
+   the given text (case-insensitively - see the case-insensitivity note near
+   the top of this document), combined with any other active filters.
+4. The frontend re-renders the list with only the matching records.
+
+Alternate / edge flows:
+
+- The Location filter is a plain free-text field, not restricted to a fixed
+  list, so it matches any partial or custom text. Location entry on the Add
+  Plant and Edit Plant forms is separately assisted by an Autocomplete of
+  Singapore's 55 URA planning areas (freeSolo, so custom text is still
+  accepted there too) - but that Autocomplete is not used on this filter
+  toolbar.
+- No location text entered -> the filter has no effect; other active filters
+  still apply.
+- No records match -> the list shows empty, consistent with the other
+  filters.
+
+Postcondition: the staff member sees only records whose location matches the
+filter text, narrowing the plant directory for their current task.
