@@ -15,13 +15,10 @@ jest.mock('../../src/services/emailService', () => ({
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, NotificationLog } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 
 let adminToken, staffToken, residentToken;
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 const mkFailed = over => NotificationLog.create({
   channel: 'email', recipient: 'ops@test.com', status: 'failed',
   subject: 'Critical flora alert', body: 'Plant X is critical.', error_reason: 'SMTP timeout',
@@ -30,8 +27,8 @@ const mkFailed = over => NotificationLog.create({
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'n-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Staff', 'n-staff@test.com', 'staff');
+  adminToken = await createAndLogin('Admin', 'n-admin@test.com', 'admin');
+  staffToken = await createAndLogin('Staff', 'n-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'n-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });

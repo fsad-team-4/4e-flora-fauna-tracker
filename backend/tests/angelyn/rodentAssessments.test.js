@@ -19,8 +19,9 @@ jest.mock('../../src/services/rodentService', () => ({
 }));
 
 const request = require('supertest');
+const bcrypt = require('bcryptjs');
 const app = require('../../src/index');
-const { sequelize } = require('../../src/models');
+const { sequelize, User } = require('../../src/models');
 
 let adminToken, staffToken, residentToken;
 
@@ -30,10 +31,17 @@ async function registerAndLogin(name, email, role) {
   return res.body.token;
 }
 
+// Public registration always creates residents - seed staff/admin directly.
+async function createAndLogin(name, email, role) {
+  await User.create({ name, email, password_hash: await bcrypt.hash('secret1', 10), role });
+  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
+  return res.body.token;
+}
+
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Staff', 'staff@test.com', 'staff');
+  adminToken = await createAndLogin('Admin', 'admin@test.com', 'admin');
+  staffToken = await createAndLogin('Staff', 'staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'resident@test.com', 'resident');
 });
 

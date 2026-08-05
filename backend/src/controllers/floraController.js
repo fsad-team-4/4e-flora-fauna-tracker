@@ -2,11 +2,16 @@ const yup = require('yup');
 const { Op } = require('sequelize');
 const { GoogleGenAI } = require('@google/genai');
 const { GreeneryRecord, User } = require('../models');
+const sequelize = require('../config/database');
 const { sendMail } = require('../config/mailer');
 const floraQueryService = require('../services/floraQueryService');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
+
+// Postgres' LIKE is case-sensitive (unlike SQLite's), so use iLike there to
+// keep substring filters matching regardless of case on both databases.
+const CASE_INSENSITIVE_OP = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.substring;
 
 // Rule-based notification: email all staff/admin when a plant's health becomes
 // at_risk or critical. Fire-and-forget - sendMail swallows its own errors, so
@@ -53,6 +58,7 @@ const createSchema = yup.object({
     .positive('Max height must be a positive number')
     .nullable(),
   image_url: yup.string().trim().url().nullable(),
+  is_catalog_only: yup.boolean().default(false),
 });
 
 const updateSchema = yup.object({
@@ -93,17 +99,20 @@ function parseCSV(buffer) {
 // Get all active plant assets
 async function getAllGreenery(req, res) {
   const where = { is_deleted: false };
+  if (req.query.include_catalog !== 'true') {
+    where.is_catalog_only = false;
+  }
   if (req.query.health_status) {
     where.health_status = req.query.health_status;
   }
   if (req.query.plant_family) {
-    where.plant_family = { [Op.substring]: req.query.plant_family };
+    where.plant_family = { [CASE_INSENSITIVE_OP]: req.query.plant_family };
   }
   if (req.query.site_suitability) {
-    where.site_suitability = { [Op.substring]: req.query.site_suitability };
+    where.site_suitability = { [CASE_INSENSITIVE_OP]: req.query.site_suitability };
   }
   if (req.query.location) {
-    where.location = { [Op.substring]: req.query.location };
+    where.location = { [CASE_INSENSITIVE_OP]: req.query.location };
   }
   if (req.query.color) {
     where.color = req.query.color;
@@ -211,6 +220,7 @@ async function bulkUploadCSV(req, res) {
   const rows = parseCSV(req.file.buffer);
   const created = [];
   const errors = [];
+  const isCatalogOnly = req.body.is_catalog_only === 'true';
 
   for (let i = 0; i < rows.length; i++) {
     try {
@@ -218,6 +228,7 @@ async function bulkUploadCSV(req, res) {
       const record = await GreeneryRecord.create({
         species: data.species,
         common_name: data.common_name,
+        location: data.location,
         location_zone: data.location_zone,
         health_status: data.health_status,
         health_notes: data.health_notes,
@@ -226,6 +237,7 @@ async function bulkUploadCSV(req, res) {
         color: data.color,
         max_height_at_maturity: data.max_height_at_maturity,
         last_inspected_at: data.last_inspected_at,
+        is_catalog_only: isCatalogOnly,
         recorded_by: req.user.user_id,
       });
       created.push(record);

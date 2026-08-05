@@ -21,22 +21,19 @@ jest.mock('../../src/services/emailService', () => ({
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment, FaunaSighting, NotificationLog, User } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 const { draftBriefing, stubBriefing } = require('../../src/services/vendorBriefing');
 
 let adminToken, staffToken, residentToken, adminId;
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 let critIds = [];
 let lowIds = [];
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'vb-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Officer', 'vb-staff@test.com', 'staff');
+  adminToken = await createAndLogin('Admin', 'vb-admin@test.com', 'admin');
+  staffToken = await createAndLogin('Officer', 'vb-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Res', 'vb-res@test.com', 'resident');
   adminId = (await User.findOne({ where: { email: 'vb-admin@test.com' } })).id;
 

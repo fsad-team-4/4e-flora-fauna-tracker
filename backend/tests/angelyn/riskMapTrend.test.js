@@ -4,20 +4,17 @@ process.env.JWT_SECRET = 'test-secret';
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment, FaunaSighting, User } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 
 const DAY = 24 * 60 * 60 * 1000;
 const ago = days => new Date(Date.now() - days * DAY);
 
 let token, staffId;
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  token = await registerAndLogin('Officer', 'rmt-staff@test.com', 'staff');
+  token = await createAndLogin('Officer', 'rmt-staff@test.com', 'staff');
   staffId = (await User.findOne({ where: { email: 'rmt-staff@test.com' } })).id;
 });
 afterAll(async () => { await sequelize.close(); });

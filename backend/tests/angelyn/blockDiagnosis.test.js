@@ -14,6 +14,8 @@ process.env.JWT_SECRET = 'test-secret';
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 const {
   computeFeedingRodentCorrelation,
 } = require('../../src/services/blockDiagnosis');
@@ -215,7 +217,7 @@ describe('GET /api/block-diagnosis (RBAC + contract)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'bd-staff@test.com', 'staff');
+    staffToken = await createAndLogin('Staff', 'bd-staff@test.com', 'staff');
     residentToken = await registerAndLogin('Resident', 'bd-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });

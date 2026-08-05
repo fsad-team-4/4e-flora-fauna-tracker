@@ -13,16 +13,13 @@ jest.mock('../../src/services/emailService', () => ({
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment, WorkOrder, WorkOrderEvent, NotificationLog, ResidentReport, User } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 const { STAGE_LABEL } = require('../../src/services/workOrderStages');
 const { buildMessage } = require('../../src/services/workOrderNotify');
 
 let adminToken, staffToken, residentToken, residentId;
 
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 // A pending escalation is what the queue consolidates into a work order.
 const makeAssessment = over => RodentAssessment.create({
@@ -51,8 +48,8 @@ const patchStage = (id, token, body) => request(app)
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'wos-admin@test.com', 'admin');
-  staffToken = await registerAndLogin('Officer', 'wos-staff@test.com', 'staff');
+  adminToken = await createAndLogin('Admin', 'wos-admin@test.com', 'admin');
+  staffToken = await createAndLogin('Officer', 'wos-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'wos-res@test.com', 'resident');
   residentId = (await User.findOne({ where: { email: 'wos-res@test.com' } })).id;
 });

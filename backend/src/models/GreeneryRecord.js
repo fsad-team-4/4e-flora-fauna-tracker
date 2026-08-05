@@ -60,6 +60,11 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  is_catalog_only: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
   last_inspected_at: {
     type: DataTypes.DATE,
     allowNull: true,

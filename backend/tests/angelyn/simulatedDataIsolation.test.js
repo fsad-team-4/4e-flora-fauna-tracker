@@ -20,15 +20,12 @@ const path = require('path');
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, SensorReading, RodentAssessment, FaunaSighting, User } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 
 const SRC = path.join(__dirname, '../../src');
 
 let adminToken;
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 // Extreme values: if any metric were reading this table, these would visibly
 // move it. Positioned on top of the real assessments so proximity cannot be an
@@ -70,7 +67,7 @@ async function snapshotMetrics(token) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'sim-admin@test.com', 'admin');
+  adminToken = await createAndLogin('Admin', 'sim-admin@test.com', 'admin');
   const admin = await User.findOne({ where: { email: 'sim-admin@test.com' } });
 
   // a little real data so the metrics are not all trivially empty

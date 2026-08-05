@@ -5,7 +5,8 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret';
 
 const request = require('supertest');
 const app = require('../../src/index');
-const { sequelize, CaseStatusLog } = require('../../src/models');
+const { sequelize, CaseStatusLog, User } = require('../../src/models');
+const bcrypt = require('bcryptjs');
 
 const tokens = {};
 let reportId;
@@ -20,9 +21,20 @@ beforeAll(async () => {
     ['admin', 'admin'],
   ];
   for (const [key, role] of accounts) {
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: key, email: `${key}@example.com`, password: 'secret1', role });
+    if (role === 'resident') {
+      // residents come through the public registration endpoint
+      await request(app)
+        .post('/api/auth/register')
+        .send({ name: key, email: `${key}@example.com`, password: 'secret1' });
+    } else {
+      // staff/admin are seeded directly - public registration only creates residents
+      await User.create({
+        name: key,
+        email: `${key}@example.com`,
+        password_hash: await bcrypt.hash('secret1', 10),
+        role,
+      });
+    }
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: `${key}@example.com`, password: 'secret1' });

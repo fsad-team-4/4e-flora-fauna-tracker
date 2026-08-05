@@ -30,6 +30,8 @@ jest.mock('../../src/services/rodentService', () => ({
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 const { computeRiskMap, RISK_WEIGHTS } = require('../../src/services/rodentRiskMap');
 
 const NOW = new Date('2026-07-23T00:00:00Z').getTime();
@@ -204,7 +206,7 @@ describe('GET /api/rodent-riskmap (RBAC + contract)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'rm-staff@test.com', 'staff');
+    staffToken = await createAndLogin('Staff', 'rm-staff@test.com', 'staff');
     residentToken = await registerAndLogin('Resident', 'rm-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });

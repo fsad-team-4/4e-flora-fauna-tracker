@@ -10,14 +10,11 @@ process.env.JWT_SECRET = 'test-secret';
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 
 let staffToken, residentToken, adminToken;
 
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 function makeAssessment(over = {}) {
   return RodentAssessment.create({
@@ -33,9 +30,9 @@ const detail = (id, token) => request(app).get(`/api/rodent-assessments/${id}`).
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'staff');
+  staffToken = await createAndLogin('Staff', 'ad-staff@test.com', 'staff');
   // raising a work order commits money, so it is admin-only
-  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'admin');
+  adminToken = await createAndLogin('Admin', 'ad-admin@test.com', 'admin');
   residentToken = await registerAndLogin('Resident', 'ad-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });

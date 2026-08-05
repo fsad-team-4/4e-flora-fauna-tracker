@@ -20,6 +20,7 @@ import MapOutlinedIcon from '@mui/icons-material/MapOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
 import { getPlantIcon } from '../utils/plantIcons';
+import { toTitleCase } from '../utils/formatters';
 
 const HEALTH_SEVERITY_RANK = { critical: 0, at_risk: 1, healthy: 2 };
 
@@ -562,7 +563,7 @@ export default function FloraList() {
                           <Stack direction="row" spacing={0.75} alignItems="center" sx={{ minWidth: 0 }}>
                             <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
                             <Typography variant="h6" sx={{ lineHeight: 1.3 }} noWrap>
-                              {plant.species}
+                              {toTitleCase(plant.species)}
                             </Typography>
                           </Stack>
                           {plant.common_name && (

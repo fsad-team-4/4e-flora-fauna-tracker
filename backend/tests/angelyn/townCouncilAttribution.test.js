@@ -19,16 +19,13 @@ process.env.JWT_SECRET = 'test-secret';
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, ResidentReport, FaunaSighting, User } = require('../../src/models');
+// Privileged users must be seeded, not registered - see tests/authHelpers.js
+const { createAndLogin, registerAndLogin } = require('../authHelpers');
 const estateData = require('../../src/services/estateDataService');
 const { COUNCILS, councilFor } = require('../../src/services/townCouncils');
 
 let adminToken, residentToken, residentId;
 
-async function registerAndLogin(name, email, role) {
-  await request(app).post('/api/auth/register').send({ name, email, password: 'secret1', role });
-  const res = await request(app).post('/api/auth/login').send({ email, password: 'secret1' });
-  return res.body.token;
-}
 
 const AMK = { lat: 1.3691, lng: 103.8454 };   // Ang Mo Kio town centre
 const NEE_SOON = { lat: 1.4304, lng: 103.8354 };
@@ -36,7 +33,7 @@ const OPEN_SEA = { lat: 1.2000, lng: 103.6500 }; // inside SG bounds, outside ev
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'tc-admin@test.com', 'admin');
+  adminToken = await createAndLogin('Admin', 'tc-admin@test.com', 'admin');
   residentToken = await registerAndLogin('Resident', 'tc-resident@test.com', 'resident');
   residentId = (await User.findOne({ where: { email: 'tc-resident@test.com' } })).id;
 });
