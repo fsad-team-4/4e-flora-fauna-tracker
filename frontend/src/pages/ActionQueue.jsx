@@ -16,6 +16,8 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
+import CalendarTodayOutlinedIcon from '@mui/icons-material/CalendarTodayOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -27,6 +29,7 @@ import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import http from '../http';
 import UndoSnackbar from '../components/UndoSnackbar';
 import { useUser } from '../contexts/UserContext';
+import { causeLabel } from '../rodentLabels';
 
 /* ------------------------------------------------------------------ tokens -- */
 
@@ -135,27 +138,25 @@ function CardMeta({ icon: Icon, children, strong = false }) {
 /**
  * Priority badge - TINTED at every level, with the ink carrying the urgency.
  *
- * Critical and High were briefly given solid fills with white text. On a card that was
- * wrong, and for a specific reason: the card's identifier is the block number, and a
- * solid red block beside it out-weighed the very thing the card is FOR. The badge became
- * the loudest object on a card whose job is to say "Block 125".
+ * SOFTENED FROM A SOLID FILL. Critical was a saturated block with white text, which was
+ * the loudest object on a card whose job is to say "Block 125" - the badge out-weighed the
+ * identifier it was annotating. It is now a tint like every other level.
  *
- * CRITICAL is the one exception and it is now solid, with a warning glyph. Solid was
- * tried on critical AND high and was correctly called too heavy - two saturated badges per
- * card is a lot - but at the very top of the scale the weight is the point, and one solid
- * badge per screen does not flatten anything. The glyph is redundant encoding: the level
- * then survives shape, word and colour independently, which is what the accessibility note
- * was really after (the word was always there, so it never rested on colour alone).
+ * CRITICAL AND HIGH ARE A TWO-STEP OF ONE HUE, NOT TWO HUES.
  *
- * Below critical the fill stays a tint, and the differentiation is a 1px border in the
- * level's own `accent`.
+ * Both are the danger pair in the PRIORITY table above - same `bg`, same `ink` - so with
+ * flat tints the only difference between them was the word inside. Amber for High would
+ * have separated them, but `medium` is ALREADY the warn/amber pair, so High-as-amber makes
+ * High and Medium indistinguishable: it moves the collision one step down the scale
+ * instead of removing it.
  *
- * That border is doing more than decoration. Critical and High share the SAME `bg` and
- * the SAME `ink` in the PRIORITY table above - both are the danger pair - so until now
- * the only thing distinguishing a Critical badge from a High one was the word inside it.
- * `accent` differs per level (#B3261E vs #D9463C on light), so the hairline is what makes
- * the two readable as different at a glance. The word still carries it for anyone who
- * cannot separate the hues.
+ * So Critical mixes a deeper tint from --em-danger-strong, wears a 1.5px border in its own
+ * `accent` (#B3261E vs High's #D9463C), and keeps the warning glyph. Three independent
+ * cues - depth, border, glyph - none of which is hue alone.
+ *
+ * The glyph is the accessibility guarantee: the level survives shape, word and colour
+ * independently. The word was always there, so it never rested on colour alone, but a
+ * glyph is faster than reading at a glance.
  */
 function PriorityChip({ level, size = 'small' }) {
   const m = prio(level);
@@ -164,14 +165,18 @@ function PriorityChip({ level, size = 'small' }) {
     <Chip
       label={m.label}
       size={size}
-      variant={isCritical ? 'filled' : 'outlined'}
+      variant="outlined"
       icon={isCritical
         ? <ReportProblemOutlinedIcon sx={{ fontSize: 14, color: 'inherit !important' }} />
         : undefined}
       sx={{
-        bgcolor: isCritical ? m.accent : m.bg,
-        color: isCritical ? '#fff' : m.ink,
-        borderColor: isCritical ? 'transparent' : m.accent,
+        // Critical gets a DEEPER tint of the same danger hue, mixed from the strong token
+        // rather than a second palette - see the note above for why it is a two-step and
+        // not two colours.
+        bgcolor: isCritical ? 'color-mix(in srgb, var(--em-danger-strong) 16%, var(--em-surface))' : m.bg,
+        color: m.ink,
+        borderColor: m.accent,
+        borderWidth: isCritical ? 1.5 : 1,
         fontWeight: 700, borderRadius: '6px', height: 22, fontSize: 12,
         '& .MuiChip-icon': { ml: 0.5, mr: -0.25 },
       }}
@@ -180,6 +185,21 @@ function PriorityChip({ level, size = 'small' }) {
 }
 
 /* ------------------------------------------------------ command centre hero -- */
+
+/**
+ * The two filters that carry a leading glyph need more room than the shared minWidth.
+ *
+ * An icon plus its 8px gap is ~25px, and with the dropdown arrow and padding that leaves
+ * about 83px of the shared 132px for the label - not enough for "All priorities", which
+ * would have silently truncated.
+ *
+ * The first attempt at this was a negative margin on the adornment to claw the space back,
+ * which is why the glyph ended up jammed against the text: MUI's start adornment already
+ * ships an 8px right margin, so `mr: -0.25` cancelled it outright rather than trimming it.
+ * Buying width is the honest fix; crushing the gap just moved the problem into the
+ * spacing.
+ */
+const GLYPH_FIELD_SX = { minWidth: 158 };
 
 // One field style for every control in the toolbar, so search, both selects and the
 // sort dropdown share an exact height and border. They were only loosely aligned
@@ -195,7 +215,10 @@ const FIELD_H = 38;
  */
 const FIELD_SX = {
   minWidth: 132,
-  bgcolor: BRAND.section,
+  // BRAND.surface, not section: the toolbar itself is now `section`, so a section-filled
+  // field on it was grey-on-grey and disappeared. On a defined bar the inputs are the
+  // RAISED elements, which is the opposite of what they were on a transparent band.
+  bgcolor: BRAND.surface,
   borderRadius: '8px',
   '& .MuiOutlinedInput-root': { height: FIELD_H, borderRadius: '8px' },
   '& .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
@@ -272,6 +295,20 @@ const RANGES = [
  * `tab` and `priority` are what each card actually sets, declared here so the mapping is
  * readable in one place instead of living in an if-chain.
  */
+/**
+ * Per-tone surface for the stat cards. `figure` is the ink on the NUMBER only - the label
+ * and hint stay neutral in every card, so the tone marks the metric without turning the
+ * whole row into four different colour schemes.
+ *
+ * Tokens, not literals: these have to hold in both schemes, and --em-*-bg / --em-*-ink are
+ * already the scheme-aware pairs the rest of the app tints with.
+ */
+const KPI_TONE = {
+  neutral: { bg: 'var(--em-neutral-bg)', border: 'var(--em-neutral-border)', accent: 'var(--em-info-ink)', figure: 'var(--em-heading)' },
+  danger: { bg: 'var(--em-danger-bg)', border: 'var(--em-danger-border)', accent: 'var(--em-prio-critical)', figure: 'var(--em-danger-ink)' },
+  ok: { bg: 'var(--em-ok-bg)', border: 'var(--em-ok-border)', accent: 'var(--em-ok-strong)', figure: 'var(--em-ok-ink)' },
+};
+
 const KPI_CARDS = [
   { key: 'action', label: 'Total pending', hint: 'Awaiting approval', tab: 'pending', priority: 'all' },
   { key: 'urgent', label: 'Critical actions', hint: 'High or critical risk', tab: 'pending', priority: 'critical', tone: 'danger' },
@@ -284,6 +321,31 @@ function CommandCentre({
   range, setRange, sort, setSort, sortOptions, primary, onExport, view, onView,
   kpiFilter, applyKpiFilter, kpiValues,
 }) {
+  /**
+   * THE TOOLBAR'S STICKY OFFSET IS MEASURED, NOT GUESSED.
+   *
+   * It was hardcoded to 84px - the header's height at the time it was written. That was
+   * already approximate, and it broke outright the moment the metric strip moved out of
+   * the header into its own row: the header got ~10px shorter and a strip of scrolling
+   * content showed through the gap between the two pinned bars.
+   *
+   * Any fixed number here is wrong for at least one state anyway - the header wraps at
+   * narrow widths, and the h1 steps from 21px to 24px at the md breakpoint. A
+   * ResizeObserver catches every cause at once, including the responsive ones, so the two
+   * bars stay flush without either knowing the other's layout rules.
+   */
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(84);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return undefined;
+    const measure = () => setHeaderH(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       {/* Functional page title, not a headline. The greeting was 32px of prime
@@ -294,6 +356,7 @@ function CommandCentre({
       {/* The header is a contained surface, not a transparent band: a soft permanent
           shadow grounds it as a "glass ceiling" over the scrolling queue. */}
       <Box
+        ref={headerRef}
         sx={{
           position: 'sticky', top: 0, zIndex: 20, bgcolor: BRAND.surface,
           px: { xs: 2, md: 3 }, pt: 2, pb: 1.25,
@@ -319,58 +382,6 @@ function CommandCentre({
 
           </Box>
 
-          {/* ── HEADER METRIC BAR ──────────────────────────────────────────────
-              The summary figures live in the header now, compact, between the title and
-              the CTA - so they are secondary to the primary action by position rather than
-              by being hidden. Each carries a left accent in its own colour.
-
-              It doubles as the queue's TAB CONTROL, which is why it is here in both views
-              rather than list-only: `rows` is `tab === 'pending' ? pendingRows : orderRows`,
-              so list needs it, and putting it in the header means one implementation
-              instead of one per view. On the board the counts do repeat the column headers
-              - that redundancy is accepted deliberately in exchange for the figures being
-              in a fixed, predictable place. */}
-        <Stack
-          direction="row"
-          role="tablist"
-          aria-label="Queue"
-          sx={{ gap: 0.25, flexWrap: 'wrap', minWidth: 0, alignItems: 'stretch' }}
-        >
-          {KPI_CARDS.map(card => {
-            const active = kpiFilter === card.key;
-            return (
-              <Tooltip key={card.key} title={card.hint}>
-                <Stack
-                  component="button"
-                  type="button"
-                  role="tab"
-                  direction="row"
-                  spacing={0.6}
-                  aria-selected={active}
-                  onClick={() => applyKpiFilter(card.key)}
-                  sx={{
-                    alignItems: 'baseline', font: 'inherit', cursor: 'pointer', border: 0,
-                    bgcolor: active ? BRAND.section : 'transparent',
-                    px: 1.25, py: 0.6, borderRadius: '6px',
-                    // a LEFT accent in the metric's own colour, not a full-width cap - the
-                    // same restraint that took the rainbow off the board columns
-                    borderLeft: `3px solid ${card.tone === 'danger' ? 'var(--em-prio-critical)' : card.tone === 'ok' ? 'var(--em-ok-strong)' : BRAND.action}`,
-                    '&:hover': { bgcolor: BRAND.section },
-                    '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: -2 },
-                  }}
-                >
-                  <Typography component="span" sx={{ fontSize: 13.5, fontWeight: active ? 700 : 500, color: active ? BRAND.heading : BRAND.text, whiteSpace: 'nowrap' }}>
-                    {card.label}
-                  </Typography>
-                  <Typography component="span" sx={{ fontSize: 12, fontWeight: 600, color: BRAND.textLight, fontVariantNumeric: 'tabular-nums' }}>
-                    {kpiValues[card.key]}
-                  </Typography>
-                </Stack>
-              </Tooltip>
-            );
-          })}
-        </Stack>
-
           {/* the one global action, level with the title.
               `disabledReason` is set when the server would refuse the action for
               this role, so a disabled primary explains itself instead of looking
@@ -388,6 +399,48 @@ function CommandCentre({
               px: 2.25, py: 1, borderRadius: '8px', whiteSpace: 'nowrap', textTransform: 'none',
               boxShadow: '0 4px 14px rgba(29,78,216,.34)',
               '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.45)' },
+
+              /* THE PULSE MEANS SOMETHING, WHICH IS THE ONLY REASON IT IS HERE.
+               *
+               * It runs only while `primary.count > 0` - that is, while there really are
+               * critical reviews waiting. A CTA that pulses unconditionally is decoration:
+               * it draws the eye every time the page is open, including when the queue is
+               * clear and the correct answer is "nothing to do", and an animation that is
+               * always on is one nobody sees after a day. Gated on the count, the motion
+               * carries information - movement here means work is waiting.
+               *
+               * A HALO, NOT A SCALE. The ring expands on a pseudo-element behind the
+               * button; the button itself never moves. Animating transform on a control
+               * makes it a target that shifts under the pointer, which is worse than no
+               * animation at all.
+               *
+               * 2.4s and a soft opacity ramp: slow enough to read as a breath rather than
+               * a blink, which is what keeps it in "subtle" territory.
+               *
+               * OFF under prefers-reduced-motion. A pulsing element is exactly what that
+               * setting exists for, and the strong drop shadow already marks this as the
+               * primary action without any motion at all - so nothing is lost, the signal
+               * just stops moving. */
+              ...(primary.count > 0 && !primary.disabled ? {
+                position: 'relative',
+                '&::after': {
+                  content: '""',
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: 'inherit',
+                  pointerEvents: 'none',
+                  boxShadow: '0 0 0 0 rgba(29,78,216,.55)',
+                  animation: 'aq-cta-pulse 2.4s cubic-bezier(.33,0,.2,1) infinite',
+                },
+                '@keyframes aq-cta-pulse': {
+                  '0%': { boxShadow: '0 0 0 0 rgba(29,78,216,.5)', opacity: 1 },
+                  '70%': { boxShadow: '0 0 0 12px rgba(29,78,216,0)', opacity: 0 },
+                  '100%': { boxShadow: '0 0 0 0 rgba(29,78,216,0)', opacity: 0 },
+                },
+                '@media (prefers-reduced-motion: reduce)': {
+                  '&::after': { animation: 'none', boxShadow: 'none' },
+                },
+              } : null),
             }}
           >
             <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
@@ -416,19 +469,108 @@ function CommandCentre({
         </Stack>
       </Box>
 
+      {/* ── METRIC CARDS ───────────────────────────────────────────────────
+          FOUR STAT CARDS, AND EVERY ONE OF THEM IS A FILTER.
+          They were an inline label+count strip wedged into the header between the title
+          and the CTA: three things competing for one row, and the figures read as captions
+          rather than as the state of the queue. Now they get a row of their own directly
+          under the header, with the NUMBER above the label - the figure is what is being
+          communicated, so it goes first and carries the weight.
+          NOT STICKY, deliberately, unlike the header and the toolbar. These are an
+          overview you read on arrival; the controls are what you need mid-scroll. Keeping
+          them out of the sticky stack means the toolbar's offset stays fixed and a long
+          queue is not read through 150px of chrome.
+          Still role=tablist: each card sets a real tab and priority, so pressing
+          "4 Critical actions" must actually show four rows or the card is lying. */}
+      <Box
+        role="tablist"
+        aria-label="Queue"
+        sx={{
+          px: { xs: 2, md: 3 }, pt: 1.75, pb: 0.5,
+          display: 'grid', gap: 1.25,
+          gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+        }}
+      >
+        {KPI_CARDS.map(card => {
+          const active = kpiFilter === card.key;
+          const t = KPI_TONE[card.tone || 'neutral'];
+          return (
+            <Box
+              key={card.key}
+              component="button"
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => applyKpiFilter(card.key)}
+              sx={{
+                font: 'inherit', textAlign: 'left', cursor: 'pointer', minWidth: 0,
+                px: 1.75, py: 1.25, borderRadius: '10px',
+                // A faint tint carries the tone, so Critical is scannable before any word
+                // is read. Tinted at REST rather than only when active - the tint is what
+                // the figure MEANS, and a card that only colours when pressed cannot be
+                // scanned, which is the entire job of this row.
+                bgcolor: t.bg,
+                border: `1px solid ${active ? t.accent : t.border}`,
+                // elevated off the page, more so when it is the active filter
+                boxShadow: active
+                  ? `0 4px 14px rgba(16,24,40,.12), inset 0 0 0 1px ${t.accent}`
+                  : '0 1px 2px rgba(16,24,40,.06)',
+                transition: 'box-shadow .15s ease, border-color .15s ease, transform .15s ease',
+                '&:hover': { boxShadow: '0 6px 16px rgba(16,24,40,.14)', transform: 'translateY(-1px)' },
+                '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
+              }}
+            >
+              <Typography
+                component="span"
+                sx={{
+                  display: 'block', fontSize: { xs: 24, md: 28 }, fontWeight: 800, lineHeight: 1.1,
+                  color: t.figure, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px',
+                }}
+              >
+                {kpiValues[card.key]}
+              </Typography>
+              <Typography
+                component="span"
+                sx={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: BRAND.text, mt: 0.25, lineHeight: 1.3 }}
+              >
+                {card.label}
+              </Typography>
+              {/* the hint was a tooltip, which is unreachable on touch and invisible until
+                  hovered - as a sub-line it is simply readable */}
+              <Typography
+                component="span"
+                sx={{ display: 'block', fontSize: 11, color: BRAND.textLight, mt: 0.1, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {card.hint}
+              </Typography>
+            </Box>
+          );
+        })}
+      </Box>
+
       {/* ── Unified toolbar ────────────────────────────────────────────────
           One full-width bar with its own bottom rule, separating the controls
           from the board. Inputs cluster left, view controls sit hard right. */}
+      {/* A DEFINED BAR, not a transparent band.
+          This was BRAND.surface on a BRAND.surface page with one hairline underneath, so
+          the controls floated on the background and the whole row was easy to miss - the
+          filters read as loose text rather than as a place where you change what you are
+          looking at. It is now its own contained surface with a border, a radius and a
+          soft lift, inset within the page gutter so it reads as one utility object.
+          Still sticky: the search and filters are exactly what you reach for mid-scroll
+          through a long queue. The outer wrapper carries the page background so the bar
+          does not sit on transparent pixels while pinned. */}
+      <Box sx={{ position: 'sticky', top: headerH, zIndex: 19, bgcolor: BRAND.surface, px: { xs: 2, md: 3 }, pt: 1, pb: 1.25 }}>
       <Stack
         direction="row"
         spacing={1}
         sx={{
-          position: 'sticky', top: 84, zIndex: 19,
-          px: { xs: 2, md: 3 }, py: 1.25,
-          bgcolor: BRAND.surface,
+          px: 1.25, py: 1,
+          bgcolor: BRAND.section,
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: '10px',
+          boxShadow: '0 1px 2px rgba(16,24,40,.05)',
           flexWrap: 'wrap', rowGap: 1.25, alignItems: 'center',
-          // the lower rule is what separates the control bar from the data grid
-          boxShadow: `inset 0 -1px 0 ${BRAND.border}`,
         }}
       >
         <TextField
@@ -460,11 +602,21 @@ function CommandCentre({
             },
           }}
         />
+        {/* Leading glyphs on both filters. Search already had one, so the two selects
+            beside it read as a different, lesser class of control - and a glyph is faster
+            to locate than the word "All priorities" when you are scanning for where to
+            change the filter. aria-hidden: the label already names the control, and a
+            second announcement of "flag icon" is noise to a screen reader. */}
         <Select
           value={priority}
           onChange={e => setPriority(e.target.value)}
           size="small"
-          sx={FIELD_SX}
+          sx={{ ...FIELD_SX, ...GLYPH_FIELD_SX }}
+          startAdornment={
+            <InputAdornment position="start">
+              <FlagOutlinedIcon aria-hidden sx={{ fontSize: 17, color: BRAND.textLight }} />
+            </InputAdornment>
+          }
           slotProps={{ input: { 'aria-label': 'Filter by priority' } }}
         >
           <MenuItem value="all">All priorities</MenuItem>
@@ -476,7 +628,12 @@ function CommandCentre({
           value={range}
           onChange={e => setRange(e.target.value)}
           size="small"
-          sx={FIELD_SX}
+          sx={{ ...FIELD_SX, ...GLYPH_FIELD_SX }}
+          startAdornment={
+            <InputAdornment position="start">
+              <CalendarTodayOutlinedIcon aria-hidden sx={{ fontSize: 16, color: BRAND.textLight }} />
+            </InputAdornment>
+          }
           slotProps={{ input: { 'aria-label': 'Filter by date range' } }}
         >
           {RANGES.map(r => <MenuItem key={r.value} value={r.value}>{r.label}</MenuItem>)}
@@ -547,6 +704,7 @@ function CommandCentre({
           </Tooltip>
         </Stack>
       </Stack>
+      </Box>
     </>
   );
 }
@@ -656,12 +814,19 @@ function TaskCard({
         <Typography
           sx={{
             fontSize: 13, color: BRAND.text, mt: 0.75, lineHeight: 1.5,
-            /* ONE line on the board, not two. Two lines meant a card was 20px taller
-               whenever an observation happened to wrap, so a column of cards had a ragged
-               right-hand rhythm and the eye had to re-find each block name. The full text
-               is one click away in the detail panel, and the `title` attribute exposes it
-               on hover without opening anything. */
-            display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            /* TWO lines, in RESERVED space. Two lines was the original behaviour and it
+               was cut to one for a real reason - a card grew 20px whenever an observation
+               happened to wrap, so a column had a ragged rhythm and the eye had to re-find
+               each block name on every card.
+               `minHeight` is what makes two lines safe: the block always occupies two
+               lines' worth of height whether the text fills it or not, so every card in
+               the column is the same height AND a wrapping observation is no longer cut
+               off mid-sentence. The full text stays one click away in the panel, with
+               `title` exposing it on hover.
+               calc, not a magic number: 13px at 1.5 line-height is 19.5px a line, and
+               deriving it means changing the font size cannot silently re-clip the text. */
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            minHeight: 'calc(2 * 1.5 * 13px)',
           }}
           title={observation}
         >
@@ -737,11 +902,6 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
          * both schemes (lighter grey on light, darker charcoal on dark), so the white/
          * raised cards lift out of it either way without a per-scheme special case. */
         bgcolor: dropActive ? `color-mix(in srgb, ${ON_SURFACE.info} 10%, ${BRAND.section})` : BRAND.section,
-        /* NO COLOURED TOP CAP. Six columns each wearing a 2px status colour produced a
-         * rainbow across the board, and every one of those bars competed with the actual
-         * critical CARDS for the same red. The stage's colour survives on the 8px dot in
-         * the header, which is enough to identify a column without spending a full-width
-         * rule on it - so red on this screen now means "a critical task", nothing else. */
         border: `1px solid ${dropActive ? ON_SURFACE.info : BRAND.border}`,
         borderRadius: '10px', minHeight: 0, overflow: 'hidden',
         // only the drop affordance animates now - nothing resizes on hover, so the board
@@ -749,12 +909,22 @@ function BoardColumn({ id, title, count, hint, accent, children, dropActive, can
         transition: 'background-color .15s ease, border-color .15s ease',
       }}
     >
+      {/* COLOURED CAP ON THE HEADER, AND THE DOT IS GONE.
+          A 3px top rule in the stage's own colour anchors the column - which is what the
+          8px dot beside the title was doing, less legibly and in a place the eye does not
+          look first.
+          It is one cue, not two, and that is the whole reason this is defensible now. The
+          cap was pulled once for producing a rainbow of six status bars that competed with
+          the critical CARDS for the same red; replacing the dot rather than joining it
+          means the board carries no more status colour than before, just placed where it
+          reads. The cards are still the only saturated FILLS on the board, so a red card
+          still outranks a red column edge. */}
+      <Box aria-hidden sx={{ height: 3, bgcolor: accent, flexShrink: 0 }} />
       <Stack
         direction="row"
         spacing={1}
         sx={{ alignItems: 'center', px: 1.5, py: 1.25, borderBottom: `1px solid ${BRAND.border}` }}
       >
-        <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: accent, flexShrink: 0 }} />
         {/* the title may now wrap to two lines rather than being truncated - at 168px a
             label like "Requires action" does not fit on one, and an ellipsis on a column
             heading is worse than a second line */}
@@ -830,17 +1000,28 @@ const HEAD_SX = {
 const alignOf = c => c.align || (c.numeric ? 'right' : 'left');
 const CELL_SX = { borderBottom: `1px solid ${BRAND.border}`, py: 1.5, fontSize: 14, color: BRAND.text };
 
-// Micro-CTAs stay out of the way until the row is engaged, but a keyboard user
-// must never be able to focus an invisible control - hence focus-within and the
-// selected state both force them visible, and the hover-only hiding is gated to
-// pointer devices so touch always shows them.
+/**
+ * ROW ACTIONS ARE ALWAYS VISIBLE. Never opacity 0.
+ *
+ * These used to be hidden until the row was hovered, revealed for touch via a
+ * `@media (hover: hover)` gate and forced visible on focus-within. That covered the
+ * mechanical accessibility cases - the control was in the tree, focusable, and touch got
+ * it - but it still failed the plain usability one: a sighted mouse user cannot discover
+ * an action that does not exist until the pointer happens to cross it, so the row's
+ * primary action was effectively undocumented. Hover is a hint, not a place to keep
+ * functionality.
+ *
+ * SUBDUED, NOT HIDDEN, is what keeps the table calm. At rest the buttons sit at 0.6
+ * opacity - present and readable, clearly subordinate to the row's data - and come to
+ * full strength on hover, on keyboard focus, or when the row is the selected one. The
+ * discoverability problem goes away; the visual-noise problem it was solving does not
+ * come back.
+ */
 const ROW_ACTIONS_SX = {
   display: 'flex', gap: 0.5, justifyContent: 'flex-end',
-  '@media (hover: hover)': {
-    opacity: 0,
-    transition: 'opacity .12s ease',
-    'tr:hover &, tr:focus-within &, tr[aria-selected="true"] &': { opacity: 1 },
-  },
+  opacity: 0.6,
+  transition: 'opacity .12s ease',
+  'tr:hover &, tr:focus-within &, tr[aria-selected="true"] &': { opacity: 1 },
 };
 
 function GhostButton({ children, onClick, ...rest }) {
@@ -1065,23 +1246,48 @@ function StageStepper({ stages }) {
           <Box sx={{ display: 'flex', alignItems: 'center', width: '100%' }}>
             {/* half-width connectors either side of the dot, blanked at the ends,
                 so the track reads continuous without overhanging */}
-            <Box sx={{ flex: 1, height: 2, bgcolor: i === 0 ? 'transparent' : (s.reached ? ON_SURFACE.info : BRAND.border) }} />
+            {/* SOLID BEHIND, DASHED AHEAD.
+                Both halves of the track used to be solid, differing only in colour, so a
+                grey solid rule read as "a step that happened, drawn quietly" rather than
+                "a step that has not happened". A dash is the conventional signal for
+                future/provisional and it does not depend on telling two greys apart.
+                Implemented as a border rather than a background - a 2px background cannot
+                be dashed. */}
+            <Box sx={{
+              flex: 1, height: 0,
+              borderTop: i === 0
+                ? '2px solid transparent'
+                : (s.reached ? `2px solid ${ON_SURFACE.info}` : `2px dashed ${BRAND.border}`),
+            }} />
             <Tooltip
               arrow
               title={s.reached
                 ? `${s.label} - ${new Date(s.at).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}${s.actor_name ? ` by ${s.actor_name}` : ''}`
                 : `${s.label} - not yet`}
             >
+              {/* 18px, not 12. At 12 the node was smaller than the label under it and
+                  smaller than its own halo, so the stepper's most important element was
+                  its least visible one. At 18 there is also room for a tick, which means
+                  "reached" survives without colour - the same redundant-encoding rule the
+                  priority badge follows. */}
               <Box
                 sx={{
-                  width: 12, height: 12, borderRadius: '50%', flexShrink: 0, cursor: 'help',
+                  width: 18, height: 18, borderRadius: '50%', flexShrink: 0, cursor: 'help',
+                  display: 'grid', placeItems: 'center',
                   bgcolor: s.reached ? ON_SURFACE.info : BRAND.surface,
-                  border: s.reached ? 'none' : `1.5px dashed ${BRAND.border}`,
+                  border: s.reached ? 'none' : `2px dashed ${BRAND.border}`,
                   boxShadow: s.reached ? `0 0 0 3px color-mix(in srgb, ${ON_SURFACE.info} 18%, transparent)` : 'none',
                 }}
-              />
+              >
+                {s.reached && <CheckRoundedIcon aria-hidden sx={{ fontSize: 12, color: '#fff' }} />}
+              </Box>
             </Tooltip>
-            <Box sx={{ flex: 1, height: 2, bgcolor: i === stages.length - 1 ? 'transparent' : (stages[i + 1]?.reached ? ON_SURFACE.info : BRAND.border) }} />
+            <Box sx={{
+              flex: 1, height: 0,
+              borderTop: i === stages.length - 1
+                ? '2px solid transparent'
+                : (stages[i + 1]?.reached ? `2px solid ${ON_SURFACE.info}` : `2px dashed ${BRAND.border}`),
+            }} />
           </Box>
           <Typography
             sx={{
@@ -1249,7 +1455,7 @@ function ClusterDetail({ cluster, onClose, onApprove, onDismiss }) {
                 <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>{a.observations}</Typography>
                 {a.likely_cause && (
                   <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.5, fontStyle: 'italic' }}>
-                    Likely cause: {a.likely_cause}
+                    Likely cause: {causeLabel(a.likely_cause)}
                   </Typography>
                 )}
               </Box>
@@ -1360,14 +1566,36 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
           explicit blank - the panel never fills a stage nobody performed. */}
       <StageStepper stages={detail?.pipeline || order.pipeline || []} />
 
-      {/* Strict 2-column grid. Notes and any long single value take the full width
-          so they never squeeze a neighbour. */}
+      {/* A NAMED, BOUNDED GROUP - not a run of floating label/value pairs.
+          Town council, contractor, reports and the rest sat directly on the panel under a
+          single hairline, so eight facts read as one undifferentiated block of text with
+          nothing saying what they collectively were. A recessed panel with a heading gives
+          them an edge and a name, which is what separates "the order's own attributes"
+          from the stepper above and the notes and history below.
+          Strict 2-column grid inside it. Notes and any long single value take the full
+          width so they never squeeze a neighbour. */}
+      <Box
+        component="section"
+        aria-labelledby="aq-order-details"
+        sx={{
+          bgcolor: BRAND.section,
+          border: `1px solid ${BRAND.border}`,
+          borderRadius: '10px',
+          px: 2, py: 1.75,
+        }}
+      >
+        <Typography
+          id="aq-order-details"
+          component="h3"
+          sx={{ fontSize: 11, fontWeight: 800, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.7px', mb: 1.5 }}
+        >
+          Work order details
+        </Typography>
       <Box
         sx={{
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
           columnGap: 2.5, rowGap: 2,
-          pt: 2, borderTop: `1px solid ${BRAND.border}`,
         }}
       >
         <MetaCell label="Town council">{order.town_council || NOT_RECORDED}</MetaCell>
@@ -1384,6 +1612,7 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
         <MetaCell label="Call-outs avoided">{order.call_outs_avoided} · {money(order.est_savings)}</MetaCell>
         <MetaCell label="Approved by">{order.approved_by_name || '-'} · {shortDate(order.createdAt)}</MetaCell>
         {order.dispatched_to && <MetaCell label="Dispatched to">{order.dispatched_to}</MetaCell>}
+      </Box>
       </Box>
       {order.notes && (
         <Box sx={{ mt: 2 }}>

@@ -5,8 +5,8 @@ import {
   TableRow, TableCell, TableBody, Paper, Stack, Checkbox, Divider, Tooltip, MenuItem,
   Dialog, DialogContent, DialogTitle, IconButton, Skeleton,
 } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
+import { useTheme, alpha } from '@mui/material/styles';
+import { BarChart, Bar, Cell, LabelList, XAxis, YAxis, Tooltip as RTooltip, ResponsiveContainer } from 'recharts';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
@@ -23,10 +23,15 @@ import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import { Link as RouterLink } from 'react-router-dom';
-import { BRAND, INTENT, ON_SURFACE, CHART } from '../theme';
+import { BRAND, INTENT, ON_SURFACE, CHART, SVG_ACCENT } from '../theme';
+import SiteFooter from '../components/SiteFooter';
 import http from '../http';
 import AssessmentLifecyclePanel from '../components/AssessmentLifecyclePanel';
 import RiskMapPreview from '../components/dashboard/RiskMapPreview';
+// the same severity solids the map pins and the risk chips use - a band must not look
+// different in a bar than it does on a pin
+import { SEVERITY } from '../components/dashboard/rodentMapTokens';
+import { causeLabel } from '../rodentLabels';
 
 // 7 days ago as YYYY-MM-DD, for the "Last 7 days" quick filter (backend supports ?from=)
 const sevenDaysAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().slice(0, 10); };
@@ -44,6 +49,59 @@ const RISK_META = {
 
 // RISK = solid saturated pill (severity). LIFECYCLE = outline pill (process state).
 // Two different questions, so they must not look like the same badge.
+// Severity ordering, for worst-wins aggregation.
+const BAND_RANK = { low: 0, medium: 1, high: 2, critical: 3 };
+
+/**
+ * Y-axis tick for the block chart: ONE LINE, TRUNCATED BY MEASUREMENT, full name on hover.
+ *
+ * TWO BUGS FIXED HERE, in order.
+ *
+ * First, recharts' default category tick WRAPS to fit the axis width, so "Chong Boon Market
+ * & Food Centre" became five stacked lines that overran its row and collided with the bars
+ * either side - worst for premises, which have the longest names.
+ *
+ * Then the fix for that had its own bug: a custom <text> with a 20-CHARACTER budget. A
+ * character count is not a width. "Blk 290 Yishun St 22" fitted at 20 characters; "Blk 79
+ * Toa Payoh Lo…" did not, because capitals and the ellipsis glyph are wider than average -
+ * and with textAnchor="end" the overflow runs off the LEFT edge of the SVG and is clipped,
+ * so the label lost its first letter ("3lk 79 Toa Payoh Lo…"). Any fixed character budget
+ * has this failure mode for some string; the only question is which.
+ *
+ * SO IT IS MEASURED, BY THE BROWSER. <foreignObject> puts a real HTML box inside the SVG,
+ * which means real `text-overflow: ellipsis` against a real `max-width` - the browser
+ * truncates at the exact pixel the box ends, for any string, in any font, at any zoom. No
+ * budget to tune and nothing to get wrong.
+ *
+ * `title` on the div gives the native tooltip, so truncation costs nothing: the full name is
+ * one hover away. Native rather than a MUI Tooltip because this renders inside recharts'
+ * SVG, where mounting a portal per tick is both awkward and pointless.
+ */
+// The axis reserves this much; the tick box is inset from it so the text never touches the
+// bar it labels. Declared together so the two cannot drift apart.
+const Y_AXIS_W = 148;
+const TICK_GAP = 10;
+
+function BlockTick({ x, y, payload, fill }) {
+  const full = String(payload?.value ?? '');
+  const w = Y_AXIS_W - TICK_GAP;
+  return (
+    // y is the row's centre, so the box is offset by half its height to sit on it
+    <foreignObject x={x - w} y={y - 10} width={w} height={20}>
+      <div
+        title={full}
+        style={{
+          width: '100%', height: '100%', lineHeight: '20px', textAlign: 'right',
+          fontSize: 12.5, fontWeight: 600, color: fill, fontFamily: 'inherit',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}
+      >
+        {full}
+      </div>
+    </foreignObject>
+  );
+}
+
 function riskChipSx(level) {
   const m = RISK_META[level] || { bg: INTENT.neutral.bg, color: INTENT.neutral.ink };
   return { bgcolor: m.bg, color: m.color, fontWeight: 700, borderRadius: '999px', textTransform: 'capitalize', border: 'none' };
@@ -178,27 +236,79 @@ function VerdictBand({ result }) {
  * does not exist for every metric - a card without them simply omits them instead
  * of rendering a decorative fake.
  */
-function KpiCard({ icon: Icon, iconInk, label, value, hint, loading, sparkline, trend }) {
+function KpiCard({ icon: Icon, iconInk, label, value, hint, loading, sparkline, trend, alert = false }) {
+  /* A LITERAL, NOT ON_SURFACE.danger, and this is a crash not a preference.
+   *
+   * The pulse below builds rgba stops inside @keyframes, and ON_SURFACE.danger is
+   * `var(--em-danger-strong)`. MUI's alpha() parses the string it is given - it cannot
+   * resolve a custom property - so alpha(ON_SURFACE.danger, .55) throws
+   * "Unsupported var(--em-danger-strong) color" during render and takes the whole page down
+   * with it. SVG_ACCENT exists precisely for these places (see its note in theme.js): SVG
+   * attributes and keyframe colour stops, where a var() never reaches. */
+  const pulseInk = SVG_ACCENT[useTheme().palette.mode]?.danger || SVG_ACCENT.light.danger;
   return (
-    <Card sx={{ position: 'relative', overflow: 'hidden', height: '100%' }}>
+    <Card
+      sx={{
+        position: 'relative', overflow: 'hidden', height: '100%',
+        /* HERO TREATMENT FOR THE ALERT CARD, and only for it.
+         * Every card looked identical, so "6 critical" carried the same weight as a total
+         * count - the operator had to read all four to find the one that needed them. A 3px
+         * top rule plus a tinted fill makes it findable peripherally, before any digit is
+         * parsed. Kept to a tint rather than a saturated fill because the figure, the icon
+         * and the trend pill all still have to be legible on top of it. */
+        ...(alert ? {
+          bgcolor: 'var(--em-danger-bg)',
+          borderTop: `3px solid ${ON_SURFACE.danger}`,
+        } : null),
+        transition: 'transform .15s ease, box-shadow .15s ease',
+        // the whole grid responds to the pointer, so the row reads as live rather than as
+        // four printed panels
+        '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 10px 20px -8px rgba(16,24,40,.22)' },
+      }}
+    >
       <CardContent sx={{ p: 2.25, '&:last-child': { pb: 2.25 }, position: 'relative', zIndex: 1 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
-          {Icon && <Icon sx={{ fontSize: 17, color: iconInk || BRAND.textLight }} />}
-          <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+          {Icon && <Icon sx={{ fontSize: 17, color: alert ? ON_SURFACE.danger : (iconInk || BRAND.textLight) }} />}
+          {/* SENTENCE CASE, NOT UPPERCASE. All-caps at 12px is measurably slower to read -
+              it removes the word-shape cues the eye uses - and these are four labels read
+              on every page load. Weight and colour carry the hierarchy instead. */}
+          <Typography sx={{ fontSize: 12, fontWeight: 600, color: BRAND.text, letterSpacing: '0.1px' }}>
             {label}
           </Typography>
+          {/* A PULSE, ONLY WHEN THERE IS SOMETHING TO PULSE ABOUT. Gated on `alert` AND a
+              non-zero value by the caller, so a clear estate shows a calm card - an
+              always-animating dot is noise nobody sees after a day. Off under
+              prefers-reduced-motion, where the tint and the rule still mark the card. */}
+          {alert && (
+            <Box
+              aria-hidden
+              sx={{
+                ml: 'auto', width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                bgcolor: ON_SURFACE.danger,
+                '@keyframes kpiPulse': {
+                  '0%': { boxShadow: `0 0 0 0 ${alpha(pulseInk, 0.55)}` },
+                  '70%': { boxShadow: `0 0 0 7px ${alpha(pulseInk, 0)}` },
+                  '100%': { boxShadow: `0 0 0 0 ${alpha(pulseInk, 0)}` },
+                },
+                animation: 'kpiPulse 2s ease-out infinite',
+                '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+              }}
+            />
+          )}
         </Stack>
         {loading ? (
-          <Skeleton variant="text" width={64} height={40} />
+          <Skeleton variant="text" width={64} height={44} />
         ) : (
           <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', flexWrap: 'wrap' }}>
-            <Typography sx={{ fontSize: 30, fontWeight: 800, lineHeight: 1.05, color: BRAND.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.5px' }}>
+            {/* 32px: the figure is the reason the card exists and has to out-rank its own
+                label by more than the 30-vs-11.5 it had. */}
+            <Typography sx={{ fontSize: 32, fontWeight: 800, lineHeight: 1.05, color: alert ? ON_SURFACE.danger : BRAND.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.6px' }}>
               {value}
             </Typography>
             {trend}
           </Stack>
         )}
-        {hint && <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, mt: 0.4 }}>{hint}</Typography>}
+        {hint && <Typography sx={{ fontSize: 12, color: BRAND.textLight, mt: 0.4 }}>{hint}</Typography>}
       </CardContent>
       {/* sparkline is a background watermark, never a chart the reader must decode */}
       {sparkline}
@@ -207,17 +317,37 @@ function KpiCard({ icon: Icon, iconInk, label, value, hint, loading, sparkline, 
 }
 
 /**
- * Monochrome watermark sparkline. Deliberately unlabelled and unaxised - it shows
+ * Watermark sparkline as a FILLED AREA. Deliberately unlabelled and unaxised - it shows
  * shape only, and the card's own caption states what the series actually is.
+ *
+ * It was a 2px polyline at 0.16 opacity, which is a hairline at 16% - readable as a smudge
+ * along the bottom of the card rather than as a trend. At this size the eye cannot resolve
+ * slope from a line alone, so the path is closed to the baseline and filled with a fade of
+ * its own ink: the shape gains mass and "rising" versus "falling" is legible at a glance.
+ * The stroke stays on top at a higher opacity so the leading edge is still crisp.
+ *
+ * `ink` so the watermark can carry the card's own semantic colour - the alert card's trend
+ * should not be drawn in navy while everything else on it is red.
  */
-function Sparkline({ values }) {
+function Sparkline({ values, ink = BRAND.navy, id = 'kpi' }) {
   if (!values || values.length < 2) return null;
   const max = Math.max(...values, 1);
-  const pts = values.map((v, i) => `${(i / (values.length - 1)) * 100},${28 - (v / max) * 24}`).join(' ');
+  const pts = values.map((v, i) => [(i / (values.length - 1)) * 100, 28 - (v / max) * 24]);
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const area = `${line} L 100,30 L 0,30 Z`;
+  // gradient ids are document-global, so each card needs its own
+  const gid = `kpi-spark-${id}`;
   return (
-    <Box aria-hidden sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 34, opacity: 0.16, pointerEvents: 'none' }}>
+    <Box aria-hidden sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 40, pointerEvents: 'none' }}>
       <svg viewBox="0 0 100 30" preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
-        <polyline points={pts} fill="none" stroke={BRAND.navy} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={ink} stopOpacity={0.26} />
+            <stop offset="100%" stopColor={ink} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <path d={area} fill={`url(#${gid})`} stroke="none" />
+        <path d={line} fill="none" stroke={ink} strokeWidth="2" strokeOpacity={0.42} vectorEffect="non-scaling-stroke" />
       </svg>
     </Box>
   );
@@ -356,11 +486,16 @@ export default function RodentAssessment() {
     const by = {};
     history.forEach(h => {
       const b = (h.block_number || '').trim();
-      if (b) by[b] = (by[b] || 0) + 1;
+      if (!b) return;
+      const e = by[b] || (by[b] = { count: 0, worst: 'low' });
+      e.count += 1;
+      // Worst-wins, not most-common: one critical report at a block is the fact that
+      // decides what happens there, and averaging it away would be the wrong summary.
+      if (BAND_RANK[h.risk_level] > BAND_RANK[e.worst]) e.worst = h.risk_level;
     });
-    return Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    return Object.entries(by).sort((a, b) => b[1].count - a[1].count).slice(0, 4);
   }, [history]);
-  const topBlockMax = topBlocks.length ? topBlocks[0][1] : 0;
+  const topBlockMax = topBlocks.length ? topBlocks[0][1].count : 0;
 
   // ---- chart + KPI derivations ---------------------------------------------
   // recharts writes these into SVG attributes, where var() cannot resolve, so
@@ -375,7 +510,7 @@ export default function RodentAssessment() {
   // no reverse: recharts renders a category axis in array order top-down, and
   // topBlocks is already sorted descending, so the busiest block reads first
   const blockChartData = useMemo(
-    () => topBlocks.map(([block, count]) => ({ block, count })),
+    () => topBlocks.map(([block, v]) => ({ block, count: v.count, worst: v.worst })),
     [topBlocks],
   );
 
@@ -535,7 +670,25 @@ export default function RodentAssessment() {
   };
 
   return (
-    <Box sx={{ py: 3, maxWidth: 1440, mx: 'auto' }}>
+    /* FULL-HEIGHT SHELL, matching Notification Log, Alert Rules and the scorecard.
+       The page was ordinary document flow, so its content stopped partway down a tall
+       screen and left the rest as empty app background. The shell owns the viewport:
+       a header band that stays put, then one internal scroll region carrying the
+       content and the footer. Registered in FULL_HEIGHT_PATHS in App.jsx, which is
+       what supplies the 100dvh this height:100% resolves against. */
+    <Box
+      component="section"
+      sx={{
+        width: '100%', height: '100%', minHeight: 0,
+        display: 'flex', flexDirection: 'column', bgcolor: BRAND.canvas,
+      }}
+    >
+      <Box
+        sx={{
+          flexShrink: 0, px: { xs: 2, md: 3 }, pt: 2, pb: 1.75,
+          bgcolor: BRAND.surface, borderBottom: `1px solid ${BRAND.border}`,
+        }}
+      >
       {/* ── Slim header: breadcrumb trail, then the two operator actions ────── */}
       <Breadcrumbs sx={{ mb: 0.75, fontSize: 12.5 }} aria-label="Breadcrumb">
         <Box component={RouterLink} to="/dashboard" sx={{ color: BRAND.textLight, textDecoration: 'none', '&:hover': { color: BRAND.accent } }}>
@@ -587,20 +740,31 @@ export default function RodentAssessment() {
           </Button>
         </Stack>
       </Stack>
+      </Box>
+
+      {/* The one scroll region. `minHeight: 0` is load-bearing: without it a flex child
+          will not shrink below its content, so the shell would grow instead of this box
+          scrolling.
+
+          NO MEASURE CAP. The old page root boxed this at 1440px centred, leaving empty
+          gutters either side while the header band ran edge to edge. Padding only now,
+          matching Notification Log and Alert Rules, so the intake form, KPI strip and
+          assessment table use the full width. */}
+      <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
+      <Box sx={{ px: { xs: 2, md: 3 }, py: 3 }}>
 
       {/* ── Hero: intake form (left) | live operational summary (right) ─────── */}
       {/* ── KPI strip. Replaces the pastel summary blocks AND the always-open
           intake form, which used to eat the left 60% of the viewport. ──────── */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 2, mb: 3 }}>
-        <KpiCard
-          icon={AssignmentOutlinedIcon}
-          label="Total assessments"
-          value={counts ? counts.total : '-'}
-          loading={counts === null}
-          hint={weeklyHint}
-          sparkline={<Sparkline values={trend?.series} />}
-          trend={<TrendPill pct={volumePct} good={volumePct != null && volumePct <= 0} title="Reports in the latest full week vs the week before. Fewer reports is the desirable direction." />}
-        />
+        {/* CRITICAL RISK LEADS THE ROW.
+            It used to sit second, behind a total count - so the first card an operator's eye
+            landed on was the least urgent number on the page. First position plus the alert
+            treatment (tinted fill, 3px danger rule, pulse dot) means the one metric that can
+            demand action is the one found first.
+            `alert` is gated on the count being non-zero, not merely on this being the
+            critical card: an estate with nothing critical must read as calm, or the styling
+            stops meaning anything. */}
         <KpiCard
           icon={ReportProblemOutlinedIcon}
           iconInk={ON_SURFACE.danger}
@@ -608,6 +772,16 @@ export default function RodentAssessment() {
           value={counts ? counts.critical : '-'}
           loading={counts === null}
           hint="highest AI risk band"
+          alert={Boolean(counts?.critical)}
+        />
+        <KpiCard
+          icon={AssignmentOutlinedIcon}
+          label="Total assessments"
+          value={counts ? counts.total : '-'}
+          loading={counts === null}
+          hint={weeklyHint}
+          sparkline={<Sparkline values={trend?.series} ink={BRAND.navy} id="total" />}
+          trend={<TrendPill pct={volumePct} good={volumePct != null && volumePct <= 0} title="Reports in the latest full week vs the week before. Fewer reports is the desirable direction." />}
         />
         <KpiCard
           icon={CallSplitRoundedIcon}
@@ -647,23 +821,64 @@ export default function RodentAssessment() {
             ) : (
               <Box sx={{ height: Math.max(160, topBlocks.length * 44) }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={blockChartData} layout="vertical" margin={{ top: 0, right: 28, bottom: 0, left: 8 }} barCategoryGap={10}>
-                    <XAxis type="number" hide domain={[0, topBlockMax || 1]} />
+                  <BarChart data={blockChartData} layout="vertical" margin={{ top: 0, right: 34, bottom: 4, left: 8 }} barCategoryGap={12}>
+                    {/* THE SCALE IS SHOWN NOW. It was `hide`, so a bar's length was
+                        uncalibrated - the reader could compare two bars but could not read a
+                        value off either. With the count printed at each bar end the axis is
+                        arguably redundant, but it is what makes the LENGTHS mean something
+                        rather than being a decorative ranking. */}
+                    <XAxis
+                      type="number"
+                      domain={[0, topBlockMax || 1]}
+                      allowDecimals={false}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 11.5, fill: chartInk }}
+                      height={18}
+                    />
                     <YAxis
                       type="category"
                       dataKey="block"
-                      width={92}
+                      // shared with the tick so the reserved axis and the box the text is
+                      // measured against are the same number - see BlockTick
+                      width={Y_AXIS_W}
                       axisLine={false}
                       tickLine={false}
-                      tick={{ fontSize: 12.5, fontWeight: 600, fill: chartInk }}
+                      tick={<BlockTick fill={chartInk} />}
                     />
                     <RTooltip
                       cursor={{ fill: chartCursor }}
                       contentStyle={{ background: chartSurface, border: `1px solid ${chartBorder}`, borderRadius: 8, fontSize: 12.5 }}
                       labelStyle={{ color: chartInk, fontWeight: 700 }}
-                      formatter={v => [`${v} report${v === 1 ? '' : 's'}`, 'Loaded']}
+                      formatter={(v, _n, item) => [
+                        `${v} report${v === 1 ? '' : 's'} · worst ${item?.payload?.worst || 'low'}`,
+                        'Loaded',
+                      ]}
                     />
-                    <Bar dataKey="count" fill={chartBar} radius={[0, 4, 4, 0]} maxBarSize={18} />
+                    {/* COLOUR IS SEVERITY, LENGTH IS VOLUME - two facts the operator needs,
+                        and neither competes with the other because the RANKING is carried by
+                        length alone. (Contrast the rodent map's density hexagons, where hue
+                        for severity and opacity for volume did compete: there the loudest
+                        cell was not the busiest one, so hue had to go. Here the bars are
+                        already ordered by count, so the reading order cannot be confused by
+                        the fill.)
+                        Deliberately NOT a frequency ramp: a red bar would then mean "many
+                        reports" while red means "critical" everywhere else in this product,
+                        including the chip in the table directly below this chart. Mapping to
+                        real severity keeps one meaning for the colour. */}
+                    <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={18}>
+                      {blockChartData.map(d => (
+                        <Cell key={d.block} fill={SEVERITY[d.worst]?.solid || chartBar} />
+                      ))}
+                      {/* the value at the end of each bar, so nobody has to estimate it
+                          against the axis */}
+                      <LabelList
+                        dataKey="count"
+                        position="right"
+                        offset={8}
+                        style={{ fontSize: 12, fontWeight: 800, fill: chartInk }}
+                      />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </Box>
@@ -970,7 +1185,7 @@ export default function RodentAssessment() {
               {/* zone 1: reasoning */}
               <Box>
                 <Typography sx={labelSx}>Likely cause</Typography>
-                <Typography variant="body2" sx={{ color: BRAND.text, mb: 2.5, lineHeight: 1.6 }}>{result.likely_cause}</Typography>
+                <Typography variant="body2" sx={{ color: BRAND.text, mb: 2.5, lineHeight: 1.6 }}>{causeLabel(result.likely_cause)}</Typography>
 
                 {result.signs_identified?.length > 0 && (
                   <>
@@ -1251,6 +1466,11 @@ export default function RodentAssessment() {
       </Dialog>
 
       <AssessmentLifecyclePanel assessmentId={selectedId} open={Boolean(selectedId)} onClose={() => setSelectedId(null)} />
+      </Box>
+      {/* Inside the scroll region: the shell hides page-level overflow, so a footer
+          outside this box could never be reached. */}
+      <SiteFooter />
+      </Box>
     </Box>
   );
 }

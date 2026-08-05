@@ -21,6 +21,7 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import { useTheme } from '@mui/material/styles';
 import { BRAND, TREND, INTENT, SVG_ACCENT } from '../theme';
+import SiteFooter from '../components/SiteFooter';
 import http from '../http';
 
 const pct = n => (n == null ? '—' : `${Math.round(n * 100)}%`);
@@ -449,9 +450,31 @@ export default function PreventionScorecard() {
   }
 
   return (
-    <Box sx={{ py: 3, maxWidth: 1440, mx: 'auto' }}>
+    /* FULL-HEIGHT SHELL, matching Notification Log and Alert Rules.
+       This page was ordinary document flow, so on a tall screen its content stopped
+       partway down and the rest of the viewport was empty app background - the page
+       looked unfinished rather than complete. The shell owns the viewport: a header
+       band that does not scroll, then one internal scroll region that carries the
+       content and the footer. Registered in FULL_HEIGHT_PATHS in App.jsx, which is
+       what supplies the 100dvh this height:100% resolves against. */
+    <Box
+      component="section"
+      sx={{
+        width: '100%', height: '100%', minHeight: 0,
+        display: 'flex', flexDirection: 'column', bgcolor: BRAND.canvas,
+      }}
+    >
       {/* ── Header: one-line subtitle, methodology behind an info tooltip ────── */}
-      <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'flex-start', mb: 3, flexWrap: 'wrap', rowGap: 1.5 }}>
+      <Stack
+        direction="row"
+        spacing={2}
+        sx={{
+          flexShrink: 0, justifyContent: 'space-between', alignItems: 'flex-start',
+          flexWrap: 'wrap', rowGap: 1.5,
+          px: { xs: 2, md: 3 }, pt: 2.5, pb: 2,
+          bgcolor: BRAND.surface, borderBottom: `1px solid ${BRAND.border}`,
+        }}
+      >
         <Box sx={{ minWidth: 0 }}>
           <Typography component="h1" sx={{ fontSize: 24, fontWeight: 700, color: BRAND.heading, letterSpacing: '-0.4px' }}>
             Prevention Scorecard
@@ -515,6 +538,18 @@ export default function PreventionScorecard() {
           </Button>
         </Stack>
       </Stack>
+
+      {/* The one scroll region. `minHeight: 0` is load-bearing: without it a flex child
+          refuses to shrink below its content and the whole shell grows instead of the
+          inner box scrolling.
+
+          NO MEASURE CAP. The old page root boxed this at 1440px centred, which left
+          two empty gutters on a wide screen while the header band above ran edge to
+          edge - the content read as floating inside the page rather than filling it.
+          Padding only now, the same as Notification Log and Alert Rules, so the tables
+          and card grids use the whole width. */}
+      <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
+      <Box sx={{ px: { xs: 2, md: 3 }, py: 3 }}>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
@@ -641,6 +676,12 @@ export default function PreventionScorecard() {
           </Stack>
         </>
       )}
+      </Box>
+      {/* Inside the scroll region, like Notification Log and Alert Rules: the shell
+          hides the page-level overflow, so a footer outside this box would be
+          unreachable. */}
+      <SiteFooter />
+      </Box>
     </Box>
   );
 }
