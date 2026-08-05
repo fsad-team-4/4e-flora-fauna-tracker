@@ -3,12 +3,15 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, TextField, Card, CardActionArea, CardContent,
   Chip, Stack, InputAdornment, Skeleton, Alert, Divider, MenuItem,
-  Button, CircularProgress,
+  Button, CircularProgress, IconButton,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
 import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined';
 import TerrainOutlinedIcon from '@mui/icons-material/TerrainOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import CloseIcon from '@mui/icons-material/Close';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
 import { getPlantIcon } from '../utils/plantIcons';
@@ -71,6 +74,12 @@ export default function HorticultureHandbook() {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState('');
 
+  // Bulk Import (catalog upload)
+  const [csvFile, setCsvFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadResult, setUploadResult] = useState(null);
+
   const debouncedFamily = useDebouncedValue(plantFamily, 400);
   const debouncedSuitability = useDebouncedValue(siteSuitability, 400);
   const debouncedColor = useDebouncedValue(color, 400);
@@ -81,6 +90,7 @@ export default function HorticultureHandbook() {
     if (debouncedFamily) params.plant_family = debouncedFamily;
     if (debouncedSuitability) params.site_suitability = debouncedSuitability;
     if (debouncedColor) params.color = debouncedColor;
+    params.include_catalog = 'true';
 
     http
       .get('/api/flora', { params })
@@ -101,6 +111,27 @@ export default function HorticultureHandbook() {
   useEffect(() => {
     loadPlants();
   }, [loadPlants]);
+
+  const handleUpload = () => {
+    if (!csvFile) return;
+    setUploading(true);
+    setUploadError('');
+    setUploadResult(null);
+
+    const formData = new FormData();
+    formData.append('file', csvFile);
+    formData.append('is_catalog_only', 'true');
+
+    http
+      .post('/api/flora/bulk', formData)
+      .then((res) => {
+        setUploadResult(res.data);
+        setCsvFile(null);
+        loadPlants();
+      })
+      .catch(() => setUploadError('Failed to upload CSV'))
+      .finally(() => setUploading(false));
+  };
 
   // klemens - submit a natural-language question to the AI catalog query endpoint
   const handleAsk = () => {
@@ -152,6 +183,89 @@ export default function HorticultureHandbook() {
           Browse botanical reference details for plants in the estate catalog.
         </Typography>
       </Box>
+
+      {/* Bulk Import - upload the client's handbook/catalog document (species and
+          botanical fields), as opposed to logging physically-planted greenery. */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <UploadFileOutlinedIcon fontSize="small" color="action" />
+            <Typography variant="h6">Bulk Import</Typography>
+          </Stack>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Upload the client's horticulture handbook or catalog document (species and
+            botanical reference fields) to add entries to this reference catalog. These
+            are not physically-tracked plants.
+          </Typography>
+          <Box
+            component="label"
+            sx={{
+              display: 'flex', alignItems: 'center', gap: 2,
+              border: '2px dashed', borderColor: csvFile ? 'primary.main' : 'divider',
+              borderRadius: 2, p: 2.5, cursor: 'pointer',
+              bgcolor: csvFile ? (theme) => alpha(theme.palette.primary.main, 0.04) : 'action.hover',
+              transition: 'border-color .15s, background-color .15s',
+              '&:hover': { borderColor: 'primary.main' },
+            }}
+          >
+            <UploadFileOutlinedIcon sx={{ fontSize: 32, color: csvFile ? 'primary.main' : 'text.disabled' }} />
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography sx={{ fontWeight: 600 }}>
+                {csvFile ? csvFile.name : 'Click to choose a CSV file'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {csvFile ? 'Ready to upload' : 'species, common_name, plant_family, site_suitability and more'}
+              </Typography>
+            </Box>
+            {csvFile && (
+              <IconButton
+                size="small"
+                aria-label="Remove selected file"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCsvFile(null);
+                }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            )}
+            <input
+              type="file"
+              accept=".csv"
+              hidden
+              onChange={(e) => setCsvFile(e.target.files[0] || null)}
+            />
+          </Box>
+
+          <Button
+            variant="contained"
+            onClick={handleUpload}
+            disabled={!csvFile || uploading}
+            sx={{ mt: 2 }}
+          >
+            {uploading ? 'Uploading...' : 'Upload'}
+          </Button>
+
+          {uploadError && <Alert severity="error" sx={{ mt: 2 }}>{uploadError}</Alert>}
+
+          {uploadResult && (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              {uploadResult.created} record(s) created
+              {uploadResult.errors && uploadResult.errors.length > 0 && (
+                <Box sx={{ mt: 1 }}>
+                  <Typography variant="body2">Row errors:</Typography>
+                  {uploadResult.errors.map((e, i) => (
+                    <Typography key={i} variant="body2">
+                      Row {e.row}: {Array.isArray(e.error) ? e.error.join(', ') : e.error}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Filter toolbar */}
       <Card sx={{ mb: 3 }}>
