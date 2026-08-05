@@ -286,3 +286,50 @@ Alternate / edge flows:
 
 Postcondition: the staff member sees only records whose location matches the
 filter text, narrowing the plant directory for their current task.
+
+---
+
+## UC-8: Staff captures GPS coordinates for a location entry
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, and is on the
+  Add Plant form with at least one location entry.
+
+Main flow:
+
+1. On a location card in the Add Plant form, the staff member clicks "Capture
+   GPS Location".
+2. The frontend calls the browser's built-in Geolocation API
+   (`navigator.geolocation.getCurrentPosition`) - no external mapping or
+   geolocation service is involved. While the request is in flight, the
+   button is disabled and reads "Capturing...".
+3. On success, the returned latitude and longitude are stored in that
+   location's `gps_lat`/`gps_lng` fields, and a confirmation
+   ("Location captured (lat, lng)") is shown on the card.
+4. When the location is submitted, `gps_lat`/`gps_lng` are included in that
+   location's `POST /api/flora` payload alongside its other fields.
+
+Alternate / edge flows:
+
+- The browser does not support the Geolocation API
+  (`navigator.geolocation` is undefined) -> an inline error, "Geolocation is
+  not supported by this browser", is shown on that location's card; the
+  button is not clicked-through, nothing is submitted.
+- The user denies the browser's location permission prompt -> an inline
+  error, "Location permission denied", is shown.
+- The request times out -> an inline error, "Location request timed out", is
+  shown.
+- Any other geolocation failure -> a generic inline error, "Unable to
+  retrieve location", is shown.
+- In every failure case, `gps_lat`/`gps_lng` for that location remain `null`
+  and form submission is not blocked - GPS capture is optional/supplementary,
+  never required. A location can be submitted with `gps_lat`/`gps_lng` left
+  null.
+- This feature is scoped to the Add Plant form only. The Edit Plant form
+  (`FloraDetail.jsx`) has no "Capture GPS Location" button or geolocation
+  logic - a plant's GPS coordinates cannot currently be added or changed
+  after initial creation.
+
+Postcondition: the location's greenery record is created with `gps_lat` and
+`gps_lng` set to the captured coordinates if capture succeeded, or `null` if
+it was skipped or failed.
