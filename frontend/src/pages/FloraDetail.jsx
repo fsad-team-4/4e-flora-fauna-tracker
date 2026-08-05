@@ -26,6 +26,7 @@ import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
 import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
+import { toTitleCase } from '../utils/formatters';
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
@@ -218,7 +219,7 @@ export default function FloraDetail() {
     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
       <Box sx={{ minWidth: 0 }}>
         <Typography variant="h5" sx={{ lineHeight: 1.3 }}>
-          {plant.species}
+          {toTitleCase(plant.species)}
         </Typography>
         {plant.common_name && (
           <Typography color="text.secondary">{plant.common_name}</Typography>
