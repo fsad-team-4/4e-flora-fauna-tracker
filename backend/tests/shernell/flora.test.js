@@ -221,6 +221,21 @@ describe('Horticulture Handbook - botanical catalog fields', () => {
     expect(res.body.location).toBe('Bishan Park');
     expect(res.body.location_zone).toBe('Block A');
   });
+
+  test('create with gps_lat/gps_lng -> 201, coordinates saved as sent', async () => {
+    const res = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({
+        species: 'Rain tree',
+        gps_lat: 1.35208,
+        gps_lng: 103.81984,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.gps_lat).toBe(1.35208);
+    expect(res.body.gps_lng).toBe(103.81984);
+  });
 });
 
 describe('GET /api/flora?location=', () => {
