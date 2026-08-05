@@ -9,8 +9,12 @@ import HourglassEmptyRoundedIcon from '@mui/icons-material/HourglassEmptyRounded
 import DoNotDisturbAltOutlinedIcon from '@mui/icons-material/DoNotDisturbAltOutlined';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
+import MarkEmailReadOutlinedIcon from '@mui/icons-material/MarkEmailReadOutlined';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import PersonOffOutlinedIcon from '@mui/icons-material/PersonOffOutlined';
 import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import http from '../http';
+import { causeLabel, signLabel } from '../rodentLabels';
 
 // Risk chip styling matches the RodentAssessment page + Action Queue (this surface
 // already uses the red/amber/green risk scale; the map is the surface that doesn't).
@@ -51,6 +55,9 @@ const TONE = {
   pending: { ink: 'var(--em-prio-medium)', tint: INTENT.warning.bg },
   neutral: { ink: 'var(--em-neutral-ink)', tint: INTENT.neutral.bg },
   future: { ink: BRAND.textLight, tint: BRAND.surface },
+  // A bounced resident update is its own outcome. Rendering it as `pending` amber would
+  // read as "on its way", which is the opposite of what happened.
+  failed: { ink: ON_SURFACE.danger, tint: INTENT.danger.bg },
 };
 function Stage({ label, icon, tone = 'neutral', last = false, badge, tinted = false, children }) {
   const { ink: color, tint } = TONE[tone] || TONE.neutral;
@@ -100,6 +107,136 @@ const stageIcon = (Comp, tone) => <Comp sx={{ fontSize: 16, color: (TONE[tone] |
  * and none of them is "resolved". A final, clearly-unbuilt "resident update" node
  * marks where the tracked lifecycle actually ends.
  */
+/**
+ * The lifecycle's last step: was the resident actually told?
+ *
+ * FIVE OUTCOMES, ALL DISTINCT, because collapsing any two of them would make this panel
+ * assert something the database does not say. The one that matters most is `failed`: a
+ * bounced update is worse than none, because the system believed it had informed somebody,
+ * and an officer reading "no update sent" would ring the resident while an officer reading
+ * "update sent" would not. It gets danger tone and states the delivery error.
+ *
+ * `unreachable` and `not_applicable` are also kept apart. "Nobody is linked to this order"
+ * is a data gap somebody may want to fix; "the order has not reached a resident-facing
+ * stage" is simply correct and needs nothing. Both would have rendered as an empty step.
+ *
+ * A null `update` means the lookup itself failed - the route returns the assessment anyway
+ * rather than 500ing on its last field - so it says the state is unknown instead of
+ * guessing, which is the only answer that cannot be wrong.
+ */
+function ResidentUpdateStage({ update }) {
+  if (!update) {
+    return (
+      <Stage label="Resident update" tone="future" last icon={stageIcon(ScheduleOutlinedIcon, 'future')}>
+        <Typography sx={{ fontSize: 13, color: BRAND.textLight, lineHeight: 1.55 }}>
+          Delivery history could not be read, so whether the resident was told is unknown.
+        </Typography>
+      </Stage>
+    );
+  }
+
+  const when = iso => (iso
+    ? new Date(iso).toLocaleString('en-SG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : null);
+
+  if (update.status === 'sent') {
+    return (
+      <Stage
+        label="Resident update"
+        tone="done"
+        last
+        icon={stageIcon(MarkEmailReadOutlinedIcon, 'done')}
+        badge={<StageBadge tone="done">SENT</StageBadge>}
+      >
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>
+          {update.count > 1
+            ? `${update.count} updates sent, the first on ${when(update.at)}.`
+            : `Update sent on ${when(update.at)}.`}
+          {update.recipients?.length ? ` To ${update.recipients.join(', ')}.` : ''}
+        </Typography>
+        {/* A partial failure is surfaced next to the success rather than hidden by it -
+            two linked residents where one bounced is not "the residents were told". */}
+        {update.failedCount > 0 && (
+          <Typography sx={{ fontSize: 12.5, color: ON_SURFACE.danger, fontWeight: 600, mt: 0.5, lineHeight: 1.5 }}>
+            {update.failedCount} other attempt{update.failedCount === 1 ? '' : 's'} to this report failed - check the Notification Log.
+          </Typography>
+        )}
+      </Stage>
+    );
+  }
+
+  if (update.status === 'failed') {
+    return (
+      <Stage
+        label="Resident update"
+        tone="failed"
+        last
+        icon={stageIcon(ErrorOutlineRoundedIcon, 'failed')}
+        badge={<StageBadge tone="failed">NOT DELIVERED</StageBadge>}
+      >
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>
+          An update was attempted on {when(update.at)} and did not arrive.
+        </Typography>
+        <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.5, lineHeight: 1.5 }}>
+          {update.reason} It can be resent from the Notification Log.
+        </Typography>
+      </Stage>
+    );
+  }
+
+  if (update.status === 'unreachable') {
+    return (
+      <Stage
+        label="Resident update"
+        tone="neutral"
+        last
+        icon={stageIcon(PersonOffOutlinedIcon, 'neutral')}
+        badge={<StageBadge tone="neutral">NO RECIPIENT</StageBadge>}
+      >
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>{update.reason}</Typography>
+      </Stage>
+    );
+  }
+
+  if (update.status === 'pending') {
+    return (
+      <Stage
+        label="Resident update"
+        tone="pending"
+        last
+        icon={stageIcon(ScheduleOutlinedIcon, 'pending')}
+        badge={<StageBadge tone="pending">DUE</StageBadge>}
+      >
+        <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>{update.reason}</Typography>
+      </Stage>
+    );
+  }
+
+  // not_applicable
+  return (
+    <Stage label="Resident update" tone="neutral" last icon={stageIcon(ScheduleOutlinedIcon, 'neutral')}>
+      <Typography sx={{ fontSize: 13.5, color: BRAND.text, lineHeight: 1.55 }}>{update.reason}</Typography>
+    </Stage>
+  );
+}
+
+// Shared pill for the stage badges, so five outcomes cannot each invent their own.
+function StageBadge({ tone, children }) {
+  const { ink, tint } = TONE[tone] || TONE.neutral;
+  return (
+    <Box
+      component="span"
+      sx={{
+        fontSize: 10, fontWeight: 800, letterSpacing: '0.4px',
+        px: 0.7, py: '2px', borderRadius: '5px',
+        bgcolor: tint, color: ink, border: `1px solid ${ink}`, whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
 export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }) {
   // Keyed on assessmentId (not synchronous setState in the effect): loading/error
   // are derived from whether the fetched id matches the requested one.
@@ -177,12 +314,14 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
                   ? <Chip label={risk.label} size="small" sx={{ bgcolor: risk.bg, color: risk.color, fontWeight: 700, borderRadius: '6px' }} />
                   : <NotRecorded />}
               </Box>
-              <Field label="Likely cause">{orNR(a.likely_cause)}</Field>
+              {/* causeLabel is a no-op on prose, which is what this field holds by
+                  contract - it only catches a token from a fixture or an older row. */}
+              <Field label="Likely cause">{orNR(causeLabel(a.likely_cause))}</Field>
               <Box sx={{ mb: 1 }}>
                 <Typography sx={{ fontSize: 11, color: BRAND.textLight, mb: 0.35 }}>Signs identified</Typography>
                 {a.signs_identified?.length
                   ? <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-                      {a.signs_identified.map((s, i) => <Chip key={i} label={s} size="small" sx={{ bgcolor: BRAND.section, color: BRAND.text, borderRadius: '6px' }} />)}
+                      {a.signs_identified.map((s, i) => <Chip key={i} label={signLabel(s)} size="small" sx={{ bgcolor: BRAND.section, color: BRAND.text, borderRadius: '6px' }} />)}
                     </Stack>
                   : <NotRecorded />}
               </Box>
@@ -267,13 +406,13 @@ export default function AssessmentLifecyclePanel({ assessmentId, open, onClose }
               </Stage>
             )}
 
-            {/* FUTURE - explicitly unbuilt; not a status this system tracks */}
-            <Stage label="Resident update" tone="future" last icon={stageIcon(ScheduleOutlinedIcon, 'future')}
-              badge={<Box component="span" sx={{ fontSize: 10, fontWeight: 700, px: 0.7, py: '1px', borderRadius: '5px', bgcolor: BRAND.section, color: BRAND.textLight, border: `1px dashed ${BRAND.border}` }}>NOT BUILT</Box>}>
-              <Typography sx={{ fontSize: 13, color: BRAND.textLight, lineHeight: 1.55 }}>
-                Notifying the resident of the outcome isn't part of this module yet. It's shown here to mark where the tracked lifecycle ends — the system does not record whether a resident was told.
-              </Typography>
-            </Stage>
+            {/* RESIDENT UPDATE - now a reported outcome, not a "NOT BUILT" placeholder.
+                What changed is the read path, not the feature: workOrderNotify.js has always
+                sent the resident a message when the order reaches a resident-facing stage,
+                and logged the true result. This panel simply never asked. See
+                services/residentUpdateStatus.js - every branch below maps to a status that
+                service returns, and none of them is inferred from the stage alone. */}
+            <ResidentUpdateStage update={a.resident_update} />
           </>
         ) : null}
       </Box>

@@ -10,6 +10,7 @@ const { validateBody } = require('../utils/validate');
 const { Op, fn, col, literal } = require('sequelize');
 const { ROOT_CAUSES, RESOLUTION_TYPES } = require('../models/RodentAssessment');
 const { slaTargetFor, sameBlock } = require('../services/rodentSla');
+const { residentUpdateStatus } = require('../services/residentUpdateStatus');
 
 // SQLite's LIKE is case-insensitive by default; Postgres's is NOT. On Neon the
 // same query would silently return fewer rows - no error, just a filter that
@@ -140,11 +141,35 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
     if (!row) return res.status(404).json({ error: 'not found' });
 
     let work_order = null;
+    let woRow = null;
     if (row.work_order_id) {
-      const wo = await WorkOrder.findOne({ where: { id: row.work_order_id, is_deleted: false } });
-      work_order = wo ? wo.toJSON() : null;
+      woRow = await WorkOrder.findOne({ where: { id: row.work_order_id, is_deleted: false } });
+      work_order = woRow ? woRow.toJSON() : null;
     }
-    res.json({ ...row.toJSON(), work_order });
+
+    /* THE LAST LIFECYCLE STEP, now reported instead of declared unbuilt.
+     *
+     * The panel used to render "Resident update - NOT BUILT". The sending half was in fact
+     * built (services/workOrderNotify.js, triggered on resident-facing stage changes) and
+     * every send was already logged; only this read path was missing, so the UI understated
+     * the system.
+     *
+     * Derived rather than stored: a `resident_notified` column on the assessment would be a
+     * second copy of a fact NotificationLog already owns, and the two would disagree the
+     * first time a send failed after the flag was set. The log is the record; this reads it.
+     *
+     * Never fatal. This is the last field of a detail response, and an assessment must still
+     * open if the notification lookup fails - the panel treats a null as "unknown" and says
+     * so, which is honest, where a 500 would hide the entire report.
+     */
+    let resident_update = null;
+    try {
+      resident_update = await residentUpdateStatus(woRow);
+    } catch (e) {
+      console.error('resident update status failed (assessment still returned):', e.message);
+    }
+
+    res.json({ ...row.toJSON(), work_order, resident_update });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'failed to fetch assessment' });
