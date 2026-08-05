@@ -286,3 +286,55 @@ Alternate / edge flows:
 
 Postcondition: the staff member sees only records whose location matches the
 filter text, narrowing the plant directory for their current task.
+
+---
+
+## UC-8: Staff selects a known species and gets botanical fields auto-filled
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, on the Add
+  Plant form or a plant's Edit form.
+
+Main flow:
+
+1. On opening the form, the frontend calls `GET /api/flora/species-catalog`.
+2. The backend loads all active (non-deleted) records, groups them by
+   `species`, and - ordering by `createdAt` descending first - keeps one
+   representative entry per distinct species (`plant_family`,
+   `site_suitability`, `color`, `max_height_at_maturity`), so the most
+   recently created record for that species wins. It returns `200` with the
+   array of distinct species entries.
+3. The staff member starts typing in the Species field, a freeSolo
+   Autocomplete whose options are the distinct species names from the
+   catalog.
+4. The staff member selects an existing species from the dropdown list.
+5. The frontend sets the species field to the selected value, then looks up
+   that species in the catalog and, for each of `plant_family`,
+   `site_suitability`, `color`, and `max_height_at_maturity`, fills in the
+   catalog's value only if the corresponding field on the form is currently
+   empty - a field the staff member has already typed into is never
+   overwritten.
+
+Alternate / edge flows:
+
+- Typing free text that does not match any catalog species -> no match is
+  found, so no fields are auto-filled; the typed species is kept as-is
+  (freeSolo).
+- Clearing the Species field -> the field is set to empty and no auto-fill
+  logic runs.
+- This applies identically on both the Add Plant form (AddFlora.jsx) and the
+  Edit Plant form (FloraDetail.jsx).
+- If `GET /api/flora/species-catalog` fails (network error, non-2xx
+  response), the frontend catches the error and falls back to an empty
+  catalog rather than showing an error to the user; the Species field still
+  works as a plain freeSolo text input, just without autocomplete options or
+  auto-fill.
+- A resident attempting to load either form -> `403` on the
+  `species-catalog` call, consistent with the RBAC note at the top of this
+  document (staff/admin only).
+
+Postcondition: the species field reflects the staff member's selection or
+free text; any previously-blank botanical fields (`plant_family`,
+`site_suitability`, `color`, `max_height_at_maturity`) are pre-filled from
+the most recent existing record of that species, while fields already
+populated by the staff member are left untouched.
