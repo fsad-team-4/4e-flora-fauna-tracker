@@ -12,6 +12,7 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
 import { getPlantIcon } from '../utils/plantIcons';
+import { toTitleCase } from '../utils/formatters';
 
 // Plain CSS grid instead of MUI's <Grid> component - guarantees equal-width
 // cards regardless of MUI version differences in the Grid API.
@@ -357,7 +358,7 @@ export default function HorticultureHandbook() {
                                 <Stack direction="row" spacing={0.75} alignItems="center">
                                   <PlantIcon sx={{ fontSize: 20, color: plantIconColor, flexShrink: 0 }} />
                                   <Typography variant="h6" sx={{ lineHeight: 1.3 }}>
-                                    {plant.species}
+                                    {toTitleCase(plant.species)}
                                   </Typography>
                                 </Stack>
                                 {plant.common_name && (
