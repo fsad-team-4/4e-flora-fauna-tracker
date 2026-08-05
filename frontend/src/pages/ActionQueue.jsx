@@ -7,7 +7,7 @@ import {
   FormControlLabel, IconButton, Breadcrumbs, Link, InputAdornment,
   Select, MenuItem, Table, TableBody, TableCell, TableHead, TableRow, useMediaQuery,
   TableContainer, TableSortLabel, Drawer, Skeleton, LinearProgress,
-  ToggleButton, ToggleButtonGroup, Paper,
+  ToggleButton, ToggleButtonGroup, Paper, Snackbar,
 } from '@mui/material';
 import { visuallyHidden } from '@mui/utils';
 import ReportProblemOutlinedIcon from '@mui/icons-material/ReportProblemOutlined';
@@ -26,6 +26,7 @@ import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import { BRAND, INTENT, ON_SURFACE } from '../theme';
 import http from '../http';
 import UndoSnackbar from '../components/UndoSnackbar';
+import { useUser } from '../contexts/UserContext';
 
 /* ------------------------------------------------------------------ tokens -- */
 
@@ -370,7 +371,13 @@ function CommandCentre({
           })}
         </Stack>
 
-          {/* the one global action, level with the title */}
+          {/* the one global action, level with the title.
+              `disabledReason` is set when the server would refuse the action for
+              this role, so a disabled primary explains itself instead of looking
+              broken. The span is required: MUI does not fire pointer events on a
+              disabled button, so a bare Tooltip would never open. */}
+          <Tooltip arrow title={primary.disabled && primary.disabledReason ? primary.disabledReason : ''}>
+            <Box component="span" sx={{ flexShrink: 0, display: 'inline-flex' }}>
           <Button
             variant="contained"
             disableElevation
@@ -404,6 +411,8 @@ function CommandCentre({
               )}
             </Box>
           </Button>
+            </Box>
+          </Tooltip>
         </Stack>
       </Box>
 
@@ -1118,6 +1127,10 @@ function EmptyNote({ icon: Icon, children }) {
  * panel here instead of hiding inside a collapsed card.
  */
 function ClusterDetail({ cluster, onClose, onApprove, onDismiss }) {
+  // Raising a work order is admin-only server-side; read the role rather than
+  // discovering it from a 403.
+  const { user } = useUser();
+  const canApprove = user?.role === 'admin';
   // every report starts ticked: consolidating is the default, un-ticking is the
   // deliberate act. Remounted per block by the `key` at the call site, so the
   // choice resets cleanly when a different cluster is opened.
@@ -1172,15 +1185,29 @@ function ClusterDetail({ cluster, onClose, onApprove, onDismiss }) {
               <Button onClick={() => setDismissOpen(true)} disabled={ids.length === 0} sx={{ color: BRAND.textLight, fontWeight: 600 }}>
                 Dismiss
               </Button>
-              <Button
-                variant="contained"
-                disableElevation
-                onClick={() => setApproveOpen(true)}
-                disabled={ids.length === 0}
-                sx={{ bgcolor: BRAND.action, fontWeight: 700, borderRadius: '8px', '&:hover': { bgcolor: BRAND.actionHover } }}
+              {/* Raising commits spend, so the server allows admins only
+                  (backend/src/routes/workOrders.js:296). The button was shown to
+                  everyone, so an officer could tick reports, press it and get a bare
+                  403. Disabled with the reason stated is more use than either a live
+                  button that always fails or a hidden one that leaves them
+                  wondering how a call-out gets raised at all. Tooltip wraps a span
+                  because MUI does not fire events on a disabled button. */}
+              <Tooltip
+                arrow
+                title={canApprove ? '' : 'Only an admin can raise a work order - it commits spend. Ask an admin to approve this cluster.'}
               >
-                Approve &amp; raise work order
-              </Button>
+                <span>
+                  <Button
+                    variant="contained"
+                    disableElevation
+                    onClick={() => setApproveOpen(true)}
+                    disabled={ids.length === 0 || !canApprove}
+                    sx={{ bgcolor: BRAND.action, fontWeight: 700, borderRadius: '8px', '&:hover': { bgcolor: BRAND.actionHover } }}
+                  >
+                    Approve &amp; raise work order
+                  </Button>
+                </span>
+              </Tooltip>
             </Stack>
           </Stack>
         }
@@ -1252,6 +1279,8 @@ function ClusterDetail({ cluster, onClose, onApprove, onDismiss }) {
 }
 
 function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
+  const { user } = useUser();
+  const canClose = user?.role === 'admin';
   const [busy, setBusy] = useState(false);
   const st = ORDER_STATUS[order.status] || ORDER_STATUS.open;
   const isOpen = order.status !== 'closed';
@@ -1295,21 +1324,30 @@ function OrderDetail({ order, detail, loading, onClose, onCloseOrder }) {
           >
             Cancel
           </Button>
-          <Button
-            variant="contained"
-            disableElevation
-            startIcon={busy ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />}
-            disabled={busy}
-            onClick={async () => { setBusy(true); try { await onCloseOrder(order.id); } finally { setBusy(false); } }}
-            sx={{
-              bgcolor: BRAND.action, fontWeight: 800, fontSize: 14.5, minHeight: 44,
-              px: 2.5, borderRadius: '8px', textTransform: 'none', whiteSpace: 'nowrap',
-              boxShadow: '0 4px 14px rgba(29,78,216,.32)',
-              '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)' },
-            }}
+          {/* Closing a work order is admin-only server-side
+              (backend/src/routes/workOrders.js:625). */}
+          <Tooltip
+            arrow
+            title={canClose ? '' : 'Only an admin can close a work order. An officer can move it through the earlier stages.'}
           >
-            Mark done
-          </Button>
+            <span>
+              <Button
+                variant="contained"
+                disableElevation
+                startIcon={busy ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />}
+                disabled={busy || !canClose}
+                onClick={async () => { setBusy(true); try { await onCloseOrder(order.id); } finally { setBusy(false); } }}
+                sx={{
+                  bgcolor: BRAND.action, fontWeight: 800, fontSize: 14.5, minHeight: 44,
+                  px: 2.5, borderRadius: '8px', textTransform: 'none', whiteSpace: 'nowrap',
+                  boxShadow: '0 4px 14px rgba(29,78,216,.32)',
+                  '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 6px 18px rgba(29,78,216,.42)' },
+                }}
+              >
+                Mark done
+              </Button>
+            </span>
+          </Tooltip>
         </Stack>
       ) : (
         <Typography sx={{ fontSize: 13, color: BRAND.textLight, textAlign: 'center' }}>
@@ -1542,6 +1580,10 @@ function csvEscape(v) {
 
 export default function ActionQueue() {
   const theme = useTheme();
+  // The two money actions (raise, close) are admin-only server-side, so the page
+  // reads the role instead of letting the user find out via a 403.
+  const { user } = useUser();
+  const isAdmin = user?.role === 'admin';
 
   const [queue, setQueue] = useState(null);
   const [workOrders, setWorkOrders] = useState([]);
@@ -1821,7 +1863,19 @@ export default function ActionQueue() {
   }
 
   async function dismiss(ids, note) {
-    await http.post('/api/work-orders/dismiss', { assessment_ids: ids, note });
+    // On failure this used to reject with nothing caught anywhere: the caller wraps
+    // it in try/finally with no catch, so the promise went unhandled, no toast
+    // appeared and the dialog just sat there looking like it had worked.
+    try {
+      await http.post('/api/work-orders/dismiss', { assessment_ids: ids, note });
+    } catch (e) {
+      setToast({
+        ok: false,
+        msg: e.response?.data?.error
+          || 'Could not dismiss those reports. Nothing was cleared from the queue - please try again.',
+      });
+      return;
+    }
     setUndo({ ids: [...ids], count: ids.length });
     // same principle as approve: only the actioned block leaves the selection
     const block = selectedKey;
@@ -1847,7 +1901,20 @@ export default function ActionQueue() {
   }
 
   async function closeWo(id) {
-    await http.patch(`/api/work-orders/${id}/close`);
+    // Same silent-rejection bug as dismiss(). Also: the close endpoint returns
+    // `notified` for the resident email (backend/src/routes/workOrders.js:607-608)
+    // and this threw it away, so closing a case told the officer nothing about
+    // whether the resident was informed their case is done.
+    let data;
+    try {
+      ({ data } = await http.patch(`/api/work-orders/${id}/close`));
+    } catch (e) {
+      setToast({
+        ok: false,
+        msg: e.response?.data?.error || `Could not close work order #${id}. It is still open.`,
+      });
+      return;
+    }
     // a closed order must leave the selection, or a later bulk close reports it
     // as a false failure
     setChecked(prev => {
@@ -1855,7 +1922,13 @@ export default function ActionQueue() {
       next.delete(String(id));
       return next;
     });
-    setToast({ ok: true, msg: 'Work order marked done.' });
+    const n = data?.notified;
+    const mail = n?.attempted
+      ? (n.sent > 0
+        ? ' The resident has been emailed.'
+        : ' The resident email failed - resend it from the notification log.')
+      : '';
+    setToast({ ok: true, msg: `Work order #${id} marked done.${mail}` });
     setSelectedKey(null);
     await load();
   }
@@ -2000,9 +2073,18 @@ export default function ActionQueue() {
     try {
       const { data } = await http.patch(`/api/work-orders/${id}/stage`, { stage, ...extra });
       setWorkOrders(list => list.map(w => (w.id === id ? { ...w, ...data } : w)));
-      // the email result is whatever actually happened, never assumed
-      const mail = data.notified?.attempted
-        ? (data.notified.delivered ? ' Resident notified.' : ' Resident email failed.')
+      // The email result is whatever actually happened, never assumed.
+      //
+      // This read `data.notified.delivered`, which the API has never returned. The
+      // real shape is { attempted, sent, failed, skipped, results } - see
+      // backend/src/services/workOrderNotify.js:124-131 - so `delivered` was always
+      // undefined and any stage change that DID email a resident reported
+      // "Resident email failed" on an otherwise successful toast.
+      const n = data.notified;
+      const mail = n?.attempted
+        ? (n.sent > 0
+          ? ' The resident has been emailed.'
+          : ' The resident email failed - it is in the notification log and can be resent from there.')
         : '';
       setToast({ ok: true, msg: `Work order #${id} moved to ${ORDER_STATUS[stage]?.label || stage}.${mail}` });
       load();
@@ -2065,7 +2147,10 @@ export default function ActionQueue() {
           count: checkedGroups.length,
           icon: <DoneAllRoundedIcon />,
           onClick: () => setBulkApprove(true),
-          disabled: false,
+          // Admin-only server-side (backend/src/routes/workOrders.js:296). Was
+          // always enabled, so an officer's only feedback was a 403 per block.
+          disabled: !isAdmin,
+          disabledReason: isAdmin ? null : 'Only an admin can raise work orders - approving commits spend.',
         };
       }
       return {
@@ -2094,7 +2179,9 @@ export default function ActionQueue() {
         count: checked.size,
         icon: busyBulk ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <CheckRoundedIcon />,
         onClick: closeSelected,
-        disabled: checked.size === 0 || busyBulk,
+        // Closing is admin-only too (backend/src/routes/workOrders.js:625).
+        disabled: checked.size === 0 || busyBulk || !isAdmin,
+        disabledReason: isAdmin ? null : 'Only an admin can close a work order.',
       };
     }
     return { label: 'Export closed orders', count: 0, icon: <FileDownloadOutlinedIcon />, onClick: exportCsv, disabled: orderRows.length === 0 };
@@ -2363,9 +2450,14 @@ export default function ActionQueue() {
         applyKpiFilter={applyKpiFilter}
       />
 
+      {/* `error` stays inline: it is a page-load failure with a Retry action, and
+          it belongs in the flow where the missing content would have been. `toast`
+          moved out to a Snackbar at the component root - see the bottom of this
+          render - because every action that sets one fires from inside a Dialog,
+          which portals ABOVE this Box. A dismiss failure was written to an Alert
+          the open dialog was covering. */}
       <Box sx={{ px: { xs: 2, md: 3 } }}>
         {error && <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
-        {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
       </Box>
 
       {/* The tab row is gone. It filtered by the SAME states the KPI cards now
@@ -2643,6 +2735,28 @@ export default function ActionQueue() {
         onUndo={undoDismiss}
         onClose={() => setUndo(null)}
       />
+
+      {/* Same shape as the map's toast (RodentRiskMap.jsx) so there is one feedback
+          mechanism, not two. Failures do NOT auto-hide: a successful action is
+          confirmation the user can let pass, but a failure usually needs them to do
+          something, and a message that vanishes in 5s is a message they missed. */}
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={toast?.ok ? 5000 : null}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={toast?.ok ? 'success' : 'error'}
+          variant="filled"
+          onClose={() => setToast(null)}
+          role="status"
+          aria-live="polite"
+          sx={{ width: '100%', maxWidth: 560 }}
+        >
+          {toast?.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

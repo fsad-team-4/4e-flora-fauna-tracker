@@ -3,7 +3,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, Table, TableHead, TableRow, TableCell,
   TableBody, Chip, Alert, CircularProgress, ToggleButtonGroup,
-  ToggleButton, Button, Paper, Tooltip, Stack, IconButton, Drawer, Divider,
+  ToggleButton, Button, Paper, Tooltip, Stack, IconButton, Drawer, Divider, Snackbar,
 } from '@mui/material';
 import ReportProblemRoundedIcon from '@mui/icons-material/ReportProblemRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
@@ -575,7 +575,12 @@ export default function NotificationLog() {
           the fold and is only reached by scrolling past the content */}
       <Box sx={{ minHeight: '100%', px: { xs: 2, md: 3 }, py: 2.5, boxSizing: 'border-box' }}>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {toast && <Alert severity={toast.ok ? 'success' : 'error'} sx={{ mb: 2 }} onClose={() => setToast(null)}>{toast.msg}</Alert>}
+      {/* `toast` used to render here and was effectively invisible: this point is
+          two boxes deep inside the overflow:auto scroller above, and Resend and
+          Acknowledge are both driven from the detail Drawer's sticky shelf - a
+          portal that paints over this. An officer resending a failed alert got no
+          confirmation they could see. It is now a Snackbar at the component root,
+          below. */}
 
       {/* THE HOOK, above everything else.
           This sat between the KPI strip and the chart, so the single most urgent
@@ -990,6 +995,27 @@ export default function NotificationLog() {
         onUndo={undoAcknowledge}
         onClose={() => setUndo(null)}
       />
+
+      {/* Same shape as ActionQueue and the map, so feedback looks identical
+          everywhere. Anchored bottom-centre and portalled, so it is legible over
+          the detail drawer that triggered it. Failures persist until dismissed. */}
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={toast?.ok ? 5000 : null}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={toast?.ok ? 'success' : 'error'}
+          variant="filled"
+          onClose={() => setToast(null)}
+          role="status"
+          aria-live="polite"
+          sx={{ width: '100%', maxWidth: 560 }}
+        >
+          {toast?.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

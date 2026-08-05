@@ -7,6 +7,7 @@ import {
   Autocomplete, Grid, Tooltip, Dialog, DialogTitle, DialogContent, DialogActions,
   Divider, Skeleton, Checkbox, ToggleButtonGroup, ToggleButton, Stack,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableSortLabel,
+  Snackbar,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
@@ -451,6 +452,9 @@ export default function AlertRules() {
   const [editingId, setEditingId] = useState(null);     // non-null = PATCH, null = POST
   const [formNonce, setFormNonce] = useState(0);        // remounts the dialog per open, resetting its fields
   const [saveError, setSaveError] = useState(null);
+  // Success feedback. This page had `error` and `saveError` only, so every
+  // successful create, edit, delete, pause and activate completed in silence.
+  const [toast, setToast] = useState(null);
   const [deleteIds, setDeleteIds] = useState(null);     // array -> confirm dialog open
   const [deleting, setDeleting] = useState(false);
   const [busyBulk, setBusyBulk] = useState(false);
@@ -509,10 +513,21 @@ export default function AlertRules() {
 
   async function handleSave(rule) {
     setSaveError(null);
+    const wasEdit = editingId != null;
     try {
-      if (editingId != null) await http.patch(`/api/alert-rules/${editingId}`, rule);
+      if (wasEdit) await http.patch(`/api/alert-rules/${editingId}`, rule);
       else await http.post('/api/alert-rules', rule);
       closeForm();
+      // A saved rule used to close the dialog and refresh in silence, so the only
+      // evidence anything happened was spotting the row yourself. Say what was
+      // saved AND what it will now do - a rule that fires automatically is not
+      // self-evidently "on" from a list row.
+      setToast({
+        ok: true,
+        msg: `Rule "${rule.name}" ${wasEdit ? 'updated' : 'created'}.${rule.is_active === false
+          ? ' It is paused and will not fire until you activate it.'
+          : ' It is active - matching conditions will dispatch alerts, and every send appears in the notification log.'}`,
+      });
       load();
     } catch (e) {
       setSaveError(e.response?.data?.error || 'save failed');
@@ -530,12 +545,27 @@ export default function AlertRules() {
     setDeleting(false);
     setDeleteIds(null);
     if (failed.length) setError(`Could not delete ${failed.length} rule${failed.length > 1 ? 's' : ''}. Please try again.`);
+    const deleted = ids.length - failed.length;
+    if (deleted > 0) {
+      // States the retention rule, because "deleted" could reasonably be read as
+      // taking the alert history with it. It does not.
+      setToast({
+        ok: true,
+        msg: `Deleted ${deleted} rule${deleted === 1 ? '' : 's'}. Alerts already sent stay in the notification log.`,
+      });
+    }
     load();
   }
 
   async function handleToggle(rule) {
     try {
       await http.patch(`/api/alert-rules/${rule.id}`, { is_active: !rule.is_active });
+      setToast({
+        ok: true,
+        msg: rule.is_active
+          ? `"${rule.name}" paused - it will not fire until you activate it again.`
+          : `"${rule.name}" is active - matching conditions will dispatch alerts from now on.`,
+      });
       load();
     } catch {
       setError(`Could not ${rule.is_active ? 'pause' : 'activate'} "${rule.name}". Please try again.`);
@@ -545,14 +575,23 @@ export default function AlertRules() {
   async function bulkSetActive(active) {
     setBusyBulk(true);
     const failed = [];
+    let changed = 0;
     for (const id of selected) {
       const rule = rules.find(r => r.id === id);
       if (!rule || rule.is_active === active) continue;
-      try { await http.patch(`/api/alert-rules/${id}`, { is_active: active }); }
+      try { await http.patch(`/api/alert-rules/${id}`, { is_active: active }); changed++; }
       catch { failed.push(id); }
     }
     setBusyBulk(false);
     if (failed.length) setError(`Could not update ${failed.length} rule${failed.length > 1 ? 's' : ''}.`);
+    // Counts only what actually changed. Rules already in the target state are
+    // skipped above, so reporting selected.size would overstate the result.
+    if (changed > 0) {
+      setToast({
+        ok: true,
+        msg: `${changed} rule${changed === 1 ? '' : 's'} ${active ? 'activated' : 'paused'}.`,
+      });
+    }
     load();
   }
 
@@ -1095,6 +1134,28 @@ export default function AlertRules() {
         onConfirm={confirmDelete}
         onClose={() => setDeleteIds(null)}
       />
+
+      {/* At the component root, after the dialogs, matching ActionQueue,
+          NotificationLog and the map. Inline would not do: the save and delete
+          confirmations fire from inside the dialogs above, which portal over the
+          page, and the page body is its own overflow:auto scroller. */}
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={toast?.ok ? 5000 : null}
+        onClose={() => setToast(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity={toast?.ok ? 'success' : 'error'}
+          variant="filled"
+          onClose={() => setToast(null)}
+          role="status"
+          aria-live="polite"
+          sx={{ width: '100%', maxWidth: 560 }}
+        >
+          {toast?.msg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
