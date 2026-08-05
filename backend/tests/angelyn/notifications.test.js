@@ -30,8 +30,8 @@ const mkFailed = over => NotificationLog.create({
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'n-admin@test.com', 'manager');
-  staffToken = await registerAndLogin('Staff', 'n-staff@test.com', 'field_officer');
+  adminToken = await registerAndLogin('Admin', 'n-admin@test.com', 'admin');
+  staffToken = await registerAndLogin('Staff', 'n-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'n-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });

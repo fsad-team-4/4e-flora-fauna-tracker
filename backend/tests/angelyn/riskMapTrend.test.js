@@ -17,7 +17,7 @@ async function registerAndLogin(name, email, role) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  token = await registerAndLogin('Officer', 'rmt-staff@test.com', 'field_officer');
+  token = await registerAndLogin('Officer', 'rmt-staff@test.com', 'staff');
   staffId = (await User.findOne({ where: { email: 'rmt-staff@test.com' } })).id;
 });
 afterAll(async () => { await sequelize.close(); });

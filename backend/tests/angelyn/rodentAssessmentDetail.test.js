@@ -33,9 +33,9 @@ const detail = (id, token) => request(app).get(`/api/rodent-assessments/${id}`).
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'field_officer');
+  staffToken = await registerAndLogin('Staff', 'ad-staff@test.com', 'staff');
   // raising a work order commits money, so it is admin-only
-  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'manager');
+  adminToken = await registerAndLogin('Admin', 'ad-admin@test.com', 'admin');
   residentToken = await registerAndLogin('Resident', 'ad-res@test.com', 'resident');
 });
 afterAll(async () => { await sequelize.close(); });

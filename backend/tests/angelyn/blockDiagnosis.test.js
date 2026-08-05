@@ -215,7 +215,7 @@ describe('GET /api/block-diagnosis (RBAC + contract)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'bd-staff@test.com', 'field_officer');
+    staffToken = await registerAndLogin('Staff', 'bd-staff@test.com', 'staff');
     residentToken = await registerAndLogin('Resident', 'bd-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });

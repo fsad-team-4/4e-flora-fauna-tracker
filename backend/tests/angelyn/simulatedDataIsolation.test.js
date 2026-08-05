@@ -70,7 +70,7 @@ async function snapshotMetrics(token) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'sim-admin@test.com', 'manager');
+  adminToken = await registerAndLogin('Admin', 'sim-admin@test.com', 'admin');
   const admin = await User.findOne({ where: { email: 'sim-admin@test.com' } });
 
   // a little real data so the metrics are not all trivially empty

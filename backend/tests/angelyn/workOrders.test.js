@@ -27,8 +27,8 @@ function makeAssessment(over = {}) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'admin@test.com', 'manager');
-  staffToken = await registerAndLogin('Staff', 'staff@test.com', 'field_officer');
+  adminToken = await registerAndLogin('Admin', 'admin@test.com', 'admin');
+  staffToken = await registerAndLogin('Staff', 'staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'resident@test.com', 'resident');
 });
 

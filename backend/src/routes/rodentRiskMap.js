@@ -36,7 +36,7 @@ function summarise({ assessments, sightings, windowDays, now }) {
   };
 }
 
-router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const windowDays = Math.min(90, Math.max(7, parseInt(req.query.windowDays) || 30));
     const msWindow = windowDays * 24 * 60 * 60 * 1000;

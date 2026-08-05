@@ -35,8 +35,8 @@ let lowIds = [];
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'vb-admin@test.com', 'manager');
-  staffToken = await registerAndLogin('Officer', 'vb-staff@test.com', 'field_officer');
+  adminToken = await registerAndLogin('Admin', 'vb-admin@test.com', 'admin');
+  staffToken = await registerAndLogin('Officer', 'vb-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Res', 'vb-res@test.com', 'resident');
   adminId = (await User.findOne({ where: { email: 'vb-admin@test.com' } })).id;
 

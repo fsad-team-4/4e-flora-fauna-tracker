@@ -79,7 +79,7 @@ describe('GET /api/scorecard (RBAC)', () => {
   }
   beforeAll(async () => {
     await sequelize.sync({ force: true });
-    staffToken = await registerAndLogin('Staff', 'sc-staff@test.com', 'field_officer');
+    staffToken = await registerAndLogin('Staff', 'sc-staff@test.com', 'staff');
     residentToken = await registerAndLogin('Resident', 'sc-res@test.com', 'resident');
   });
   afterAll(async () => { await sequelize.close(); });
