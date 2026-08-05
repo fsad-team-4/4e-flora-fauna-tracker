@@ -22,23 +22,78 @@ import L from 'leaflet';
 import http from '../../http';
 import { BRAND } from '../../theme';
 
-// Below this zoom the whole island is in view and 19 labels collide into noise.
-// Above it, a label names the estate an officer is actually looking at.
+/**
+ * THE ZOOM WINDOW IS THE FIX FOR PINS COVERING LABELS.
+ *
+ * Labels used to show from 12 upward - which is every working zoom - so at 16-18, where
+ * the pins actually live, two marker layers competed for the same pixels and the pins
+ * won by covering the names.
+ *
+ * They now have a CEILING as well as a floor, because a council label answers "which
+ * town am I in", and that question is only open while you can see several towns. Once
+ * you are zoomed into one estate you already know, and the name is redundant chrome
+ * sitting on top of the data. Below 12 the whole island is in frame and 19 labels
+ * collide into noise; above 15 the pins own the canvas.
+ */
 const MIN_LABEL_ZOOM = 12;
+const MAX_LABEL_ZOOM = 15;
+
+/**
+ * THE LABEL SITS BELOW THE TOWN CENTRE, NOT ON IT. This is the fix for pins covering
+ * the council names.
+ *
+ * The zoom window above stopped the two layers competing at close range, but inside the
+ * window they still collided - and collided systematically, not by chance. A council
+ * label is anchored at the town centre, and the town centre is also roughly where that
+ * council's reports are, so the marker for a council's busiest cluster landed on the
+ * label naming it. Sembawang, Nee Soon and Ang Mo Kio were all unreadable for exactly
+ * that reason while every council with no data nearby read fine.
+ *
+ * Z-ORDER COULD NOT FIX IT, in either direction. The pins are the data and must stay on
+ * top, so raising the label above them is out; and suppressing a label under a pin would
+ * have hidden precisely the three names the officer was trying to read. The only answer
+ * that keeps BOTH readable is to stop them sharing a pixel.
+ *
+ * 46px clears the largest marker this map draws: clusterSize() caps at 50px anchored at
+ * its centre, so 25px up from the coordinate, plus its 4.5px halo and the co-occurrence
+ * ring, plus half a label and a small gap.
+ *
+ * WHAT IT COSTS, stated because the offset is a lie about position: the shift is in
+ * PIXELS, so its ground distance grows as you zoom out - 0.22km at zoom 15, 1.76km at the
+ * zoom-12 floor, which is the worst case. Checked against the registry rather than
+ * assumed: the smallest radius of the 19 councils is Jalan Kayu at 2.2km, so even at the
+ * floor the name stays inside the council it names. These labels never claimed to be
+ * surveyed either - they name a neighbourhood, which is what the approximate-boundaries
+ * caveat beside the layer toggle already says. A name 1.76km off centre still names the
+ * right council; a name nobody can read names nothing.
+ */
+const LABEL_OFFSET_PX = 46;
+
+// Own pane, below Leaflet's markerPane (600), so the stacking is DECIDED rather than
+// left to DOM order. Even inside the window the pins are the data and must win; a label
+// that loses deterministically can be designed around, one that loses at random cannot.
+const LABEL_PANE = 'tcLabelPane';
+const LABEL_PANE_Z = 580;
 
 function labelIcon(name, dark) {
   // Short form: the map has one kind of region, so repeating "Town Council" on
   // every label spends horizontal space saying nothing.
   const short = name.replace(/ Town Council$/, '');
   const fg = dark ? '#e5e7eb' : BRAND.heading;
-  const bg = dark ? 'rgba(17,24,39,.72)' : 'rgba(255,255,255,.78)';
+  // Opaquer than before, with a hairline edge. The offset separates the label from the
+  // marker it used to sit under, but markers move with the data and a label can still end
+  // up ADJACENT to one - at which point the plate is what keeps the text off the pin's
+  // halo rather than blending into it.
+  const bg = dark ? 'rgba(17,24,39,.9)' : 'rgba(255,255,255,.92)';
+  const edge = dark ? 'rgba(255,255,255,.14)' : 'rgba(16,24,40,.10)';
   return L.divIcon({
     className: 'tc-label',
     html: `<div style="
       white-space:nowrap; font-size:11px; font-weight:700; letter-spacing:.3px;
       text-transform:uppercase; color:${fg}; background:${bg};
       padding:2px 7px; border-radius:5px; backdrop-filter:blur(2px);
-      transform:translate(-50%,-50%); display:inline-block;
+      border:1px solid ${edge};
+      transform:translate(-50%,calc(-50% + ${LABEL_OFFSET_PX}px)); display:inline-block;
     ">${short}</div>`,
     iconSize: null,
     iconAnchor: [0, 0],
@@ -66,7 +121,17 @@ export default function TownCouncilLabels({ mode = 'light', showRegions = false 
     return () => { cancelled = true; };
   }, []);
 
-  if (zoom < MIN_LABEL_ZOOM) return null;
+  // One pane for the layer, created once per map.
+  useEffect(() => {
+    if (!map.getPane(LABEL_PANE)) {
+      const pane = map.createPane(LABEL_PANE);
+      pane.style.zIndex = String(LABEL_PANE_Z);
+      // never intercept a click meant for a pin underneath
+      pane.style.pointerEvents = 'none';
+    }
+  }, [map]);
+
+  if (zoom < MIN_LABEL_ZOOM || zoom > MAX_LABEL_ZOOM) return null;
 
   const dark = mode === 'dark';
 
@@ -94,6 +159,7 @@ export default function TownCouncilLabels({ mode = 'light', showRegions = false 
           key={c.id}
           position={[c.lat, c.lng]}
           icon={labelIcon(c.name, dark)}
+          pane={LABEL_PANE}
           interactive={false}
           keyboard={false}
         />

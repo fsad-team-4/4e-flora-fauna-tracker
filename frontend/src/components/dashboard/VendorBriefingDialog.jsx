@@ -5,10 +5,11 @@ import {
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import AutoAwesomeOutlinedIcon from '@mui/icons-material/AutoAwesomeOutlined';
-import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { alpha } from '@mui/material/styles';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import BuildOutlinedIcon from '@mui/icons-material/BuildOutlined';
-import { BRAND, INTENT } from '../../theme';
+import { BRAND, INTENT, RADII } from '../../theme';
 import http from '../../http';
 import { useThemeMode } from '../../contexts/ThemeModeContext';
 
@@ -274,14 +275,23 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
                 // carrying the "this is a warning" signal so the hue is not doing it
                 // alone. The count and "check before sending" are the caveat and are
                 // unchanged.
+                /* HIGHER CONTRAST, because this one has to be resolved before a vendor
+                   is dispatched - not merely noticed. `warning.bg` is the same pale wash
+                   used for a passive "in progress" chip, so a blocking data gap looked
+                   like ambient status. The border goes full-weight amber on all four sides
+                   and the fill deepens, so the block reads as an obstacle. The glyph
+                   changes with it: an (i) says "for your information", which is precisely
+                   what this is not. */
                 <Box sx={{
                   mt: 1.5, p: 1.5, borderRadius: '8px',
                   bgcolor: INTENT.warning.bg,
-                  borderLeft: `3px solid ${INTENT.warning.solid}`,
+                  border: `1px solid ${INTENT.warning.solid}`,
+                  borderLeft: `4px solid ${INTENT.warning.solid}`,
+                  boxShadow: `inset 0 0 0 9999px ${alpha(INTENT.warning.solid, 0.06)}`,
                 }}>
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.75 }}>
-                    <InfoOutlinedIcon sx={{ fontSize: 16, color: INTENT.warning.ink, flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: INTENT.warning.ink }}>
+                    <WarningAmberRoundedIcon sx={{ fontSize: 17, color: INTENT.warning.ink, flexShrink: 0 }} />
+                    <Typography sx={{ fontSize: 13, fontWeight: 800, color: INTENT.warning.ink }}>
                       {flagged.length} missing detail{flagged.length === 1 ? '' : 's'} - check before sending
                     </Typography>
                   </Stack>
@@ -367,21 +377,33 @@ export default function VendorBriefingDialog({ open, onClose, assessmentIds, blo
           </Tooltip>
         )}
 
+        </Stack>
+
+        {/* SEND, FULL WIDTH, ON ITS OWN ROW BENEATH THE OTHERS.
+            The footer was already flexShrink:0 in a flex-column drawer, so this was
+            never at risk of scrolling away - what it lacked was weight. Sharing a row
+            with two other buttons, the one irreversible action was the same size as
+            "Raise work order" beside it.
+            Moving it to its own row also PRESERVES the property the row above was built
+            for: Cancel stays far from Send. They were separated horizontally so the mouse
+            never travels from "back out" straight onto "send to a paid contractor" -
+            stacking keeps that separation on the other axis rather than discarding it. */}
         <Button
           variant="contained"
           onClick={send}
           disabled={!canSend}
+          fullWidth
           startIcon={sending ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <SendRoundedIcon />}
           sx={{
-            textTransform: 'none', fontWeight: 800, fontSize: 14.5, borderRadius: '8px', whiteSpace: 'nowrap',
-            px: 2.5, py: 1.1, color: '#fff', bgcolor: BRAND.action,
+            mt: 1.25,
+            textTransform: 'none', fontWeight: 800, fontSize: 14.5, borderRadius: `${RADII.control}px`,
+            py: 1.15, color: '#fff', bgcolor: BRAND.action,
             boxShadow: '0 6px 18px rgba(29,78,216,.35)',
             '&:hover': { bgcolor: BRAND.actionHover, boxShadow: '0 8px 22px rgba(29,78,216,.45)' },
           }}
         >
           {sending ? 'Sending…' : 'Send to contractor'}
         </Button>
-        </Stack>
       </Box>
     </Drawer>
   );

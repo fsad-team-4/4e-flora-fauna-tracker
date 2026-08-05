@@ -9,6 +9,7 @@ import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
 import { BRAND, INTENT, ON_SURFACE } from '../../theme';
 import { SEVERITY } from './rodentMapTokens';
 import http from '../../http';
+import { causeLabel } from '../../rodentLabels';
 
 /**
  * Everything recorded about ONE block, without leaving the map.
@@ -186,7 +187,7 @@ export default function VenueDetailDrawer({ block, open, onClose }) {
 
                     {r.likely_cause && (
                       <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.75, lineHeight: 1.55 }}>
-                        <Box component="span" sx={{ fontWeight: 700 }}>Assessed cause: </Box>{r.likely_cause}
+                        <Box component="span" sx={{ fontWeight: 700 }}>Assessed cause: </Box>{causeLabel(r.likely_cause)}
                       </Typography>
                     )}
 

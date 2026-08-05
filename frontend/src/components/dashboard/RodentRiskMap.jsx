@@ -9,6 +9,8 @@ import {
   Alert, Snackbar, Slider, Switch, LinearProgress,
 } from '@mui/material';
 import CenterFocusStrongOutlinedIcon from '@mui/icons-material/CenterFocusStrongOutlined';
+import StreetviewOutlinedIcon from '@mui/icons-material/StreetviewOutlined';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
@@ -27,10 +29,13 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import AddLocationAltOutlinedIcon from '@mui/icons-material/AddLocationAltOutlined';
 import 'leaflet/dist/leaflet.css';
-import { BRAND, CATEGORY_COLORS, ON_SURFACE, SVG_ACCENT, SENSOR_RAMP, TREND } from '../../theme';
+import { BRAND, CATEGORY_COLORS, ON_SURFACE, SVG_ACCENT, SENSOR_RAMP, TREND, RADII } from '../../theme';
 import { useThemeMode } from '../../contexts/ThemeModeContext';
 import { useUser } from '../../contexts/UserContext';
 import { SEVERITY, SG_CENTER, BASEMAPS, TILE_ATTR, DENSITY_RAMP, DENSITY_STEP_LABELS, densityStep } from './rodentMapTokens';
+// The dashboard KPI tiles' sparkline, reused rather than reimplemented - a second
+// implementation is how the two would end up drawing the same shape differently.
+import { Spark } from './KpiStack';
 import SensorSurfaceLayer from './SensorSurfaceLayer';
 import VendorBriefingDialog from './VendorBriefingDialog';
 import VenueDetailDrawer from './VenueDetailDrawer';
@@ -52,7 +57,40 @@ const CLUSTER_PX = 44;
 // makes an out-of-range coordinate look like a legitimate location rather than
 // an obvious error.
 const SG_MAX_BOUNDS = [[1.15, 103.6], [1.48, 104.1]];
+
+/**
+ * THE PAN LIMIT IS SLIGHTLY LOOSER THAN THE FRAMING BOUNDS. This is the fix for the
+ * popup dragging the map back down.
+ *
+ * A Leaflet popup opens ABOVE its marker and auto-pans the map to bring itself into
+ * view. maxBounds clamps every pan, including that one. So for a marker near the coast
+ * - Yishun and Punggol are both within a popup's height of the northern edge - the two
+ * fought: autoPan moved the map up, the bounds clamp snapped it straight back, and the
+ * officer saw the map lurch downwards with the top of the popup still cut off. No
+ * amount of autoPanPadding fixes it; the room the pan needs simply is not inside the
+ * bounds.
+ *
+ * So the FRAMING bounds and the PAN bounds are now separate concerns. SG_MAX_BOUNDS
+ * still derives minZoom (see LockToSingapore), which is what actually enforces "only
+ * Singapore is ever on screen" - you cannot zoom out far enough to see past it. The pan
+ * limit gets a margin just deep enough for a popup, so a coastal marker has somewhere
+ * to pan into.
+ *
+ * The cost, stated honestly: at the zoom floor an officer who drags to the very edge can
+ * now see a sliver of the strait. 0.03 degrees is about 3km - water and the far bank,
+ * never another estate - and it buys back a popup that reads.
+ */
+const PAN_MARGIN_DEG = 0.03;
+const SG_PAN_BOUNDS = [
+  [SG_MAX_BOUNDS[0][0] - PAN_MARGIN_DEG, SG_MAX_BOUNDS[0][1] - PAN_MARGIN_DEG],
+  [SG_MAX_BOUNDS[1][0] + PAN_MARGIN_DEG, SG_MAX_BOUNDS[1][1] + PAN_MARGIN_DEG],
+];
 const SG_MIN_ZOOM = 11;
+// Street level. Below this the estate reads as a cluster map; at or above it a single
+// block fills enough of the frame that imagery starts answering questions the abstract
+// ground cannot. Esri's imagery also runs out at 19, so there is real detail to show
+// across 17-19.
+const AERIAL_ZOOM = 17;
 const WINDOW_OPTIONS = [7, 30, 90];
 
 // SEVERITY, SG_CENTER, BASEMAPS and TILE_ATTR now live in ./rodentMapTokens so the
@@ -78,9 +116,33 @@ const srOnly = { position: 'absolute', width: 1, height: 1, padding: 0, margin: 
 const SECTION_LABEL = { fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: BRAND.text, mb: 0.75, display: 'block' };
 const COVERAGE_INK = ON_SURFACE.warn; // coverage-amber (data quality), distinct from severity
 
-// Leaflet auto-pans a popup into the container but knows nothing about our own
-// floating chrome. Padding clears the right toolbar and the bottom dock.
-const POPUP_PAN = { autoPanPaddingTopLeft: [16, 90], autoPanPaddingBottomRight: [320, 150] };
+/**
+ * Leaflet auto-pans a popup into the container but knows nothing about our own floating
+ * chrome, so the padding clears the right toolbar and the bottom dock.
+ *
+ * THE VERTICAL PADDING WAS TOO GREEDY, and it broke popups at the edge of the map.
+ *
+ * 90 top + 150 bottom reserved 240px of a container that is often only ~650px tall,
+ * leaving under 410px for a popup capped at 340 plus its tip and the marker it hangs
+ * off. That just fits mid-map - and does not fit at all near the bounds, because
+ * LockToSingapore pins the view inside Singapore with full viscosity, so at Nee Soon or
+ * Tanjong Pagar there is no further north or south to pan into. Leaflet then does its
+ * best and leaves the popup clipped against the container edge, which reads as the map
+ * having dragged itself somewhere useless.
+ *
+ * Bottom drops to 110 (the dock's real height) and the caps below come down, so a popup
+ * fits in the space available WITHOUT panning much - which is the only version that also
+ * works at the edges.
+ */
+// Top padding is generous on purpose: 24px left the popup's title sitting flush against
+// the metric ribbon directly above the map, which read as clipped even when it was not.
+// Bottom-right clears the floating timeline pill and the controls panel.
+const POPUP_PAN = { autoPanPaddingTopLeft: [16, 72], autoPanPaddingBottomRight: [320, 120] };
+
+// Popups scroll internally past this. Deliberately below the reserved-space arithmetic
+// above: a popup that has to move the map to be read is a popup that will fail wherever
+// the map cannot move.
+const POPUP_MAX_H = 260;
 
 
 const rodentDiameter = count => 26 + Math.min(20, (count - 1) * 5);
@@ -279,10 +341,10 @@ const POPUP_TITLE_SX = { fontSize: 14.5, fontWeight: 700, color: BRAND.heading, 
  * block, the report list is capped (popups are not a table), and the two things an
  * officer can actually DO from here are explicit buttons at the bottom.
  */
-function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing, onOpenVenue }) {
+function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing, onOpenVenue, maxReports = 3 }) {
   const counts = {};
   p.assessments.forEach(a => { const b = BAND_ORDER.includes(a.risk_level) ? a.risk_level : 'high'; counts[b] = (counts[b] || 0) + 1; });
-  const recent = p.assessments.slice(0, 3);
+  const recent = p.assessments.slice(0, maxReports);
   const moreCount = p.assessments.length - recent.length;
   return (
     <Box sx={{ minWidth: 236 }}>
@@ -334,10 +396,40 @@ function RodentPointBody({ p, onCreateWorkOrder, onDraftBriefing, onOpenVenue })
           // opens a drawer rather than navigating to /rodent - the officer keeps
           // the map they were reading
           <Button size="small" fullWidth onClick={() => onOpenVenue(p.block)}
+            startIcon={<InfoOutlinedIcon sx={{ fontSize: 16 }} />}
             sx={{ textTransform: 'none', fontWeight: 700, color: ON_SURFACE.info }}>
             View location details
           </Button>
         )}
+
+        {/* STREET VIEW, AS A LINK OUT - not an embed.
+            An officer deciding whether to send a contractor wants to see the actual bin
+            centre or void deck, which a pin on a grey basemap cannot show. This opens
+            Google Street View at the report's own coordinates.
+            A LINK, deliberately: embedding a panorama needs a Google Maps API key on a
+            billed cloud project, and this needs nothing - the maps URL scheme is public.
+            It does hand the coordinates to Google in the URL, which is the trade.
+            `rel="noreferrer"` so the app's own URL is not passed along with them.
+            Coverage caveat is in the tooltip rather than assumed: Singapore's public
+            roads are near-complete, but an internal void deck may have none, in which
+            case Google lands on the nearest panorama. */}
+        <Tooltip
+          arrow
+          title="Opens Google Street View at these coordinates in a new tab. Interior void decks may have no coverage, in which case it lands on the nearest road."
+        >
+          <Button
+            size="small"
+            fullWidth
+            component="a"
+            href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${p.lat},${p.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            startIcon={<StreetviewOutlinedIcon sx={{ fontSize: 16 }} />}
+            sx={{ textTransform: 'none', fontWeight: 700, color: BRAND.textLight, '&:hover': { color: ON_SURFACE.info } }}
+          >
+            Street view
+          </Button>
+        </Tooltip>
       </Stack>
     </Box>
   );
@@ -586,7 +678,7 @@ function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onD
           position={[p.lat, p.lng]} icon={kind === 'feeding' ? feedingIcon(p.coOccurs) : rodentIcon(p)}
           opacity={dimNonCoOccur && !p.coOccurs ? 0.3 : 1}
           keyboard title={`${p.block || 'Unlabelled block'}: ${p.count} ${unit}${p.count === 1 ? '' : 's'}`}>
-          <Popup maxHeight={320} minWidth={220} {...POPUP_PAN}><Body p={p} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} /></Popup>
+          <Popup maxHeight={POPUP_MAX_H} minWidth={220} {...POPUP_PAN}><Body p={p} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} /></Popup>
         </Marker>
       );
     }
@@ -615,8 +707,191 @@ function PointClusterLayer({ points, kind, dimNonCoOccur, onCreateWorkOrder, onD
         position={[cLat, cLng]} icon={clusterIcon(kind, members.length, band, clusterCoOccurs)}
         opacity={dimNonCoOccur && !clusterCoOccurs ? 0.3 : 1}
         keyboard title={`${members.length} ${kind} locations, ${reports} report${reports === 1 ? '' : 's'}`}>
-        <Popup maxHeight={340} minWidth={230} {...POPUP_PAN}>
+        <Popup maxHeight={POPUP_MAX_H} minWidth={230} {...POPUP_PAN}>
           <ClusterBody kind={kind} members={members} map={map} bounds={bounds} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} />
+        </Popup>
+      </Marker>
+    );
+  });
+}
+
+/**
+ * BY LOCATION: one marker per real place, not per grid cell.
+ *
+ * The alternative to hexagonal binning, and the reason it is the default view.
+ *
+ * A hexagon states a true fact - "N reports fall in this 260m cell" - but a cell is not
+ * a thing anyone acts on. Work orders, vendor briefings and the Block Performance table
+ * are all keyed by LOCATION, so a hexagon always left the officer with one more question:
+ * which places is that? Grouping by location answers it directly, invents no value for
+ * unobserved ground (the same honesty rule binning follows), and finally agrees with the
+ * rest of the app about what a place is.
+ *
+ * NOT CALLED "BY BLOCK", deliberately. Rodent reports are not all at residential blocks -
+ * a food court, a bin centre or a mall is a location with its own label - and naming the
+ * view after blocks would make every non-block report look like an edge case. Blocks and
+ * premises are drawn differently instead, because the distinction changes who gets
+ * dispatched: a residential block is the town council's, a licensed F&B unit is not.
+ */
+
+// Mirrors backend blockKey (services/blockDiagnosis.js) INCLUDING the digit lookahead, so
+// the map and the API group identically. Without the lookahead a premises whose name
+// starts with "block" would be silently renamed.
+const locationKey = v => String(v ?? '').trim().toLowerCase().replace(/^(?:block|blk)\.?\s*(?=\d)/, '').trim();
+// Conservative: a block label is the prefix plus a number. Anything else is premises.
+// The raw label is always displayed, so a wrong guess changes an icon, never the facts.
+const isBlockLabel = v => /^(?:block|blk)\.?\s*\d/i.test(String(v ?? '').trim());
+
+function locationBin(points) {
+  const groups = new Map();
+  points.forEach(p => {
+    const key = locationKey(p.block) || '__unlabelled__';
+    const g = groups.get(key) || {
+      key, label: p.block || 'Unspecified location',
+      isBlock: isBlockLabel(p.block),
+      count: 0, weightedScore: 0, assessments: [], bands: [], coOccurs: false,
+      latSum: 0, lngSum: 0, wSum: 0, srcKeys: [],
+    };
+    g.count += p.count;
+    g.weightedScore += p.weightedScore || 0;
+    g.assessments.push(...(p.assessments || []));
+    // bandOf, not a.risk_level: one definition of "what band is this point" for the
+    // whole file. The API's riskLevel is already the PEAK at that coordinate, so the
+    // worst of the peaks is the worst at the location.
+    g.bands.push(bandOf(p));
+    // The API keys coOccurs by the SAME normalised block, so every point at a location
+    // already agrees on it - some() rather than assuming, so a future keying change
+    // degrades to "co-occurs somewhere here" instead of silently dropping the ring.
+    g.coOccurs = g.coOccurs || !!p.coOccurs;
+    g.srcKeys.push(`${p.lat},${p.lng}`);
+    // Count-weighted centroid: a location's marker should sit nearer the coordinate that
+    // most of its reports came from, not at the midpoint of its outliers.
+    g.latSum += p.lat * p.count;
+    g.lngSum += p.lng * p.count;
+    g.wSum += p.count;
+    groups.set(key, g);
+  });
+  return [...groups.values()].map(g => ({
+    // shaped exactly like a rodent point, so the EXISTING popup body works unchanged and
+    // "Dispatch pest control" / "Draft vendor briefing" keep working per location
+    block: g.label,
+    isBlock: g.isBlock,
+    lat: g.wSum ? g.latSum / g.wSum : 0,
+    lng: g.wSum ? g.lngSum / g.wSum : 0,
+    count: g.count,
+    weightedScore: g.weightedScore,
+    assessments: g.assessments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+    riskLevel: worstBand(g.bands),
+    coOccurs: g.coOccurs,
+    srcKeys: g.srcKeys,
+  })).sort((a, b) => b.count - a.count);
+}
+
+function locationIcon(p) {
+  const sv = SEVERITY[bandOf(p)];
+  const n = p.count > 99 ? '99+' : String(p.count);
+  const w = 34 + Math.min(18, (String(n).length - 1) * 9);
+  // Rounded square for a block, circle for a premises - shape carries the distinction so
+  // it survives greyscale and does not spend another colour.
+  const radius = p.isBlock ? '9px' : '50%';
+  return L.divIcon({
+    className: 'rk-marker',
+    html: `<div style="
+      width:${w}px;height:34px;border-radius:${radius};background:${sv.solid};
+      color:${sv.onSolid};border:2px solid #fff;box-sizing:border-box;
+      box-shadow:0 2px 6px rgba(16,24,40,.35);
+      display:flex;align-items:center;justify-content:center;
+      font:700 13px/1 Inter,system-ui,sans-serif;letter-spacing:-.2px;
+    ">${n}</div>`,
+    iconSize: [w, 34],
+    iconAnchor: [w / 2, 17],
+    popupAnchor: [0, -17],
+  });
+}
+
+/**
+ * CLUSTERED, for the same reason the pin layer is.
+ *
+ * One marker per location is only one marker per location on screen if two locations are
+ * far enough apart in PIXELS, and at island zoom they routinely are not - two blocks 80m
+ * apart sat on top of each other, so the count on the marker underneath was unreadable
+ * and there was no way to reach its popup. Grouping at the same CLUSTER_PX threshold the
+ * pins use means the two views agree about when things are too close to draw separately,
+ * and the cluster popup already lists its members block by block (ClusterBody), so
+ * nothing becomes unreachable - it moves one click deeper.
+ *
+ * markerRefs is threaded through because the "Action required" rows focus a block by
+ * COORDINATE and open its popup. Location view is the default view, so omitting the refs
+ * meant the primary path through this page flew to a block and opened nothing.
+ */
+function LocationLayer({ points, dimNonCoOccur, onCreateWorkOrder, onDraftBriefing, onOpenVenue, markerRefs }) {
+  const map = useMap();
+  const [zoom, setZoom] = useState(() => map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+  const locations = useMemo(() => locationBin(points), [points]);
+  const groups = useMemo(() => clusterByPixel(map, locations, zoom), [map, locations, zoom]);
+
+  return groups.map((g, gi) => {
+    if (g.length === 1) {
+      const p = g[0].p;
+      return (
+        <Marker
+          key={`loc-${p.block}`}
+          // registered under every CONTRIBUTING point's coordinate, not the centroid:
+          // the Action required list holds the raw points, so it looks the marker up by
+          // a coordinate that no longer has a marker of its own once grouped.
+          ref={markerRefs ? (el => {
+            (p.srcKeys || []).forEach(k => {
+              if (el) markerRefs.current.set(k, el); else if (markerRefs.current.get(k) === el) markerRefs.current.delete(k);
+            });
+          }) : undefined}
+          position={[p.lat, p.lng]}
+          icon={locationIcon(p)}
+          // Rodent locations are the subject of this map; feeding is context. Without
+          // this the two layers stack in DOM order and a feeding teardrop could cover
+          // the report count - which is the one number the marker exists to show.
+          zIndexOffset={500}
+          opacity={dimNonCoOccur && !p.coOccurs ? 0.3 : 1}
+          keyboard
+          title={`${p.block}: ${p.count} report${p.count === 1 ? '' : 's'}`}
+        >
+          <LeafletTooltip direction="top" offset={[0, -20]}>
+            {`${p.block} · ${p.count} report${p.count === 1 ? '' : 's'}`}
+          </LeafletTooltip>
+          <Popup maxHeight={POPUP_MAX_H} minWidth={230} {...POPUP_PAN}>
+            {/* 2, not the default 3: this popup has four actions under it, and at three
+                reports it grew past the height the map can pan into view near the coast
+                - see the note on SG_PAN_BOUNDS. The rest are one click away in the
+                location drawer, which is the right place for a full history anyway. */}
+            <RodentPointBody p={p} maxReports={2} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} />
+          </Popup>
+        </Marker>
+      );
+    }
+
+    const members = g.map(m => m.p);
+    const cLat = members.reduce((s2, m) => s2 + m.lat, 0) / members.length;
+    const cLng = members.reduce((s2, m) => s2 + m.lng, 0) / members.length;
+    const reports = members.reduce((s2, m) => s2 + m.count, 0);
+    const clusterCoOccurs = members.some(m => m.coOccurs);
+    const bounds = L.latLngBounds(members.map(m => [m.lat, m.lng]));
+    return (
+      <Marker
+        key={`loc-cluster-${gi}-${cLat},${cLng}`}
+        ref={markerRefs ? (el => {
+          members.forEach(m => (m.srcKeys || []).forEach(k => {
+            if (el) markerRefs.current.set(k, el); else if (markerRefs.current.get(k) === el) markerRefs.current.delete(k);
+          }));
+        }) : undefined}
+        position={[cLat, cLng]}
+        icon={clusterIcon('rodent', members.length, worstBand(members.map(bandOf)), clusterCoOccurs)}
+        zIndexOffset={500}
+        opacity={dimNonCoOccur && !clusterCoOccurs ? 0.3 : 1}
+        keyboard
+        title={`${members.length} locations, ${reports} report${reports === 1 ? '' : 's'}`}
+      >
+        <Popup maxHeight={POPUP_MAX_H} minWidth={230} {...POPUP_PAN}>
+          <ClusterBody kind="rodent" members={members} map={map} bounds={bounds} onCreateWorkOrder={onCreateWorkOrder} onDraftBriefing={onDraftBriefing} onOpenVenue={onOpenVenue} />
         </Popup>
       </Marker>
     );
@@ -832,7 +1107,7 @@ function FocusPoint({ focus, markerRefs }) {
  * map lives in a panel that changes width when the toolbar collapses, and a floor
  * computed for a wide container would let a narrow one zoom out too far.
  */
-function LockToSingapore({ bounds }) {
+function LockToSingapore({ bounds, panBounds }) {
   const map = useMap();
   useEffect(() => {
     const b = L.latLngBounds(bounds);
@@ -849,15 +1124,17 @@ function LockToSingapore({ bounds }) {
       // the BOUNDS. The trade is real - fully zoomed out you no longer see the whole
       // island at once, it is cropped to the viewport's aspect - but nothing outside
       // Singapore is ever on screen, which is the requirement.
+      // the floor comes from the TIGHT bounds - that is what keeps the island the only
+      // thing on screen - while the clamp uses the padded ones. See SG_PAN_BOUNDS.
       const floor = map.getBoundsZoom(b, true);
       map.setMinZoom(floor);
       if (map.getZoom() < floor) map.setZoom(floor);
-      map.setMaxBounds(b);
+      map.setMaxBounds(L.latLngBounds(panBounds || bounds));
     };
     apply();
     map.on('resize', apply);
     return () => map.off('resize', apply);
-  }, [map, bounds]);
+  }, [map, bounds, panBounds]);
   return null;
 }
 
@@ -876,6 +1153,52 @@ function LockToSingapore({ bounds }) {
  * This does not contradict the camera-target comment further down - that defends
  * deriving targets from unfiltered data, not re-framing on every fetch.
  */
+/**
+ * KEEPS LEAFLET'S IDEA OF ITS OWN SIZE HONEST.
+ *
+ * Leaflet measures its container once at init and then only on WINDOW resize. It has no
+ * idea when its container changes width for any other reason - and on this page that
+ * happens constantly: opening and closing the 320px controls panel, and collapsing the
+ * rail that used to dock beside the map. The container grew, Leaflet kept rendering
+ * tiles for the old narrower viewport, and the difference showed as a band of blank
+ * canvas on the right with the zoom control and attribution stranded out at the true
+ * edge. It looked like a layout gap; it was a stale measurement.
+ *
+ * A ResizeObserver on the container catches every cause at once, including ones nobody
+ * has thought of yet, which is why this is better than calling invalidateSize from each
+ * toggle. Wrapped in rAF so a burst of observations during a CSS transition collapses
+ * into one recalculation per frame rather than one per callback.
+ */
+function InvalidateOnResize() {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    let frame = null;
+    const ro = new ResizeObserver(() => {
+      if (frame) cancelAnimationFrame(frame);
+      // animate:false - a size correction is not a camera movement and must not read
+      // as one; panning here would fight LockToSingapore's bounds.
+      frame = requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+    });
+    ro.observe(el);
+    return () => { if (frame) cancelAnimationFrame(frame); ro.disconnect(); };
+  }, [map]);
+  return null;
+}
+
+/**
+ * Reports the live zoom up to the page, so the basemap can follow the camera.
+ *
+ * Only a MapContainer CHILD can read the map, and the basemap is resolved in the parent,
+ * so the value has to be lifted rather than read where it is used.
+ */
+function ZoomReporter({ onZoom }) {
+  const map = useMap();
+  useMapEvents({ zoomend: () => onZoom(map.getZoom()) });
+  useEffect(() => { onZoom(map.getZoom()); }, [map, onZoom]);
+  return null;
+}
+
 function FitToData({ latlngs, fitSignal }) {
   const map = useMap();
   const lastSignal = useRef(fitSignal);
@@ -1037,6 +1360,12 @@ function PanelSection({ title, open, onToggle, children }) {
  * this dock is one where fewer is better. Direction is carried by the arrow and
  * the sign as well as the colour.
  */
+// Below this, a window-over-window change is shown as a count rather than a percentage.
+// 8 is judgement, not arithmetic: it is roughly where a one-report swing stops being able
+// to move the figure by more than ~12%, which is the point a percentage starts describing
+// the trend rather than the baseline's smallness.
+const MIN_PCT_BASE = 8;
+
 function TrendDelta({ current, previous, windowDays }) {
   const { resolvedMode } = useThemeMode();
   const trend = TREND[resolvedMode] || TREND.light;
@@ -1052,9 +1381,18 @@ function TrendDelta({ current, previous, windowDays }) {
       </Tooltip>
     );
   }
-  // A percentage needs a non-zero baseline to mean anything; fall back to the
-  // absolute change rather than printing a fake infinity.
-  const pct = previous > 0 ? Math.round((delta / previous) * 100) : null;
+  /* A PERCENTAGE NEEDS A BASELINE BIG ENOUGH TO CARRY ONE.
+   *
+   * This guarded `previous === 0` (which would be a fake infinity) but not `previous === 3`
+   * - and 3 -> 26 rendered as "+767%", which is arithmetically correct and operationally
+   * meaningless. It reads as either a data fault or a catastrophe, when the actual news is
+   * "23 more reports than last window". Percentages are a way to compare against a
+   * meaningful base; below MIN_PCT_BASE there is no meaningful base, so the absolute change
+   * is both smaller on screen and more informative.
+   *
+   * The tooltip has always carried the absolute change and the baseline, so nothing is
+   * lost either way - this only decides which of the two gets the 11.5px slot. */
+  const pct = previous >= MIN_PCT_BASE ? Math.round((delta / previous) * 100) : null;
   const rising = delta > 0;
   const colour = rising ? trend.bad : trend.good;   // fewer is better for all four
   const Icon = rising ? ArrowUpwardRoundedIcon : ArrowDownwardRoundedIcon;
@@ -1074,7 +1412,7 @@ function TrendDelta({ current, previous, windowDays }) {
   );
 }
 
-function StatCard({ value, label, accent, hint, loading, trend, alert = false, active = false, onToggle = null, dense = false }) {
+function StatCard({ value, label, accent, hint, loading, trend, spark = null, alert = false, active = false, onToggle = null, dense = false }) {
   return (
     // Elevated card on the sheet surface, not a grey well sunk into it. The
     // BRAND.section fill made the four metrics read as one recessed strip; a
@@ -1098,14 +1436,37 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
         cursor: onToggle ? 'pointer' : 'default',
         // ACTIVE = inverted, so a filtered map can never look like an unfiltered
         // one. The card is the only place the filter state is shown.
-        bgcolor: active ? ON_SURFACE.danger : BRAND.surface,
-        border: `1px solid ${active ? ON_SURFACE.danger : BRAND.border}`,
-        ...(alert && !active ? { borderLeft: `4px solid ${ON_SURFACE.danger}` } : null),
-        boxShadow: dense
-          ? '0 1px 2px rgba(16,24,40,.06)'
-          : '0 4px 12px rgba(16,24,40,.10), 0 1px 3px rgba(16,24,40,.06)',
-        transition: 'background-color .15s ease, border-color .15s ease',
-        ...(onToggle ? { '&:hover': { borderColor: ON_SURFACE.danger } } : null),
+        // A RIBBON IN `dense`, CARDS EVERYWHERE ELSE.
+        //
+        // The strip already sits on a BRAND.section band, and filling each cell with
+        // BRAND.surface on top of it produced four heavy white boxes floating on grey -
+        // three borders and a shadow each, to hold one number. In the header strip the
+        // band IS the container, so the cells go transparent and a hairline divider
+        // separates them instead. Four figures, one object.
+        //
+        // `active` still inverts to solid danger, because a filtered map must never look
+        // unfiltered. `alert` no longer needs a 4px left rule - the whole card is tinted,
+        // and a rule on top of a wash is the same statement made twice.
+        /* THE ALERT CARD IS TINTED, and it is the only one that is.
+         * A red figure and a red left rule only read as urgent once you are already
+         * looking at the cell, which is backwards for the one metric meant to pull the eye
+         * first. A wash across the whole card is visible in peripheral vision - it is what
+         * makes this card the anchor of the strip rather than the third thing you read.
+         * Kept MUTED (the --em-danger-bg token, not a saturated fill) because the figure,
+         * the triangle and the trend all still have to be legible on top of it. */
+        bgcolor: active
+          ? ON_SURFACE.danger
+          : (alert ? 'var(--em-danger-bg)' : BRAND.surface),
+        border: `1px solid ${active ? ON_SURFACE.danger : (alert ? 'var(--em-danger-border)' : BRAND.border)}`,
+        boxShadow: active ? 'none' : '0 1px 3px rgba(16,24,40,.07), 0 4px 10px -4px rgba(16,24,40,.10)',
+        transition: 'background-color .15s ease, border-color .15s ease, box-shadow .15s ease, transform .15s ease',
+        ...(onToggle ? {
+          '&:hover': {
+            borderColor: ON_SURFACE.danger,
+            boxShadow: '0 6px 16px -6px rgba(16,24,40,.22)',
+            transform: 'translateY(-1px)',
+          },
+        } : null),
         '&:focus-visible': { outline: `2px solid ${ON_SURFACE.danger}`, outlineOffset: 2 },
       }}
     >
@@ -1118,9 +1479,20 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
         <>
           {/* label above, integer below, trend pinned top-right */}
           <Stack direction="row" sx={{ alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: active ? 'rgba(255,255,255,.85)' : BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.9px', lineHeight: 1.35 }}>
-              {label}
-            </Typography>
+            {/* The alert metric gets a glyph on its LABEL, not its figure.
+                Red type alone made "high-risk locations" the same visual weight as the
+                three neutral counts beside it - the colour only reads as urgent once you
+                are already looking at it, which is backwards for the one cell meant to
+                pull the eye. A triangle is recognised before any digit is parsed, and it
+                survives greyscale, so urgency is not carried by hue alone. */}
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+              {alert && !active && (
+                <WarningAmberRoundedIcon sx={{ fontSize: 13, color: ON_SURFACE.danger, flexShrink: 0 }} aria-hidden />
+              )}
+              <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: active ? 'rgba(255,255,255,.85)' : BRAND.textLight, textTransform: 'uppercase', letterSpacing: '0.9px', lineHeight: 1.35 }}>
+                {label}
+              </Typography>
+            </Stack>
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
               {hint}
               {trend}
@@ -1137,6 +1509,13 @@ function StatCard({ value, label, accent, hint, loading, trend, alert = false, a
           {/* labels wrap rather than ellipsis: "High-risk locations" truncated to
               "HIGH-RISK LOCA…" at this column width, which is worse than two lines */}
 
+          {/* SPARKLINE, ONLY WHERE A REAL DAILY SERIES EXISTS - hence a prop rather than
+              something every card gets. See the call sites: two of the four metrics have a
+              genuine per-day series in this payload and two do not, and drawing a line
+              through two window totals would be a chart of two points dressed up as
+              history. Shares Spark with the dashboard KPI tiles rather than reimplementing
+              a second sparkline. */}
+          {spark}
         </>
       )}
     </Box>
@@ -1209,7 +1588,9 @@ export default function RodentRiskMap() {
   // map show a subset while the metric cards below still counted everything, and
   // an officer's first impression of the estate would under-report it. The
   // high-risk filter is one click away on the card, and says so when it is on.
-  const [viewMode, setViewMode] = useState('density'); // pins | density
+  // 'location' leads: it groups by the unit the rest of the app acts on. Density stays
+  // for genuinely zoomed-out scanning, where locations are too close to separate.
+  const [viewMode, setViewMode] = useState('location'); // location | pins | density
   // when true the map shows ONLY high/critical locations - driven by the metric
   // card, and always visibly reflected there
   const [highRiskOnly, setHighRiskOnly] = useState(false);
@@ -1217,6 +1598,7 @@ export default function RodentRiskMap() {
   // rather than synced in an effect, so a scheme change is reflected immediately
   // without a cascading render, and an explicit choice still wins.
   const [basemapChoice, setBasemapChoice] = useState(null);
+  const [mapZoom, setMapZoom] = useState(null);
   const [toolbarOpen, setToolbarOpen] = useState(true);
   // Layers | Filters | Legend. The panel carried seven stacked sections, which
   // meant scrolling past basemap choices to reach the legend.
@@ -1280,7 +1662,24 @@ export default function RodentRiskMap() {
   // Turning the sensor layer on used to force the dark basemap for the radar
   // look, which effectively made the layer dark-mode-only - the ramp is
   // near-opaque at the core, so it reads fine over the light basemap too.
-  const basemap = basemapChoice ?? (resolvedMode === 'dark' ? 'dark' : 'muted');
+  /**
+   * BASEMAP FOLLOWS THE CAMERA, until the officer overrides it.
+   *
+   * Zoomed out, the abstract ground is right: the whole point of Positron-no-labels is
+   * that the data layers are the only saturated thing on the canvas. Zoomed in past
+   * street level that inverts - the question stops being "where are the clusters" and
+   * becomes "what IS this spot", and grey tiles cannot answer it. So the aerial takes
+   * over at AERIAL_ZOOM.
+   *
+   * An explicit pick still wins and stays won: `basemapChoice` short-circuits this
+   * entirely, so a user who chooses Muted does not get overruled every time they zoom.
+   * The toggle reflects the resolved value, so an automatic switch is visible in the
+   * control rather than looking like the map misbehaving.
+   */
+  const basemap = basemapChoice
+    ?? (mapZoom != null && mapZoom >= AERIAL_ZOOM
+      ? 'satellite'
+      : (resolvedMode === 'dark' ? 'dark' : 'muted'));
   const sensorSurface = useSensorSurface({ enabled: showSensors, windowDays, councils: councilFilter });
   // same thresholds the contour bands are cut at, so the legend cannot drift
   const sensorBands = bandThresholds(sensorSurface.data?.scaleMax || 0, SENSOR_RAMP[resolvedMode].length);
@@ -1317,17 +1716,34 @@ export default function RodentRiskMap() {
    */
   const prev = (state.previous?.has_data && !cutoff) ? state.previous : null;
 
-  // reports per day, aligned to `days` - drives the histogram behind the scrubber
-  const dayCounts = useMemo(() => {
+  /**
+   * Per-day series, aligned to `days`.
+   *
+   * `dayCounts` (both layers combined) drives the histogram behind the scrubber, and is
+   * now derived by summing the two per-layer series rather than tallying twice - so the
+   * histogram and the KPI sparklines cannot disagree about a day's activity.
+   *
+   * Split out because the metric cards need the layers SEPARATELY: a sparkline under
+   * "Rodent reports" that included feeding sightings would be a line for a different
+   * number than the figure above it.
+   */
+  const { dayCounts, rodentByDay, feedingByDay } = useMemo(() => {
     const idx = new Map(days.map((d, i) => [d, i]));
-    const out = new Array(days.length).fill(0);
-    const tally = (list, childKey) => list.forEach(p => (p[childKey] || []).forEach(c => {
-      const i = idx.get(dayKey(c.createdAt));
-      if (i != null) out[i] += 1;
-    }));
-    tally(allRodent, 'assessments');
-    tally(allFeeding, 'sightings');
-    return out;
+    const tally = (list, childKey) => {
+      const out = new Array(days.length).fill(0);
+      list.forEach(p => (p[childKey] || []).forEach(c => {
+        const i = idx.get(dayKey(c.createdAt));
+        if (i != null) out[i] += 1;
+      }));
+      return out;
+    };
+    const rodent = tally(allRodent, 'assessments');
+    const feed = tally(allFeeding, 'sightings');
+    return {
+      rodentByDay: rodent,
+      feedingByDay: feed,
+      dayCounts: rodent.map((n, i) => n + feed[i]),
+    };
   }, [days, allRodent, allFeeding]);
 
   /**
@@ -1477,7 +1893,9 @@ export default function RodentRiskMap() {
   const boundaryInk = resolvedMode === 'dark' ? '#7D8CA3' : BRAND.slate;
 
   return (
-    <Box component="main" sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: BRAND.surface }}>
+    // `position: relative` so the timeline can float over the map rather than taking a
+    // band of its own beneath it - see the dock at the bottom of this render.
+    <Box component="main" sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: BRAND.surface }}>
       <GlobalStyles styles={{
         '.rk-marker': { cursor: 'pointer', background: 'transparent', border: 'none' },
         '.rk-marker:focus-visible': { outline: `3px solid ${BRAND.accent}`, outlineOffset: '2px', borderRadius: '30%' },
@@ -1697,9 +2115,22 @@ export default function RodentRiskMap() {
         <Box
           component="section"
           aria-label="Estate metrics for the selected window"
+          /* THE BAND GOES LIGHT SO THE CELLS CAN BE CARDS.
+           *
+           * These were transparent cells separated by hairlines drawn on the grid, and the
+           * reason was sound at the time: filling each one with BRAND.surface ON TOP of a
+           * BRAND.section band produced four heavy white boxes floating on grey - a
+           * container inside a container, three borders deep, to hold one number.
+           *
+           * The fix for that is not to flatten the cells, it is to stop the band being a
+           * container. With the band on the page surface the cards are the only object in
+           * the strip, so they can carry a border and a lift and read as four distinct
+           * metrics rather than as boxes on a box. Same reason the dividers are gone: a
+           * card has its own edge and does not need a rule as well.
+           */
           sx={{
-            flexShrink: 0, zIndex: 4, px: { xs: 2, md: 3 }, py: 1.25,
-            bgcolor: BRAND.section, borderBottom: `1px solid ${BRAND.border}`,
+            flexShrink: 0, zIndex: 4, px: { xs: 2, md: 3 }, py: 1.5,
+            bgcolor: BRAND.surface, borderBottom: `1px solid ${BRAND.border}`,
             display: 'grid', gap: 1.25, alignItems: 'stretch',
             gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
           }}
@@ -1710,6 +2141,7 @@ export default function RodentRiskMap() {
             value={totalAssessments}
             label="Rodent reports"
             trend={prev && <TrendDelta current={totalAssessments} previous={prev.totalAssessments} windowDays={windowDays} />}
+            spark={<Spark series={rodentByDay} color={SVG_ACCENT[resolvedMode].info} id="rk-reports" />}
           />
           <StatCard
             dense
@@ -1729,6 +2161,17 @@ export default function RodentRiskMap() {
             trend={prev?.mappedCount > 0
               ? <TrendDelta current={highRiskLocations} previous={prev.highRiskLocations} windowDays={windowDays} />
               : null}
+            /* NO SPARKLINE HERE, and not for want of trying.
+               The other two cards count events, so "how many on day N" is a real question
+               with a real answer in this payload. High-risk LOCATIONS is not a count of
+               events - it is a severity-weighted figure derived over the whole window, so
+               its daily equivalent would have to re-derive it for a rolling window ending
+               on each day. The API returns only the current window's assessments, so every
+               early point would be computed from a truncated window and the line would
+               slope upward for no reason other than having less data at the left.
+               A line that manufactures a trend is worse than no line. The delta pill states
+               the same comparison honestly, and it no longer prints "+767%" - see the
+               baseline guard in TrendDelta. */
           />
           <StatCard
             dense
@@ -1736,6 +2179,7 @@ export default function RodentRiskMap() {
             value={feeding.total}
             label="Feeding sightings"
             trend={prev && <TrendDelta current={feeding.total} previous={prev.feedingTotal} windowDays={windowDays} />}
+            spark={<Spark series={feedingByDay} color={FEEDING_INK} id="rk-feeding" />}
           />
           {/* The coverage caveat stays a first-class metric, not a footnote: at a
               glance it says how much of the estate the map is actually able to
@@ -1839,7 +2283,7 @@ export default function RodentRiskMap() {
               center={SG_CENTER}
               zoom={16}
               zoomControl={false}
-              maxBounds={SG_MAX_BOUNDS}
+              maxBounds={SG_PAN_BOUNDS}
               // 1.0, not 0.85: a soft edge let the canvas be dragged past Singapore
               // and rubber-band back, which still showed another country mid-drag.
               maxBoundsViscosity={1.0}
@@ -1848,10 +2292,21 @@ export default function RodentRiskMap() {
               minZoom={SG_MIN_ZOOM}
               style={{ height: '100%', width: '100%' }}
             >
-              <TileLayer key={basemap} attribution={TILE_ATTR} url={BASEMAPS[basemap].url} subdomains="abcd" maxZoom={20}
+              {/* Per-basemap attribution, subdomains and maxZoom rather than one hardcoded
+                  set: the aerial is Esri-served, has no {s} placeholder and stops at
+                  zoom 19, so a single shared config would misattribute it and let the
+                  map zoom past where tiles exist. */}
+              <TileLayer
+                key={basemap}
+                attribution={BASEMAPS[basemap].attribution || TILE_ATTR}
+                url={BASEMAPS[basemap].url}
+                subdomains={BASEMAPS[basemap].subdomains ?? 'abcd'}
+                maxZoom={BASEMAPS[basemap].maxZoom ?? 20}
                 eventHandlers={{ tileerror: () => setTileError(true) }} />
               <ZoomControl position="bottomright" />
-              <LockToSingapore bounds={SG_MAX_BOUNDS} />
+              <LockToSingapore bounds={SG_MAX_BOUNDS} panBounds={SG_PAN_BOUNDS} />
+              <ZoomReporter onZoom={setMapZoom} />
+              <InvalidateOnResize />
               <FitToData latlngs={dataLatLngs} fitSignal={fitSignal} />
               <FlyTo latlngs={coOccurLatLngs} signal={flySignal} />
               <RadiusPicker armed={radiusArmed} onPick={c => { setRadiusCentre(c); setRadiusArmed(false); }} />
@@ -1876,7 +2331,21 @@ export default function RodentRiskMap() {
                 <SensorSurfaceLayer surface={sensorSurface.data} mode={resolvedMode} />
               )}
 
-              {viewMode === 'density' ? (
+              {viewMode === 'location' ? (
+                <>
+                  {showRodent && (
+                    <LocationLayer
+                      points={shownRodent}
+                      dimNonCoOccur={showCoOccur}
+                      markerRefs={markerRefs}
+                      onCreateWorkOrder={setWoBlock}
+                      onDraftBriefing={openBriefing}
+                      onOpenVenue={setVenueBlock}
+                    />
+                  )}
+                  {showFeeding && <PointClusterLayer points={feedingPoints} kind="feeding" dimNonCoOccur={showCoOccur} />}
+                </>
+              ) : viewMode === 'density' ? (
                 <>
                   {showRodent && <DensityLayer points={shownRodent} mode={resolvedMode} />}
                   {/* feeding bins onto the SAME hex grid, so a rodent cell and a
@@ -2010,10 +2479,26 @@ export default function RodentRiskMap() {
                             key={`${p.lat},${p.lng}`}
                             direction="row"
                             spacing={1}
+                            /* Distinct cards, not rows on a grey band. The severity strip
+                               on the left edge was already here; what was missing was the
+                               card itself - on BRAND.section every entry merged into the
+                               panel behind it, so five items read as one block of grey with
+                               coloured ticks. On the card surface with a hairline and a
+                               flat shadow each one separates, and the strip then reads as
+                               that card's severity rather than a stripe in a list. */
                             sx={{
-                              alignItems: 'center', px: 1, py: 0.85, borderRadius: '8px',
-                              borderLeft: `3px solid ${sv.solid}`, bgcolor: BRAND.section,
-                              '&:hover': { bgcolor: BRAND.navySoft },
+                              alignItems: 'center', pl: 1, pr: 1, py: 1,
+                              borderRadius: `${RADII.inset}px`,
+                              borderLeft: `3px solid ${sv.solid}`,
+                              border: `1px solid ${BRAND.border}`,
+                              borderLeftWidth: 3, borderLeftColor: sv.solid,
+                              bgcolor: BRAND.surface,
+                              boxShadow: resolvedMode === 'dark' ? 'none' : '0 1px 2px rgba(16,24,40,.06)',
+                              transition: 'background-color .12s ease, box-shadow .12s ease',
+                              '&:hover': {
+                                bgcolor: BRAND.navySoft,
+                                boxShadow: resolvedMode === 'dark' ? 'none' : '0 2px 6px -1px rgba(16,24,40,.10)',
+                              },
                             }}
                           >
                             <Box
@@ -2026,9 +2511,22 @@ export default function RodentRiskMap() {
                                 '&:focus-visible': { outline: `2px solid ${BRAND.action}`, outlineOffset: 2 },
                               }}
                             >
-                              <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {p.block || 'Unlabelled block'}
-                              </Typography>
+                              {/* TITLE LEFT, SEVERITY BADGE RIGHT.
+                                  Severity was carried by the 3px left strip and by "score
+                                  34" - a colour and a raw number. The strip needs the
+                                  legend to decode and the score needs the weights key at
+                                  the bottom of the panel, so neither answers "how bad is
+                                  this one" on its own. The chip says the word.
+                                  It is the SAME SeverityChip the map popups use, so a
+                                  location reads identically in the list and on the pin -
+                                  and it puts severity in text, which is what stops this
+                                  card resting on colour alone. */}
+                              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
+                                <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexGrow: 1, minWidth: 0 }}>
+                                  {p.block || 'Unlabelled block'}
+                                </Typography>
+                                <Box sx={{ flexShrink: 0 }}><SeverityChip band={bandOf(p)} /></Box>
+                              </Stack>
                               {/* Recency, display only. Nothing on this map encoded
                                   time, so four critical reports from three months
                                   ago ranked and read exactly like four from
@@ -2070,6 +2568,7 @@ export default function RodentRiskMap() {
                 <PanelSection title="Layers" open={openSections.layers} onToggle={() => toggleSection('layers')}>
                   <Typography sx={SECTION_LABEL}>View</Typography>
                   <ToggleButtonGroup value={viewMode} exclusive size="small" fullWidth onChange={(_e, v) => v && setViewMode(v)} sx={{ mb: 1.5 }}>
+                    <ToggleButton value="location" sx={{ textTransform: 'none', fontSize: 12.5, py: 0.4 }}>Location</ToggleButton>
                     <ToggleButton value="pins" sx={{ textTransform: 'none', fontSize: 12.5, py: 0.4 }}>Pins</ToggleButton>
                     <ToggleButton value="density" sx={{ textTransform: 'none', fontSize: 12.5, py: 0.4 }}>Density</ToggleButton>
                   </ToggleButtonGroup>
@@ -2239,7 +2738,12 @@ export default function RodentRiskMap() {
                       <Typography sx={{ fontSize: 11.5, color: BRAND.text, lineHeight: 1.6 }}>
                         {viewMode === 'density'
                           ? 'Pin colour = severity · ! marks critical. Severity bands above apply to pins and popups.'
-                          : 'Colour = severity · bigger pin = more reports · ! marks critical.'}
+                          : viewMode === 'location'
+                            // Location markers carry the count as a NUMBER, so promising
+                            // "bigger = more reports" here would be false: width tracks how
+                            // many digits the number has, nothing else.
+                            ? 'Colour = worst severity at that location · the number is the report count.'
+                            : 'Colour = severity · bigger pin = more reports · ! marks critical.'}
                       </Typography>
 
                       {/* THE SCORE KEY. "score 34" appears on every Action required
@@ -2257,6 +2761,30 @@ export default function RodentRiskMap() {
                             .map(b => `${BAND_LABEL[b].toLowerCase()} ${state.weights[b]}`)
                             .join(' · ')}
                         </Typography>
+                      )}
+
+                      {/* SHAPE KEY. Shape is doing semantic work in Location view - it is
+                          the difference between a residential block (town council's own
+                          contractor) and a premises like a mall or eatery (NEA / the
+                          licensee). An unexplained shape difference invites the officer to
+                          read it as decoration, so it is spelled out, and the caveat that
+                          it is inferred from the label is stated rather than hidden. */}
+                      {viewMode === 'location' && (
+                        <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${BRAND.border}` }}>
+                          <Typography component="h2" sx={{ ...SECTION_LABEL, mb: 0.75 }}>Location type</Typography>
+                          <Stack direction="row" spacing={2} sx={{ mb: 0.75 }}>
+                            {[{ r: '4px', t: 'Block' }, { r: '50%', t: 'Premises' }].map(o => (
+                              <Stack key={o.t} direction="row" spacing={0.75} alignItems="center">
+                                <Box aria-hidden sx={{ width: 13, height: 13, borderRadius: o.r, bgcolor: BRAND.textLight, border: '1.5px solid #fff', boxShadow: `0 0 0 1px ${BRAND.border}`, boxSizing: 'border-box', flexShrink: 0 }} />
+                                <Typography sx={{ fontSize: 11.5, color: BRAND.text }}>{o.t}</Typography>
+                              </Stack>
+                            ))}
+                          </Stack>
+                          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.6 }}>
+                            Inferred from the report label - a label like &ldquo;Blk 128&rdquo; is read as a
+                            block, anything else as premises. The full label is always shown in the popup.
+                          </Typography>
+                        </Box>
                       )}
 
                       {viewMode === 'density' && (
@@ -2337,20 +2865,35 @@ export default function RodentRiskMap() {
                 </Box>
               </Box>
             ) : (
-              // collapsed rail, docked on the same edge the panel occupies
-              <Box sx={{
-                bgcolor: BRAND.surface, display: 'flex', justifyContent: 'center',
-                alignItems: { xs: 'center', lg: 'flex-start' }, py: 1,
-                width: { xs: '100%', lg: 44 }, flexShrink: 0,
-                borderTop: { xs: `1px solid ${BRAND.border}`, lg: 'none' },
-                borderLeft: { lg: `1px solid ${BRAND.border}` },
-              }}>
-                <Tooltip title="Map controls" placement="left">
-                  <IconButton onClick={() => setToolbarOpen(true)} aria-label="Open map controls" sx={railBtn}>
-                    <TuneRoundedIcon sx={{ fontSize: 19 }} />
-                  </IconButton>
-                </Tooltip>
-              </Box>
+              /* COLLAPSED: the button FLOATS over the map, it does not dock.
+                 The rail was a 44px full-height column filled with BRAND.surface, so
+                 closing the panel traded a 320px white sidebar for a 44px white one -
+                 the icon sat at the top and the rest was an empty strip running the
+                 height of the canvas, right where the map should have been.
+                 The "docked, not floating" note on the open panel still holds for the
+                 PANEL: 320px of chrome hovering over pins hides an unpredictable part of
+                 the estate. It does not hold for one button, which occludes a corner and
+                 gives the map back its full width. Same translucent-blur treatment as the
+                 timeline pill, so the two floating controls read as one system. */
+              <Tooltip title="Map controls" placement="left">
+                <IconButton
+                  onClick={() => setToolbarOpen(true)}
+                  aria-label="Open map controls"
+                  sx={{
+                    ...railBtn,
+                    position: 'absolute', top: 12, right: 12, zIndex: 1100,
+                    border: `1px solid ${BRAND.border}`,
+                    boxShadow: '0 4px 14px -4px rgba(16,24,40,.28)',
+                    bgcolor: BRAND.surface,
+                    '@supports (backdrop-filter: blur(1px))': {
+                      bgcolor: resolvedMode === 'dark' ? 'rgba(27,34,45,.86)' : 'rgba(255,255,255,.86)',
+                      backdropFilter: 'blur(10px) saturate(140%)',
+                    },
+                  }}
+                >
+                  <TuneRoundedIcon sx={{ fontSize: 19 }} />
+                </IconButton>
+              </Tooltip>
             ))}
       </Box>
 
@@ -2364,9 +2907,29 @@ export default function RodentRiskMap() {
           is the transport now, so with a single day it would be an empty sheet
           under a "Show timeline" button that reveals nothing. */}
       {!state.error && days.length > 1 && (
-        // The sheet keeps the page field rather than a white fill, so the dock
-        // reads as a distinct surface from the map canvas above it.
-        <Box sx={{ flexShrink: 0, borderTop: `1px solid ${BRAND.border}`, bgcolor: BRAND.section }}>
+        /* FLOATING, CENTRED, PILL-SHAPED - it no longer costs the map a band.
+           As a flexShrink:0 sheet below the canvas this took ~90px of height off the map
+           permanently, whether or not anyone was scrubbing. Floating, the map keeps that
+           height and the transport sits over the least useful part of the frame.
+           Translucent with a blur rather than an opaque fill, so the canvas underneath is
+           sensed and the panel does not read as a hole punched in the map. maxWidth keeps
+           it a pill on a wide screen instead of a stretched bar, and it stays above
+           Leaflet's own controls (z-index 1000). */
+        <Box
+          sx={{
+            position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1100, width: 'calc(100% - 32px)', maxWidth: 720,
+            borderRadius: `${RADII.pill}px`,
+            border: `1px solid ${BRAND.border}`,
+            bgcolor: BRAND.section,
+            boxShadow: '0 10px 30px -8px rgba(16,24,40,.28)',
+            overflow: 'hidden',
+            '@supports (backdrop-filter: blur(1px))': {
+              bgcolor: resolvedMode === 'dark' ? 'rgba(22,28,38,.82)' : 'rgba(243,244,246,.86)',
+              backdropFilter: 'blur(12px) saturate(140%)',
+            },
+          }}
+        >
           <Collapse in={dockOpen}>
             <Box sx={{ px: { xs: 2, md: 3 }, py: 1.5 }}>
                 <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
