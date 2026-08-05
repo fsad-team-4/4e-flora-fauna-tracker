@@ -58,6 +58,7 @@ const createSchema = yup.object({
     .positive('Max height must be a positive number')
     .nullable(),
   image_url: yup.string().trim().url().nullable(),
+  is_catalog_only: yup.boolean().default(false),
 });
 
 const updateSchema = yup.object({
@@ -98,6 +99,9 @@ function parseCSV(buffer) {
 // Get all active plant assets
 async function getAllGreenery(req, res) {
   const where = { is_deleted: false };
+  if (req.query.include_catalog !== 'true') {
+    where.is_catalog_only = false;
+  }
   if (req.query.health_status) {
     where.health_status = req.query.health_status;
   }
@@ -216,6 +220,7 @@ async function bulkUploadCSV(req, res) {
   const rows = parseCSV(req.file.buffer);
   const created = [];
   const errors = [];
+  const isCatalogOnly = req.body.is_catalog_only === 'true';
 
   for (let i = 0; i < rows.length; i++) {
     try {
@@ -232,6 +237,7 @@ async function bulkUploadCSV(req, res) {
         color: data.color,
         max_height_at_maturity: data.max_height_at_maturity,
         last_inspected_at: data.last_inspected_at,
+        is_catalog_only: isCatalogOnly,
         recorded_by: req.user.user_id,
       });
       created.push(record);
