@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Card, CardContent, Box, Stack, Typography, Skeleton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TableSortLabel, Tooltip,
+  TableContainer, TableHead, TableRow, TableSortLabel, Tooltip, Link,
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { useTheme } from '@mui/material/styles';
@@ -20,6 +20,10 @@ const SIGNAL_INK = {
 // says so in its own column rather than burying it in prose.
 const SMALL_SAMPLE = 10;
 
+// 6 rows: this card sits full-width in its own zone, and six is enough to read the top of
+// any sort without the card becoming the page. The bounded scroll below handles the rest.
+const VISIBLE_ROWS = 6;
+
 function fmtDate(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -33,6 +37,75 @@ function orderingFlag(block) {
   const feedTime = new Date(block.firstFeedingDate).getTime();
   const rodentTime = new Date(block.firstRodentDate).getTime();
   return !Number.isNaN(feedTime) && !Number.isNaN(rodentTime) && feedTime > rodentTime;
+}
+
+/**
+ * THE EVIDENCE STRIP - the compact summary, and the only part of this card whose size
+ * does not grow with the estate.
+ *
+ * The table can show six rows. What it cannot show is how much of the co-occurrence set
+ * is actually ACTIONABLE, and here that is the whole question: this panel exists to
+ * decide whether to send a feeding advisory instead of another pest call-out, and two of
+ * its three outcomes say "not yet". Forty co-occurring blocks of which three are
+ * supported is a very different morning than forty of which thirty are.
+ *
+ * It reuses orderingFlag() and SMALL_SAMPLE - the SAME two rules the Significance column
+ * applies per row - rather than defining its own. A summary that graded blocks by a
+ * second rule could contradict the rows directly beneath it, which is worse than having
+ * no summary at all.
+ *
+ * The three outcomes, in the order an officer cares about them:
+ *  - SUPPORTED    enough records, and feeding was logged BEFORE the rodent reports. This
+ *                 is the set a feeding advisory is defensible on.
+ *  - EARLY        under SMALL_SAMPLE records. The pattern may be real; there is not yet
+ *                 enough of it to act on.
+ *  - ORDER        feeding was first logged AFTER the rodent reports, so it cannot be the
+ *                 driver of them. Still co-occurrence, still worth knowing, but not
+ *                 evidence for food waste as a cause.
+ */
+function classify(block) {
+  if (orderingFlag(block)) return 'order';
+  if ((block.sampleSize || 0) < SMALL_SAMPLE) return 'early';
+  return 'supported';
+}
+
+const EVIDENCE_TIERS = [
+  { id: 'supported', label: 'Supported', hint: `Feeding logged before the rodent reports, and ${SMALL_SAMPLE}+ records behind it - a feeding advisory is defensible here.` },
+  { id: 'early', label: 'Too early', hint: `Fewer than ${SMALL_SAMPLE} records. The pattern may be real but there is not enough of it yet.` },
+  { id: 'order', label: 'Order rules it out', hint: 'Feeding was first logged after the rodent reports, so it cannot be driving them.' },
+];
+
+function EvidenceStrip({ blocks, mode }) {
+  const counts = EVIDENCE_TIERS.map(t => ({ ...t, n: blocks.filter(b => classify(b) === t.id).length }));
+  // Only `supported` gets a semantic colour. Tinting all three would imply three
+  // severities where there is one conclusion and two kinds of "we do not know yet".
+  const inkFor = id => (id === 'supported' ? SIGNAL_INK[mode].rodent : BRAND.textLight);
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Box
+        role="img"
+        aria-label={counts.map(c => `${c.n} ${c.label}`).join(', ')}
+        sx={{ display: 'flex', gap: '2px', height: 10, borderRadius: `${RADII.chip}px`, overflow: 'hidden' }}
+      >
+        {counts.filter(c => c.n > 0).map(c => (
+          <Tooltip key={c.id} arrow title={`${c.n} block${c.n === 1 ? '' : 's'} - ${c.hint}`}>
+            <Box sx={{ flexGrow: c.n, flexBasis: 0, bgcolor: c.id === 'supported' ? SIGNAL_INK[mode].rodent : BRAND.border, minWidth: 3 }} />
+          </Tooltip>
+        ))}
+      </Box>
+      <Stack direction="row" sx={{ mt: 0.6, gap: 2, flexWrap: 'wrap' }}>
+        {counts.map(c => (
+          <Tooltip key={c.id} arrow title={c.hint}>
+            <Typography sx={{ fontSize: 11, color: BRAND.textLight, cursor: 'help' }}>
+              <Box component="span" sx={{ fontWeight: 800, color: inkFor(c.id) }}>{c.n}</Box>
+              {` ${c.label.toLowerCase()}`}
+            </Typography>
+          </Tooltip>
+        ))}
+      </Stack>
+    </Box>
+  );
 }
 
 // A pill is reserved for genuine STATUS. The ordering caveat is one (it changes how
@@ -279,6 +352,10 @@ export default function FeedingRodentCorrelation() {
     });
   }, [state.blocks, orderBy, order]);
 
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? sorted : sorted.slice(0, VISIBLE_ROWS);
+  const hidden = sorted.length - visible.length;
+
   const sortBy = id => {
     if (orderBy === id) setOrder(o => (o === 'asc' ? 'desc' : 'asc'));
     else { setOrderBy(id); setOrder(id === 'block_number' ? 'asc' : 'desc'); }
@@ -301,7 +378,8 @@ export default function FeedingRodentCorrelation() {
             <InfoOutlinedIcon sx={{ fontSize: 16, color: BRAND.textLight, cursor: 'help' }} />
           </Tooltip>
         </Stack>
-        <Stack sx={{ mb: 2 }}>
+        {/* mb 2.5 - one header gap across every dashboard card. See RecentActivity. */}
+        <Stack sx={{ mb: 2.5 }}>
           <Typography variant="body2" sx={{ color: BRAND.textLight, minWidth: 0 }}>
             Blocks where feeding activity co-occurs with rodent risk over the last {state.windowDays} days -
             worth investigating for food waste as a root cause
@@ -329,6 +407,8 @@ export default function FeedingRodentCorrelation() {
                 width and leaving dead space on the right. */}
             {/* capped height + stickyHeader: the column labels stay put while long
                 block lists scroll, so context is never lost mid-table */}
+            <EvidenceStrip blocks={state.blocks} mode={mode} />
+
             <TableContainer sx={{ overflowX: 'auto', maxHeight: 460 }}>
               <Table stickyHeader size="small" sx={{ minWidth: 560, width: '100%', tableLayout: 'fixed' }}>
                 <TableHead>
@@ -359,11 +439,31 @@ export default function FeedingRodentCorrelation() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {sorted.map(b => <BlockRow key={b.block_number} block={b} />)}
+                  {visible.map(b => <BlockRow key={b.block_number} block={b} />)}
                 </TableBody>
               </Table>
             </TableContainer>
 
+            {/* The omitted count is printed rather than implied. A table cut at six rows
+                with nothing said about it reads as "six blocks co-occur", which is a
+                different and much more reassuring claim than the truth. */}
+            <Stack direction="row" sx={{ mt: 1.5, gap: 1.5, alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>
+                {hidden > 0
+                  ? `Top ${visible.length} of ${sorted.length} co-occurring blocks`
+                  : `All ${sorted.length} co-occurring block${sorted.length === 1 ? '' : 's'}`}
+              </Typography>
+              {(hidden > 0 || showAll) && (
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={() => setShowAll(v => !v)}
+                  sx={{ fontSize: 11.5, fontWeight: 700, color: SIGNAL_INK[mode].feeding, textDecorationColor: 'currentColor' }}
+                >
+                  {showAll ? `Show top ${VISIBLE_ROWS}` : `Show all ${sorted.length}`}
+                </Link>
+              )}
+            </Stack>
           </>
         )}
       </CardContent>

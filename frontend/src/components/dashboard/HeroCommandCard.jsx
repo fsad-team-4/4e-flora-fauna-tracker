@@ -9,25 +9,23 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import { useTheme, alpha } from '@mui/material/styles';
 import {
-  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { BRAND, HEALTH_META, GAUGE_ZONES, TREND, SURFACE, NEON, RADII, surfaceSx, glow } from '../../theme';
+import { BRAND, HEALTH_META, TREND, SURFACE, SVG_ACCENT, RADII, surfaceSx } from '../../theme';
+import { Spark } from './KpiStack';
 
-const HEALTHY_MAX = 25;
-const WATCH_MAX = 60;
+// HEALTHY_MAX / WATCH_MAX went with RiskGauge - the band thresholds were only ever
+// used to draw its three arcs. HEALTH_META still carries the band name and colour.
 const RANGES = [7, 30, 90];
 
 /**
- * ONE HERO CARD, replacing two.
+ * Two cards live in this file: the risk index and the activity trend. They were one
+ * merged hero card; they were split so the risk index can sit in a row of equal KPI
+ * cards and the trend can have a row of its own.
  *
- * The risk index and the activity chart were separate full-width cards, each spending a
- * lot of vertical space on one idea. Merged, the card answers "how bad is it" and "what
- * has it been doing" in a single glance, and the page gets a screen back.
- *
- * NEON IS SCOPED TO THE DATA LAYER. The two series are cyan and purple with a glow; the
- * gauge stays on the SEMANTIC status inks, because which band the risk sits in is a
- * status claim and this codebase reserves red/amber/green for exactly that. Chrome -
- * buttons, nav, the CTA - stays EM Services crimson and navy elsewhere.
+ * THE CHART SERIES ARE PRIMARY-PLUS-NEUTRAL, not NEON - see SERIES. The risk band uses the
+ * SEMANTIC status inks, because which band the risk sits in is a status claim and this
+ * codebase reserves red/amber/green for exactly that. Chrome stays crimson and navy.
  */
 
 // Count-up from 0 on mount, then tweening from wherever it already is, so a 60s poll
@@ -56,70 +54,6 @@ function useCountUp(target, duration = 900) {
     return () => { if (frame.current) cancelAnimationFrame(frame.current); };
   }, [target, duration, numeric, reduced]);
   return numeric ? shown : 0;
-}
-
-/**
- * 270-degree gauge. Two layers: the three REAL threshold bands as a quiet track, and a
- * bright progress arc up to the score. So it answers both "how full" and "which band" -
- * a plain ring answers only the first, coloured segments only the second.
- */
-function RiskGauge({ score, animated, meta, size = 148 }) {
-  const mode = useTheme().palette.mode;
-  const s = SURFACE[mode] || SURFACE.dark;
-  const stroke = 12;
-  const r = (size - stroke) / 2;
-  const c = size / 2;
-  const START = 135, SWEEP = 270;
-  const point = (pct) => {
-    const rad = ((START + (SWEEP * Math.max(0, Math.min(100, pct))) / 100) * Math.PI) / 180;
-    return [c + r * Math.cos(rad), c + r * Math.sin(rad)];
-  };
-  const arc = (from, to) => {
-    const [x1, y1] = point(from);
-    const [x2, y2] = point(to);
-    const large = ((to - from) / 100) * SWEEP > 180 ? 1 : 0;
-    return `M ${x1.toFixed(2)} ${y1.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
-  };
-  const bands = [
-    { key: 'healthy', from: 0, to: HEALTHY_MAX, ...GAUGE_ZONES.healthy },
-    { key: 'watch', from: HEALTHY_MAX, to: WATCH_MAX, ...GAUGE_ZONES.watch },
-    { key: 'critical', from: WATCH_MAX, to: 100, ...GAUGE_ZONES.critical },
-  ];
-
-  return (
-    <Box sx={{ position: 'relative', width: size, height: size, flexShrink: 0, mx: 'auto' }}>
-      <Box
-        component="svg"
-        viewBox={`0 0 ${size} ${size}`}
-        role="img"
-        aria-label={`Estate risk index ${score} of 100, in the ${meta.label} band. Bands: ${bands.map(b => `${b.label} ${b.from} to ${b.to === 100 ? 100 : b.to - 1}`).join(', ')}.`}
-        sx={{
-          width: size, height: size, display: 'block',
-          // the glow sits on the ARC, not on a box behind the card
-          filter: mode === 'dark' ? `drop-shadow(0 0 10px ${alpha(meta.ink, 0.45)})` : 'none',
-        }}
-      >
-        <path d={arc(0, 100)} fill="none" stroke={s.raised} strokeWidth={stroke} strokeLinecap="round" />
-        {bands.map(b => (
-          <path key={b.key} d={arc(b.from, b.to)} fill="none" stroke={b.fill}
-            strokeOpacity={mode === 'dark' ? 0.2 : 0.16} strokeWidth={stroke} strokeLinecap="butt" />
-        ))}
-        <path d={arc(0, Math.max(animated, 0.6))} fill="none" stroke={meta.display}
-          strokeWidth={stroke} strokeLinecap="round" />
-      </Box>
-      <Stack sx={{ position: 'absolute', inset: 0, alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-        <Stack direction="row" spacing={0.3} sx={{ alignItems: 'baseline' }}>
-          <Typography sx={{ fontSize: 40, fontWeight: 700, lineHeight: 1, letterSpacing: '-1.6px', color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
-            {animated}
-          </Typography>
-          <Typography sx={{ fontSize: 14, fontWeight: 600, color: BRAND.textLight }}>/100</Typography>
-        </Stack>
-        <Typography sx={{ mt: 0.3, fontSize: 11, fontWeight: 700, color: meta.display, textAlign: 'center' }}>
-          {meta.label}
-        </Typography>
-      </Stack>
-    </Box>
-  );
 }
 
 // Movement pill. TREND's colour is a MEASURED good/bad for this metric, so green here is
@@ -161,53 +95,260 @@ const fmtDay = (iso) => {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' });
 };
 
-// Floating value chips at the crosshair, the reference's treatment - they read as labels
-// attached to the two lines rather than as a panel appearing over the chart.
-function CrosshairChips({ active, payload, label }) {
+/**
+ * ONE HIGH-CONTRAST PANEL AT THE CROSSHAIR, not two floating chips.
+ *
+ * The chips read as labels attached to the two lines, which was the intent, but they had a
+ * defect that mattered more than the styling: the payload was FILTERED to numeric values,
+ * so on a day where one series had no reading, that series silently vanished from the
+ * readout. A tooltip whose job is "the exact numbers for both series on this day" cannot
+ * quietly drop one of them - the reader has no way to tell "zero" from "not shown".
+ *
+ * Both series are now always listed, in a fixed order, with an em-dash where there is no
+ * reading. Fixed order matters too: recharts hands over the payload in render order, so a
+ * changing sequence would have moved the rows around under the pointer.
+ *
+ * STARK, because it sits on top of the chart's own gradients and gridlines. A translucent
+ * or lightly-bordered panel over a filled area chart is unreadable at the crossing points,
+ * which is exactly where a reader most wants a number - hence a solid surface, a full
+ * border and a hard shadow rather than the soft chip treatment.
+ */
+function CrosshairChips({ active, payload, label, series = [] }) {
   if (!active || !payload?.length) return null;
+  const valueOf = key => {
+    const hit = payload.find(p => p.dataKey === key);
+    return typeof hit?.value === 'number' ? hit.value : null;
+  };
   return (
-    <Box>
-      <Stack direction="row" spacing={0.75} sx={{ mb: 0.5 }}>
-        {payload.filter(p => typeof p.value === 'number').map(p => (
-          <Stack key={p.dataKey} direction="row" spacing={0.6}
-            sx={{
-              alignItems: 'center', bgcolor: BRAND.surface, borderRadius: `${RADII.pill}px`,
-              px: 1.1, py: 0.5, boxShadow: '0 6px 18px -6px rgba(0,0,0,.5)',
-            }}>
-            <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: p.color, flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
-              {p.value}
-            </Typography>
-            <Typography sx={{ fontSize: 11, color: BRAND.textLight, whiteSpace: 'nowrap' }}>
-              {p.dataKey === 'openCases' ? 'open' : 'sightings'}
-            </Typography>
-          </Stack>
-        ))}
+    <Box
+      sx={{
+        bgcolor: BRAND.surface,
+        border: `1px solid ${BRAND.border}`,
+        borderRadius: `${RADII.inset}px`,
+        boxShadow: '0 10px 24px -8px rgba(16,24,40,.45), 0 2px 6px -2px rgba(16,24,40,.25)',
+        px: 1.25, py: 1, minWidth: 156,
+      }}
+    >
+      <Typography sx={{ fontSize: 11.5, fontWeight: 700, color: BRAND.textLight, mb: 0.6, letterSpacing: '0.3px' }}>
+        {fmtDay(label)}
+      </Typography>
+      <Stack spacing={0.4}>
+        {series.map(sr => {
+          const v = valueOf(sr.key);
+          return (
+            <Stack key={sr.key} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+              <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '2px', bgcolor: sr.color, flexShrink: 0 }} />
+              <Typography sx={{ fontSize: 12, color: BRAND.text, flexGrow: 1, whiteSpace: 'nowrap' }}>
+                {sr.name}
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: 13, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
+                  color: v == null ? BRAND.textLight : BRAND.heading,
+                }}
+              >
+                {v == null ? '—' : v}
+              </Typography>
+            </Stack>
+          );
+        })}
       </Stack>
-      <Typography sx={{ fontSize: 11, color: BRAND.textLight, textAlign: 'center' }}>{fmtDay(label)}</Typography>
     </Box>
   );
 }
 
-export default function HeroCommandCard({
-  estateHealth, scorecard = null, trends = null,
-  history = [], sightingsByDay = [], openCases = 0,
-  windowDays = 7, onWindowChange, loading = false,
-}) {
+/**
+ * THE RISK INDEX, AS ITS OWN CARD.
+ *
+ * The gauge and the activity chart used to share one full-width card - "instrument
+ * left, trend right". They are separated so the risk index can lead a row of equal
+ * KPI cards (it is the most important single figure on the page, so it takes the
+ * first slot, top-left, where the eye lands) and the chart can have the full width
+ * to itself underneath.
+ *
+ * COMPACT AND TYPOGRAPHIC, so the hero row is four cards of equal height.
+ *
+ * It used to carry a 148px gauge AND the Prevention impact block, which made it tower
+ * over the three plain KPI tiles beside it and left a band of dead space under them.
+ * The gauge is gone entirely - a 270-degree arc to render one two-digit number - and
+ * Prevention impact moved out to PreventionImpactCard. What is left is the score set
+ * like the other tiles' figures, plus a dot and the band name. `scorecard` went with
+ * the Prevention block; this card reads only estateHealth now.
+ */
+export function RiskIndexCard({ estateHealth, scoreSeries = null, loading = false }) {
   const mode = useTheme().palette.mode;
-  const s = SURFACE[mode] || SURFACE.dark;
-  const n = NEON[mode] || NEON.dark;
-  const trend = TREND[mode] || TREND.light;
   const meta = HEALTH_META[estateHealth?.status] || HEALTH_META.watch;
   const hasScore = estateHealth != null && typeof estateHealth.score === 'number';
   const score = hasScore ? estateHealth.score : 0;
   const animated = useCountUp(score);
 
-  // Cyan for the backlog, purple for the daily events. Both non-semantic, so neither
-  // can be misread as a status.
+  return (
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 }, '&:last-child': { pb: { xs: 2.25, md: 2.75 } } }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1.5 }}>
+              {/* Same label treatment as the three KPI tiles beside it - 11px, 700,
+                  uppercase, tracked, muted. It was 15px/600 in heading ink, which read as
+                  a card TITLE while the others read as field labels, so the first cell
+                  looked like a different kind of component. */}
+              <Typography
+                component="h2"
+                sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: BRAND.textLight }}
+              >
+                Estate Risk Index
+              </Typography>
+              <MuiTooltip
+                arrow
+                title="A weighted 0-100 index of three shares: flora health (45%), the share of cases still open (35%) and hotspot pressure (20%). Because it reads shares rather than raw counts, a larger estate with the same number of problems scores lower. Higher means more needs attention. Bands: Healthy under 25, Monitor 25-59, Needs Attention 60 and above."
+              >
+                <InfoOutlinedIcon sx={{ fontSize: 15, color: BRAND.textLight, cursor: 'help', flexShrink: 0 }} />
+              </MuiTooltip>
+            </Stack>
+
+            {/* TYPOGRAPHY, NOT A GAUGE.
+                The 270-degree arc is gone. It spent a whole card's height drawing one
+                two-digit number, which is what made this cell tower over the three KPI
+                tiles beside it and left a band of dead space under them. It also read
+                muddy: three translucent band arcs under a progress arc is a lot of ink
+                for "48".
+                The band is now a coloured dot beside the label, and the score is set
+                like the other tiles' figures - same size, same weight, same tabular
+                numerals - so the row reads as four of a kind. The dot is never the only
+                cue: the band name is written next to it. */}
+            {loading && !hasScore ? (
+              <Skeleton variant="text" width={120} height={52} />
+            ) : hasScore ? (
+              <Box>
+                <Stack direction="row" spacing={0.4} sx={{ alignItems: 'baseline' }}>
+                  <Typography
+                    sx={{
+                      fontSize: 40, fontWeight: 700, lineHeight: 1, letterSpacing: '-1.4px',
+                      color: BRAND.heading, fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {animated}
+                  </Typography>
+                  <Typography sx={{ fontSize: 14, fontWeight: 600, color: BRAND.textLight }}>/100</Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.7} sx={{ alignItems: 'center', mt: 1 }}>
+                  <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: meta.display, flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: BRAND.text }}>{meta.label}</Typography>
+                </Stack>
+                {/* The score's own history, in the band's colour. Parity with the three
+                    tiles beside it: without this the risk card was the one cell with a
+                    sparse lower half, and stretching the row to equal heights made that
+                    empty space bigger rather than smaller. */}
+                <Spark series={scoreSeries} color={meta.display} />
+              </Box>
+            ) : (
+              <Box sx={{ py: 4, textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 30, fontWeight: 700, color: BRAND.textLight, lineHeight: 1.15 }}>No data</Typography>
+                <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.75 }}>
+                  No scored data yet - this is not a healthy reading, it is an absent one.
+                </Typography>
+              </Box>
+            )}
+
+          </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * PREVENTION IMPACT, as its own card.
+ *
+ * These figures were an inset block inside the risk card, which is what made that card
+ * tower over the three KPI tiles beside it. They are not a risk reading - they answer
+ * "what has the programme bought you" - so they earn their own cell rather than being
+ * stapled under a gauge. Kept at 20px: the risk score says how bad things are, but
+ * "90% fewer repeats" and "S$640 saved" are what the service is judged on.
+ */
+export function PreventionImpactCard({ scorecard = null }) {
+  const mode = useTheme().palette.mode;
+  const trend = TREND[mode] || TREND.light;
+  const sum = scorecard?.summary;
+  const repeat = sum?.repeat_risk_reduction;
+
+  return (
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
+      <CardContent sx={{ p: { xs: 2.25, md: 2.75 }, '&:last-child': { pb: { xs: 2.25, md: 2.75 } } }}>
+        <Typography
+          component="h2"
+          sx={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.6px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1.5 }}
+        >
+          Prevention impact
+        </Typography>
+        {repeat != null ? (
+          <Stack spacing={1.5}>
+            {[
+              {
+                v: `${Math.round(Math.abs(repeat) * 100)}%`,
+                l: repeat > 0 ? 'fewer repeat cases' : 'change in repeats',
+                ink: repeat > 0 ? trend.good : BRAND.heading,
+              },
+              { v: `S$${(sum.est_savings || 0).toLocaleString('en-SG')}`, l: 'estimated savings', ink: BRAND.heading },
+              { v: sum.call_outs_avoided, l: 'call-outs avoided', ink: BRAND.heading },
+            ].map(c => (
+              <Stack key={c.l} direction="row" spacing={1} sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 12.5, color: BRAND.text, minWidth: 0 }}>{c.l}</Typography>
+                <Typography
+                  sx={{
+                    fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: c.ink,
+                    fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.4px', flexShrink: 0,
+                  }}
+                >
+                  {c.v}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        ) : !scorecard ? (
+          <Stack spacing={1.5}>
+            {[0, 1, 2].map(i => <Skeleton key={i} variant="text" height={28} />)}
+          </Stack>
+        ) : (
+          <Typography sx={{ fontSize: 12, color: BRAND.textLight, lineHeight: 1.5 }}>
+            Prevention impact not measurable yet - close out work orders to start tracking it.
+          </Typography>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * ESTATE ACTIVITY, FULL WIDTH.
+ *
+ * Was the right-hand column of the old merged hero, sharing the row with the gauge.
+ * On its own row it gets the whole measure, which is what a time series wants - more
+ * horizontal room per day means the daily readings stop crowding each other.
+ */
+export default function ActivityCard({
+  trends = null, history = [], sightingsByDay = [], openCases = 0,
+  windowDays = 7, onWindowChange,
+}) {
+  const mode = useTheme().palette.mode;
+  const s = SURFACE[mode] || SURFACE.dark;
+  const svg = SVG_ACCENT[mode] || SVG_ACCENT.dark;
+  const trendInk = TREND[mode] || TREND.light;
+
+  /**
+   * PRIMARY BLUE + NEUTRAL SLATE, not cyan + purple.
+   *
+   * Two volume series on one plot genuinely need two separable inks, and only one of them
+   * can be "the" blue - which is the honest reason a second data hue existed here at all.
+   * But cyan and purple were two hues appearing nowhere else in the product, and they are
+   * most of why this page read as having no palette.
+   *
+   * So it is primary-plus-neutral: open cases takes the action blue, because it is the
+   * series the card's headline figure states and the one the queue CTA acts on, and
+   * sightings take a slate. Distinguishable without spending a colour on a series that
+   * carries no status.
+   */
   const SERIES = [
-    { key: 'openCases', name: 'Open cases', color: n.cyan },
-    { key: 'sightingsDaily', name: 'Sightings logged', color: n.purple },
+    { key: 'openCases', name: 'Open cases', color: svg.info },
+    { key: 'sightingsDaily', name: 'Sightings logged', color: trendInk.neutral },
   ];
 
   const data = useMemo(() => {
@@ -218,8 +359,25 @@ export default function HeroCommandCard({
     }));
   }, [history, sightingsByDay]);
 
-  const sum = scorecard?.summary;
-  const repeat = sum?.repeat_risk_reduction;
+  /**
+   * Y-AXIS CEILING, COMPUTED FROM THE DATA.
+   *
+   * `domain={[0,'auto']}` with tickCount 5 let recharts round up to its own "nice"
+   * number: with a peak of 5 it chose 8, so roughly 37% of the plot was permanently
+   * empty sky above the highest reading. That is where a large part of this card's
+   * white space was coming from - not the padding.
+   *
+   * One step of headroom so the peak is not flush against the top edge, then rounded up
+   * to an even number so the ticks stay whole (no 3.5 sightings). Still zero-based: the
+   * fill encodes magnitude by area, so a cropped baseline would exaggerate differences.
+   */
+  const yMax = useMemo(() => {
+    const vals = data.flatMap(d => [d.openCases, d.sightingsDaily])
+      .filter(v => typeof v === 'number' && Number.isFinite(v));
+    const peak = vals.length ? Math.max(...vals) : 0;
+    return Math.max(4, Math.ceil((peak + 1) / 2) * 2);
+  }, [data]);
+
   const gridInk = mode === 'dark' ? 'rgba(255,255,255,0.08)' : '#E0E0E0';
   const axisInk = BRAND.textLight;
   const tickInterval = data.length > 16 ? Math.ceil(data.length / 10) : 0;
@@ -227,91 +385,6 @@ export default function HeroCommandCard({
   return (
     <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
       <CardContent sx={{ p: { xs: 2.25, md: 3 }, '&:last-child': { pb: { xs: 2.25, md: 3 } } }}>
-        <Box
-          sx={{
-            display: 'grid',
-            // gauge column is fixed; the chart takes everything left over
-            gridTemplateColumns: { xs: '1fr', md: 'minmax(190px, 220px) minmax(0, 1fr)' },
-            columnGap: 3.5, rowGap: 3, alignItems: 'stretch',
-          }}
-        >
-          {/* ── LEFT: the instrument ─────────────────────────────── */}
-          <Box sx={{ minWidth: 0 }}>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1.5 }}>
-              <Typography component="h2" sx={{ fontSize: 15, fontWeight: 600, color: BRAND.heading }}>
-                Estate Risk Index
-              </Typography>
-              <MuiTooltip
-                arrow
-                title="A weighted 0-100 heuristic: critical flora (x15), active hotspots (x10), open cases (x5) and at-risk flora (x3), capped at 100. Higher means more needs attention. Bands: Healthy under 25, Monitor 25-59, Needs Attention 60 and above."
-              >
-                <InfoOutlinedIcon sx={{ fontSize: 15, color: BRAND.textLight, cursor: 'help', flexShrink: 0 }} />
-              </MuiTooltip>
-            </Stack>
-
-            {loading && !hasScore ? (
-              <Skeleton variant="circular" width={148} height={148} sx={{ mx: 'auto' }} />
-            ) : hasScore ? (
-              <RiskGauge score={score} animated={animated} meta={meta} />
-            ) : (
-              <Box sx={{ py: 4, textAlign: 'center' }}>
-                <Typography sx={{ fontSize: 30, fontWeight: 700, color: BRAND.textLight, lineHeight: 1.15 }}>No data</Typography>
-                <Typography sx={{ fontSize: 12.5, color: BRAND.textLight, mt: 0.75 }}>
-                  No scored data yet - this is not a healthy reading, it is an absent one.
-                </Typography>
-              </Box>
-            )}
-
-            {/* PREVENTION IMPACT, PROMOTED.
-                These were 11px captions under the gauge - the smallest type on the card -
-                which is backwards for an operations tool: the risk score says how bad
-                things are, but "90% fewer repeats" and "S$640 saved" are what the service
-                is judged on. They now sit at 20px in their own bordered block directly
-                under the score, so the card reads as "here is the risk, and here is what
-                the programme has bought you". */}
-            <Box sx={{ ...surfaceSx(mode, 'inset'), p: 1.75, mt: 2 }}>
-              <Typography
-                sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: BRAND.textLight, mb: 1.25 }}
-              >
-                Prevention impact
-              </Typography>
-              {repeat != null ? (
-                <Stack spacing={1.25}>
-                  {[
-                    {
-                      v: `${Math.round(Math.abs(repeat) * 100)}%`,
-                      l: repeat > 0 ? 'fewer repeat cases' : 'change in repeats',
-                      ink: repeat > 0 ? trend.good : BRAND.heading,
-                    },
-                    { v: `S$${(sum.est_savings || 0).toLocaleString('en-SG')}`, l: 'estimated savings', ink: BRAND.heading },
-                    { v: sum.call_outs_avoided, l: 'call-outs avoided', ink: BRAND.heading },
-                  ].map(c => (
-                    <Stack key={c.l} direction="row" spacing={1} sx={{ alignItems: 'baseline', justifyContent: 'space-between' }}>
-                      <Typography sx={{ fontSize: 12.5, color: BRAND.text, minWidth: 0 }}>{c.l}</Typography>
-                      <Typography
-                        sx={{
-                          fontSize: 20, fontWeight: 700, lineHeight: 1.1, color: c.ink,
-                          fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.4px', flexShrink: 0,
-                        }}
-                      >
-                        {c.v}
-                      </Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              ) : !scorecard ? (
-                <Stack spacing={1.25}>
-                  {[0, 1, 2].map(i => <Skeleton key={i} variant="text" height={28} />)}
-                </Stack>
-              ) : (
-                <Typography sx={{ fontSize: 12, color: BRAND.textLight, lineHeight: 1.5 }}>
-                  Prevention impact not measurable yet - close out work orders to start tracking it.
-                </Typography>
-              )}
-            </Box>
-          </Box>
-
-          {/* ── RIGHT: the trend ─────────────────────────────────── */}
           <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', rowGap: 1 }}>
               <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
@@ -320,7 +393,7 @@ export default function HeroCommandCard({
                 </Typography>
                 <MuiTooltip
                   arrow
-                  title="The filled cyan line is open cases still outstanding at the end of each day - a backlog that carries over. The purple line is sightings logged on that day - a count of events. Both are plain counts on ONE shared axis, so their heights are directly comparable. Only the backlog is filled, because only a level has a meaningful area beneath it."
+                  title="The filled blue line is open cases still outstanding at the end of each day - a backlog that carries over. The grey line is sightings logged on that day - a count of events. Both are plain counts on ONE shared axis, so their heights are directly comparable. Only the backlog is filled, because only a level has a meaningful area beneath it."
                 >
                   <InfoOutlinedIcon sx={{ fontSize: 15, color: BRAND.textLight, cursor: 'help', flexShrink: 0 }} />
                 </MuiTooltip>
@@ -333,13 +406,31 @@ export default function HeroCommandCard({
                   onChange={(_e, v) => v && onWindowChange(v)}
                   size="small"
                   aria-label="Time range"
+                  /* TIGHTER SEGMENTED PILL.
+                     The selected segment used to be `s.raised` on an `s.inset` track -
+                     two near-identical greys, so which range was active was genuinely
+                     hard to see. It now lifts to the CARD colour with a soft shadow, the
+                     way a segmented control reads on both reference dashboards: the
+                     active pill looks like it sits above the track rather than being a
+                     slightly different shade of it.
+                     Track padding drops 3px -> 2px and the segments tighten, so the group
+                     reads as one control instead of three small buttons. Deliberately
+                     built from scheme tokens, so the same lift works in light and dark. */
                   sx={{
-                    bgcolor: s.inset, borderRadius: `${RADII.pill}px`, p: '3px', gap: '3px',
+                    bgcolor: s.inset, borderRadius: `${RADII.pill}px`, p: '2px', gap: '2px',
                     '& .MuiToggleButtonGroup-grouped': {
-                      border: 0, marginLeft: 0, px: 1.4, py: 0.3, borderRadius: `${RADII.pill}px !important`,
+                      border: 0, marginLeft: 0, px: 1.5, py: 0.35, minWidth: 40,
+                      borderRadius: `${RADII.pill}px !important`,
                       textTransform: 'none', fontSize: 12, fontWeight: 600, color: BRAND.textLight,
-                      '&:hover': { bgcolor: s.raised },
-                      '&.Mui-selected': { bgcolor: s.raised, color: BRAND.heading, '&:hover': { bgcolor: s.raised } },
+                      transition: 'background-color .15s ease, color .15s ease, box-shadow .15s ease',
+                      '&:hover': { bgcolor: 'transparent', color: BRAND.heading },
+                      '&.Mui-selected': {
+                        bgcolor: s.card, color: BRAND.heading, fontWeight: 700,
+                        boxShadow: mode === 'dark'
+                          ? '0 1px 2px rgba(0,0,0,.45)'
+                          : '0 1px 2px rgba(16,24,40,.10)',
+                        '&:hover': { bgcolor: s.card },
+                      },
                       '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 1 },
                     },
                   }}
@@ -351,19 +442,37 @@ export default function HeroCommandCard({
               )}
             </Stack>
 
-            {/* Headline figure + movement, the reference's `$103,489 ↑1.8%` row. */}
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: 'baseline', flexWrap: 'wrap', rowGap: 0.75, mb: 1.5 }}>
-              <Stack direction="row" spacing={0.5} sx={{ alignItems: 'baseline' }}>
-                <Typography sx={{ fontSize: { xs: 32, md: 38 }, fontWeight: 700, lineHeight: 1, letterSpacing: '-1.4px', color: BRAND.heading, fontVariantNumeric: 'tabular-nums' }}>
+            {/* HEADLINE FIGURE, SCALED UP.
+                32/38px next to a 40px KPI tile made the page's most important running
+                number smaller than its supporting ones. At 44/56 it is unambiguously the
+                largest thing on the card, and the unit drops to a quiet caption beneath
+                rather than sitting on the baseline competing with it - the treatment the
+                reference dashboards use for their headline currency figure.
+                Movement stays in the pill beside it, so the number itself carries no
+                colour and reads at a glance in either scheme. */}
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'flex-end', flexWrap: 'wrap', rowGap: 0.75, mb: 2 }}>
+              <Box>
+                <Typography
+                  sx={{
+                    fontSize: { xs: 44, md: 56 }, fontWeight: 700, lineHeight: 0.95,
+                    letterSpacing: '-2px', color: BRAND.heading, fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
                   {openCases}
                 </Typography>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: BRAND.textLight }}>open cases</Typography>
-              </Stack>
-              <DeltaPill delta={trends?.open_cases?.sinceLastWeek ?? null} improve="down" label="Open cases" />
+                <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: BRAND.textLight, mt: 0.25 }}>
+                  open cases
+                </Typography>
+              </Box>
+              <Box sx={{ pb: 0.5 }}>
+                <DeltaPill delta={trends?.open_cases?.sinceLastWeek ?? null} improve="down" label="Open cases" />
+              </Box>
             </Stack>
 
             {/* The inset well the chart lives in. */}
-            <Box sx={{ ...surfaceSx(mode, 'inset'), p: { xs: 0.75, md: 1.25 }, pt: 2, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+            {/* pt was 2 on top of the card's own padding and the headline's mb - three
+                stacked gaps above a 232px plot. One is enough. */}
+            <Box sx={{ ...surfaceSx(mode, 'inset'), p: { xs: 0.75, md: 1.25 }, pt: 1, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
               {data.length === 0 ? (
                 <Typography sx={{ fontSize: 13, color: BRAND.textLight, py: 8, textAlign: 'center' }}>
                   No activity history yet.
@@ -371,42 +480,63 @@ export default function HeroCommandCard({
               ) : (
                 <ResponsiveContainer width="100%" height={232}>
                   <ComposedChart data={data} margin={{ top: 6, right: 10, left: -18, bottom: 0 }}>
-                    {/* SOLID 1px gridlines, not dashed. A dashed rule at this weight
-                        competes with the data for attention; a solid faint one recedes
-                        and still lets a value be read off the axis. */}
-                    <CartesianGrid stroke={gridInk} vertical={false} />
-                    <XAxis dataKey="label" tickFormatter={dayOf} tick={{ fontSize: 11, fill: axisInk }}
+                    {/* One gradient per series, fading to near-transparent at the
+                        baseline so the fill reads as depth under the line rather than a
+                        block competing with it. Restored on request after being removed;
+                        kept low (28% -> 2%) so two overlapping washes stay legible where
+                        the series cross. */}
+                    <defs>
+                      {SERIES.map(sr => (
+                        <linearGradient key={sr.key} id={`act-${sr.key}`} x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={sr.color} stopOpacity={0.28} />
+                          <stop offset="100%" stopColor={sr.color} stopOpacity={0.02} />
+                        </linearGradient>
+                      ))}
+                    </defs>
+                    {/* Dashed, and deliberately fainter than the old solid rule.
+                        The previous note here argued a dashed rule at this weight competes
+                        with the data - true at full strength, so the opacity drops to
+                        compensate: the grid is now a hint you can read a value off rather
+                        than a set of lines you notice. */}
+                    <CartesianGrid stroke={gridInk} strokeDasharray="3 5" strokeOpacity={0.7} vertical={false} />
+                    {/* 12px, not 11. These are the only labels that say what the plot is
+                        measuring, and below 12px they stop being reliably legible - the
+                        same floor the "vs last week" caption was raised to. */}
+                    <XAxis dataKey="label" tickFormatter={dayOf} tick={{ fontSize: 12, fill: axisInk }}
                       axisLine={false} tickLine={false} interval={tickInterval} minTickGap={6} dy={6} />
-                    <YAxis tick={{ fontSize: 11, fill: axisInk }} axisLine={false} tickLine={false}
-                      allowDecimals={false} tickCount={5} width={42}
+                    <YAxis tick={{ fontSize: 12, fill: axisInk }} axisLine={false} tickLine={false}
+                      allowDecimals={false} width={38}
+                      ticks={Array.from({ length: yMax / 2 + 1 }, (_, i) => i * 2)}
                       // zero-based: the filled series encodes magnitude by area, so a
                       // cropped baseline would exaggerate every difference
-                      domain={[0, 'auto']} />
+                      domain={[0, yMax]} />
                     <Tooltip
-                      cursor={{ stroke: BRAND.textLight, strokeWidth: 1, strokeOpacity: 0.5 }}
-                      content={<CrosshairChips />}
+                      // 1.5px at full opacity, dashed. At 1px/0.5 the crosshair was
+                      // fainter than the gridlines it crossed, so on hover there was no
+                      // clear indication of WHICH day the panel was reporting.
+                      cursor={{ stroke: BRAND.textLight, strokeWidth: 1.5, strokeDasharray: '4 4' }}
+                      content={<CrosshairChips series={SERIES} />}
                       animationDuration={140}
                     />
-                    {/* STRAIGHT SEGMENTS AND NO AREA FILL.
-                        `type="linear"`, not monotone: a spline through daily readings
-                        invents curvature between samples - it draws values that were
-                        never measured, and at this scale that is most of the ink. Straight
-                        segments join the points that actually exist.
-
-                        The gradient fill is gone with it. It was the loudest thing on the
-                        card and it encoded nothing the line did not already say. Dots are
-                        back ON, because with no fill the individual daily readings are the
-                        data and should be visible without hovering. */}
+                    {/* AREA FILL + SMOOTHING, both restored on request.
+                        One caveat recorded rather than argued again: `monotone` bends the
+                        path between daily samples, so part of the drawn curve sits at
+                        values that were never measured. On a 7-point series that is a
+                        meaningful share of the ink. The dots are kept ON for exactly that
+                        reason - they mark where a real reading exists, so the curve is
+                        decoration between them rather than a claim. */}
                     {SERIES.map(sr => (
-                      <Line
+                      <Area
                         key={sr.key}
-                        type="linear"
+                        type="monotone"
                         dataKey={sr.key}
                         name={sr.name}
                         stroke={sr.color}
-                        strokeWidth={2}
+                        strokeWidth={2.25}
+                        fill={`url(#act-${sr.key})`}
+                        fillOpacity={1}
                         dot={{ r: 2.5, fill: sr.color, strokeWidth: 0 }}
-                        activeDot={{ r: 5, fill: sr.color, stroke: s.inset, strokeWidth: 3 }}
+                        activeDot={{ r: 5, fill: sr.color, stroke: s.inset, strokeWidth: 2.5 }}
                         isAnimationActive={false}
                       />
                     ))}
@@ -418,14 +548,16 @@ export default function HeroCommandCard({
               <Stack direction="row" spacing={2} sx={{ mt: 0.5, justifyContent: 'flex-end', flexWrap: 'wrap', rowGap: 0.5, px: 1, pb: 0.5 }}>
                 {SERIES.map(sr => (
                   <Stack key={sr.key} direction="row" spacing={0.6} sx={{ alignItems: 'center' }}>
-                    <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: sr.color, flexShrink: 0, boxShadow: glow(mode, sr.color, 0.5) }} />
+                    {/* Plain dot. The glow() halo went with the gradient fill - it was
+                        the same decoration at smaller scale, and a legend swatch only
+                        needs to identify a colour. */}
+                    <Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: sr.color, flexShrink: 0 }} />
                     <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>{sr.name}</Typography>
                   </Stack>
                 ))}
               </Stack>
             </Box>
           </Box>
-        </Box>
       </CardContent>
     </Card>
   );

@@ -1,61 +1,10 @@
 import { useMemo } from 'react';
 import { Card, CardContent, Box, Stack, Typography } from '@mui/material';
 import BarChartOutlined from '@mui/icons-material/BarChartOutlined';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
-import { useTheme, alpha } from '@mui/material/styles';
-import { BRAND, SURFACE, NEON, surfaceSx } from '../../theme';
+import { useTheme } from '@mui/material/styles';
+import { BRAND, RADII, surfaceSx } from '../../theme';
+import { CATEGORY_ICONS, swatchFor } from './categoryMeta';
 import { CATEGORY_LABELS } from '../../constants';
-
-// Recharts writes `stroke` into an SVG attribute, where a var(--em-surface) token
-// never resolves, so the arc separator needs the literal surface colour per scheme.
-
-
-function DonutTooltip({ active, payload, total }) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload;
-  if (!d) return null;
-  return (
-    <Box sx={{ bgcolor: BRAND.surface, border: `1px solid ${BRAND.border}`, borderRadius: '8px', boxShadow: '0 12px 32px rgba(16,24,40,.15)', px: 1.5, py: 1 }}>
-      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-        <Box aria-hidden sx={{ width: 9, height: 9, borderRadius: '2px', bgcolor: d.color, flexShrink: 0 }} />
-        <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 600 }}>
-          {d.label}: {d.count} of {total} ({d.pct}%)
-        </Typography>
-      </Stack>
-    </Box>
-  );
-}
-
-/**
- * NEON segment inks, one per category.
- *
- * These replace a monochromatic corporate-blue scale, which was chosen so that shades
- * mapped to categories by IDENTITY rather than rank. That property is kept: each key
- * below owns a fixed hue, so a category never changes colour as the counts move.
- *
- * NO YELLOW, and `pest` is no longer red. The old set gave `pest` a semantic crimson on
- * the grounds that it is the escalating category - but that put a status hue on a
- * CATEGORY swatch, so a legend dot and a danger pill were the same colour meaning
- * different things. Every slot here is off the semantic hues; escalation is carried by
- * the case's own status pill, which is where status belongs.
- */
-const SEG_COLORS = {
-  light: {
-    community_cat: NEON.light.cyan,
-    pigeon: NEON.light.purple,
-    flora_health: NEON.light.teal,
-    pest: NEON.light.magenta,
-    other: NEON.light.slate,
-  },
-  dark: {
-    community_cat: NEON.dark.cyan,
-    pigeon: NEON.dark.purple,
-    flora_health: NEON.dark.teal,
-    pest: NEON.dark.magenta,
-    other: NEON.dark.slate,
-  },
-};
-const SEG_FALLBACK = { light: NEON.light.slate, dark: NEON.dark.slate };
 
 function roundTo100(rows, total) {
   if (!total) return rows.map(r => ({ ...r, pct: 0 }));
@@ -69,29 +18,28 @@ function roundTo100(rows, total) {
 }
 
 /**
- * A thin donut with the legend as a right-hand table.
+ * Case mix as a 6px proportion bar over a ranked list.
  *
- * The 36px stacked bar carried the same numbers but read as one heavy slab, and it
- * forced the percentage INSIDE each segment, so any category under 12% silently
- * lost its label. A thin ring reads as part-to-whole immediately, and moving the
- * figures into an aligned legend means every category is labelled at any size.
+ * One shape replacing another, twice: a 36px stacked slab, then a thin donut with the
+ * figures in a legend beside it, now a hairline bar with the figures AS the content.
+ * Each step moved ink from the shape to the numbers, and this is the end of that line -
+ * for four categories totalling seven cases, the list is the chart.
  *
- * Arc angles are hard to compare precisely, so the legend - not the ring - carries
- * the exact percentage and count. The ring is the shape; the table is the data.
+ * Percentages are pre-rounded to sum to exactly 100 (roundTo100), so the bar widths and
+ * the printed figures can never disagree.
  */
 export default function CategoryBar({ casesByCategory = [], embedded = false }) {
   const mode = useTheme().palette.mode;
-  const s = SURFACE[mode] || SURFACE.dark;
-  const surface = s.card;
   const { data, total } = useMemo(() => {
-    const segColors = SEG_COLORS[mode] || SEG_COLORS.light;
-    const fallback = SEG_FALLBACK[mode] || SEG_FALLBACK.light;
     const sum = casesByCategory.reduce((s, c) => s + c.count, 0);
     let rows = casesByCategory.map(c => ({
       key: c.category,
       label: CATEGORY_LABELS[c.category] || c.category,
       count: c.count,
-      color: segColors[c.category] || fallback,
+      // shared with Recent Activity, and keyed by category rather than by rank - see
+      // categoryMeta.js
+      color: swatchFor(c.category, mode),
+      Icon: CATEGORY_ICONS[c.category] || CATEGORY_ICONS.other,
     }));
     rows = roundTo100(rows, sum).sort((a, b) => b.count - a.count);
     return { data: rows, total: sum };
@@ -125,91 +73,79 @@ export default function CategoryBar({ casesByCategory = [], embedded = false }) 
           <Typography variant="body2" sx={{ color: BRAND.textLight }}>No cases to display yet.</Typography>
         </Box>
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '150px minmax(0, 1fr)' },
-            gap: { xs: 2, sm: 3 }, alignItems: 'center',
-          }}
-        >
-          {/* Ring. 2px of surface between arcs (paddingAngle + a surface stroke)
-              rather than letting neighbouring fills touch, so adjacent categories
-              stay separable without relying on hue contrast alone. */}
+        <Box>
+          {/* ONE THIN STACKED BAR, THEN A RANKED LIST. The donut is gone.
+              It was a four-colour ring drawing 2 / 2 / 2 / 1 out of seven cases - a
+              chart for a dataset you can read faster as words, and it needed a legend
+              underneath restating every figure the ring had just gestured at. So the
+              legend became the content.
+              The bar is kept because proportion is the one thing a list does not show
+              at a glance. Thickened 6px -> 12px on request: at 6 it read as a hairline
+              rule rather than a proportion, and the four segments were hard to tell apart.
+              Still one line rather than a 150px ring, and
+              it carries no labels of its own - the list below is the labelling. */}
           <Box
             role="img"
             aria-label={ariaSummary}
-            sx={{
-              width: '100%', height: 150, mx: 'auto', maxWidth: 150,
-              // the arcs bloom on dark; on light a glow renders as a smudge, so none
-              filter: mode === 'dark' ? 'drop-shadow(0 0 8px rgba(34,211,238,.28))' : 'none',
-            }}
+            sx={{ display: 'flex', height: 12, borderRadius: `${RADII.pill}px`, overflow: 'hidden', mb: 2 }}
           >
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                <Pie
-                  data={segments}
-                  dataKey="count"
-                  nameKey="label"
-                  cx="50%"
-                  cy="50%"
-                  // THIN RING. 66%->82% inner made the band about a third of the radius,
-                  // which reads as a heavy doughnut; a narrow ring reads as a scale and
-                  // leaves a real hole for the total.
-                  innerRadius="82%"
-                  outerRadius="98%"
-                  paddingAngle={1.5}
-                  stroke={surface}
-                  strokeWidth={2}
-                  isAnimationActive
-                  animationDuration={600}
-                  labelLine={false}
-                  label={false}
-                >
-                  {segments.map(d => <Cell key={d.key} fill={d.color} />)}
-                </Pie>
-                <Tooltip content={<DonutTooltip total={total} />} />
-              </PieChart>
-            </ResponsiveContainer>
-            {/* Total in the hole: the one figure the ring itself cannot state. */}
-            {/* The total in the hollow centre, with a soft bloom on dark. The ring
-                itself cannot state this figure, which is why it sits in the hole. */}
-            <Box sx={{ mt: '-95px', textAlign: 'center', pointerEvents: 'none' }}>
-              <Typography
-                sx={{
-                  fontSize: 28, fontWeight: 700, lineHeight: 1, color: BRAND.heading,
-                  fontVariantNumeric: 'tabular-nums', letterSpacing: '-1px',
-                  textShadow: mode === 'dark' ? `0 0 20px ${alpha(NEON.dark.cyan, 0.4)}` : 'none',
-                }}
-              >
-                {total}
-              </Typography>
-              <Typography sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: BRAND.textLight, mt: 0.25 }}>
-                cases
-              </Typography>
-            </Box>
+            {segments.map(d => (
+              <Box key={d.key} sx={{ width: `${d.pct}%`, bgcolor: d.color, minWidth: d.count > 0 ? 3 : 0 }} />
+            ))}
           </Box>
 
-          {/* Legend as an aligned table: swatch, label, then percentage and count on
-              their own right-aligned rails so the figures stack vertically. */}
-          <Stack spacing={0.85} sx={{ minWidth: 0 }}>
-            {segments.map(d => (
-              <Box
+          {/* Ranked, highest first, on the same rails as the block table: label left,
+              figures right-aligned on their own columns so the numbers stack and can be
+              compared down the column rather than hunted for in prose. */}
+          <Stack spacing={0}>
+            {segments.map((d, i) => (
+              <Stack
                 key={d.key}
-                sx={{ display: 'grid', gridTemplateColumns: '8px minmax(0, 1fr) 42px 34px', gap: 1, alignItems: 'center' }}
+                direction="row"
+                spacing={1.25}
+                sx={{
+                  alignItems: 'center', py: 1,
+                  borderTop: i === 0 ? 'none' : `1px solid ${mode === 'dark' ? 'rgba(255,255,255,0.07)' : BRAND.border}`,
+                }}
               >
-                <Box aria-hidden sx={{ width: 10, height: 10, borderRadius: '3px', bgcolor: d.color, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 13, color: BRAND.heading, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {/* THE GLYPH REPLACES THE COLOUR SQUARE.
+                    An 8px square can only say "this row matches that bar segment", which
+                    still requires matching two colours across a gap. The icon names the
+                    category outright, and it is what lets the segment inks collapse to one
+                    hue (see categoryMeta.js) - identity no longer rests on colour alone,
+                    which is also the accessibility win.
+                    Tinted well behind it so a pale ramp step still has an edge on white. */}
+                <Box
+                  aria-hidden
+                  sx={{
+                    width: 26, height: 26, borderRadius: `${RADII.chip}px`, flexShrink: 0,
+                    display: 'grid', placeItems: 'center',
+                    bgcolor: mode === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(16,24,40,0.04)',
+                    color: d.color,
+                  }}
+                >
+                  <d.Icon sx={{ fontSize: 15 }} />
+                </Box>
+                <Typography sx={{ fontSize: 13.5, color: BRAND.heading, fontWeight: 500, flexGrow: 1, minWidth: 0 }}>
                   {d.label}
                 </Typography>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 800, color: BRAND.heading, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
+                <Typography
+                  sx={{ fontSize: 14, fontWeight: 700, color: BRAND.heading, fontVariantNumeric: 'tabular-nums', width: 44, textAlign: 'right' }}
+                >
                   {d.pct}%
                 </Typography>
-                <Typography sx={{ fontSize: 12, color: BRAND.text, fontVariantNumeric: 'tabular-nums', textAlign: 'right' }}>
-                  ({d.count})
+                <Typography
+                  sx={{ fontSize: 12.5, color: BRAND.textLight, fontVariantNumeric: 'tabular-nums', width: 30, textAlign: 'right' }}
+                >
+                  {d.count}
                 </Typography>
-              </Box>
+              </Stack>
             ))}
           </Stack>
+
+          <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, mt: 1.5 }}>
+            {total} case{total === 1 ? '' : 's'} in total
+          </Typography>
         </Box>
       )}
     </Box>

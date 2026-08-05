@@ -1,79 +1,43 @@
-import { useState } from 'react';
-import { Card, CardContent, Box, Stack, Typography, ToggleButton, ToggleButtonGroup } from '@mui/material';
-import { BRAND } from '../../theme';
-import TopRiskBlocks from './TopRiskBlocks';
-import BlocksRanked from './BlocksRanked';
-
-// ONE source for the cap and the sentence describing it. These were separate: the
-// blurb said "Top 5" while TopRiskBlocks' own default was 3 and this file passed no
-// `limit`, so the widget rendered three rows under a label promising five.
-const RISK_TOP_N = 5;
-
-const VIEWS = {
-  risk: {
-    label: 'Risk',
-    blurb: `Top ${RISK_TOP_N} blocks by sighting volume against the hotspot threshold`,
-  },
-  volume: {
-    label: 'Volume',
-    blurb: 'Every block ranked by sighting volume, with the animals seen there',
-  },
-};
+import { Card, CardContent, Box, Typography } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { BRAND, surfaceSx } from '../../theme';
+import BlockTable from './BlockTable';
 
 /**
- * Block Performance. "Risk by Block" and "Activity by Block" were two horizontal bar
- * lists reading off the SAME field (sightings per block) stacked one above the other -
- * visually redundant and twice the vertical cost.
+ * Block Performance.
  *
- * They are merged behind a segmented control: Risk is the top-5 thresholded view for
- * triage, Volume is the full ranked list for browsing. One widget, one column, and
- * the user picks the lens instead of scrolling past the one they did not want.
+ * WHY THE RISK/VOLUME TOGGLE IS GONE. Its two views were "top 5 blocks by sighting
+ * volume against the threshold" and "every block ranked by sighting volume" - the same
+ * field, one truncated. Merging them behind a segmented control cut the vertical cost but
+ * left the redundancy: two ways to draw one number as bars.
+ *
+ * One sortable table does both jobs at once: it sorts by volume by default (so the worst
+ * is first, as the Risk view intended), and the threshold is stated as a HOT badge rather
+ * than a dashed rule the reader has to measure bars against. Sorting by any column is now
+ * the "lens" the toggle used to switch between.
+ *
+ * The table is CAPPED, with a distribution strip above it. On a real estate the block
+ * list is hundreds of rows long, which no dashboard zone can hold - so the table carries
+ * the top of the current sort, the strip carries the shape of the whole set at a fixed
+ * height, and the footer states how many blocks are not on screen. See BlockTable.
  */
 export default function BlockPerformance({ sightingsByBlock = [], hotspots = [], topBlock = null }) {
-  const [view, setView] = useState('risk');
+  const mode = useTheme().palette.mode;
 
   return (
-    <Card sx={{ height: '100%' }}>
+    <Card sx={{ ...surfaceSx(mode, 'card'), height: '100%' }}>
       <CardContent sx={{ p: 3 }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1.5}
-          sx={{ justifyContent: 'space-between', alignItems: { sm: 'flex-start' }, mb: 2 }}
-        >
-          <Box sx={{ minWidth: 0 }}>
-            <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
-              Block Performance
-            </Typography>
-            <Typography variant="body2" sx={{ color: BRAND.textLight }}>
-              {VIEWS[view].blurb}
-            </Typography>
-          </Box>
+        {/* mb 2.5 - one header gap across every dashboard card. See RecentActivity. */}
+        <Box sx={{ minWidth: 0, mb: 2.5 }}>
+          <Typography component="h2" variant="h6" fontWeight={700} sx={{ color: BRAND.heading }}>
+            Block Performance
+          </Typography>
+          <Typography variant="body2" sx={{ color: BRAND.textLight }}>
+            Worst blocks by sighting volume - sort any column to change the lens
+          </Typography>
+        </Box>
 
-          <ToggleButtonGroup
-            value={view}
-            exclusive
-            onChange={(_e, v) => v && setView(v)}
-            size="small"
-            aria-label="Block performance view"
-            sx={{
-              flexShrink: 0, bgcolor: BRAND.section, borderRadius: '999px', p: '3px', gap: '2px',
-              '& .MuiToggleButtonGroup-grouped': {
-                border: 0, marginLeft: 0, px: 1.75, py: 0.4, borderRadius: '999px !important',
-                textTransform: 'none', fontSize: 13, fontWeight: 600, color: BRAND.text,
-                '&:hover': { bgcolor: 'rgba(120,130,145,0.12)' },
-                '&.Mui-selected': { bgcolor: BRAND.surface, color: BRAND.heading, boxShadow: '0 1px 3px rgba(0,0,0,0.12)', '&:hover': { bgcolor: BRAND.surface } },
-              },
-            }}
-          >
-            {Object.entries(VIEWS).map(([k, v]) => (
-              <ToggleButton key={k} value={k}>{v.label}</ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-        </Stack>
-
-        {view === 'risk'
-          ? <TopRiskBlocks sightingsByBlock={sightingsByBlock} topBlock={topBlock} limit={RISK_TOP_N} embedded />
-          : <BlocksRanked sightingsByBlock={sightingsByBlock} hotspots={hotspots} embedded />}
+        <BlockTable sightingsByBlock={sightingsByBlock} hotspots={hotspots} topBlock={topBlock} />
       </CardContent>
     </Card>
   );

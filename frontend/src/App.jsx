@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link as RouterLink, useLocation, useNavigate } from 'react-router-dom'
 import { AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer, List, ListItemButton, ListItemText, ListSubheader, Menu, MenuItem, Card, Stack, Avatar, Tooltip, ListItemIcon, Dialog, TextField, InputAdornment } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
@@ -244,17 +244,45 @@ function Home() {
  * broken link rather than a selected tab, so the colour now lives in the indicator,
  * not in the label.
  */
+/**
+ * Top-level nav item, styled after the corporate site rather than as app chrome.
+ *
+ * WHAT CHANGED AND WHY. These were filled pills: a tinted `action.selected` block on
+ * the active item and an `action.hover` wash on hover. On emservices.com.sg the nav is
+ * type on a light field - no chips, no boxes - and the state is carried by weight and
+ * a rule beneath the label. A filled tab also competes with the real buttons in the
+ * utility cluster to its right, so two different things looked equally pressable.
+ *
+ * The underline is always present and only changes colour, so nothing shifts by 2px
+ * when the active item moves. It animates from transparent to crimson, which is the
+ * brand accent the site already leads with (BRAND.primary).
+ *
+ * INFERRED, NOT MEASURED: the site's own CSS is not reachable through a markdown
+ * fetch, so the colours here come from this app's BRAND tokens and the treatment from
+ * corporate-nav convention plus the observable facts - light nav field, sentence-case
+ * labels. Worth a screenshot check against the real thing.
+ */
 function topNavSx(active) {
   return {
-    textTransform: 'none', fontSize: 14.5, px: 1.5, py: 1, borderRadius: '8px',
-    position: 'relative', fontWeight: active ? 700 : 600,
+    textTransform: 'none', fontSize: 14.5,
+    // Roomier than the old 1.5: a corporate nav spaces its items well apart, and the
+    // underline needs width to read as a rule rather than a dash.
+    px: 2, py: 1.25, borderRadius: 0,
+    position: 'relative', fontWeight: active ? 700 : 500,
     color: active ? 'text.primary' : 'text.secondary',
-    bgcolor: active ? 'action.selected' : 'transparent',
-    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
-    '&::after': active ? {
-      content: '""', position: 'absolute', left: 10, right: 10, bottom: -1,
-      height: 2, borderRadius: '2px', bgcolor: 'primary.main',
-    } : undefined,
+    bgcolor: 'transparent',
+    transition: 'color .15s ease',
+    // No fill on hover either - just the ink darkening and the rule appearing.
+    '&:hover': { bgcolor: 'transparent', color: 'text.primary' },
+    '&:hover::after': { backgroundColor: BRAND.primary, opacity: active ? 1 : 0.55 },
+    '&::after': {
+      content: '""', position: 'absolute', left: 16, right: 16, bottom: 6,
+      height: 2, borderRadius: '2px',
+      backgroundColor: active ? BRAND.primary : 'transparent',
+      opacity: 1,
+      transition: 'background-color .15s ease, opacity .15s ease',
+    },
+    '&:focus-visible': { outline: `2px solid ${BRAND.primary}`, outlineOffset: -2 },
   }
 }
 
@@ -322,18 +350,57 @@ function NavDrawer({ open, onClose, isStaff }) {
 
 // A grouped dropdown for the desktop top nav, with sub-headed sections so one menu
 // can hold a whole domain without becoming a flat wall of links.
+/**
+ * A top-level group and its dropdown.
+ *
+ * OPENS ON HOVER, LIKE THE CORPORATE SITE - BUT CLICK AND KEYBOARD STILL WORK.
+ *
+ * Hover-only menus are a standard way to lock out keyboard users, so this does not
+ * replace the click behaviour, it adds to it:
+ *   - pointer hover opens the panel and does NOT move focus, because yanking focus
+ *     into a list the user only brushed past is disorienting;
+ *   - click (so also Enter and Space on the button) opens it AND focuses the first
+ *     item, which is what a keyboard user needs;
+ *   - Escape and click-away still close it, via MUI's own handling.
+ *
+ * The close is deferred ~140ms so travelling diagonally from the button into the panel
+ * does not pass through a dead gap and dismiss it - the classic hover-menu bug. The
+ * root gets `pointerEvents: 'none'` so the invisible popover surface does not swallow
+ * clicks meant for the page behind it, with the paper itself set back to `auto`.
+ */
 function NavGroupMenu({ group, isStaff }) {
   const [anchor, setAnchor] = useState(null)
+  const [byKeyboard, setByKeyboard] = useState(false)
+  const closeTimer = useRef(null)
   const location = useLocation()
   const items = groupItems(group, isStaff)
   const activeInGroup = items.some(i => i.to === location.pathname)
   const sections = group.sections || [{ label: null, items: group.items || [] }]
 
+  const cancelClose = () => { if (closeTimer.current) clearTimeout(closeTimer.current) }
+  const scheduleClose = () => {
+    cancelClose()
+    closeTimer.current = setTimeout(() => setAnchor(null), 140)
+  }
+  // A timer that fires after unmount would setState on a dead component.
+  useEffect(() => cancelClose, [])
+
   return (
     <>
       <Button
-        onClick={e => setAnchor(e.currentTarget)}
-        endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />}
+        onMouseEnter={e => { cancelClose(); setByKeyboard(false); setAnchor(e.currentTarget) }}
+        onMouseLeave={scheduleClose}
+        onClick={e => { cancelClose(); setByKeyboard(true); setAnchor(e.currentTarget) }}
+        endIcon={(
+          <ExpandMoreRoundedIcon
+            sx={{
+              fontSize: 18,
+              // the chevron states whether the panel is open, rather than sitting fixed
+              transform: anchor ? 'rotate(180deg)' : 'none',
+              transition: 'transform .18s ease',
+            }}
+          />
+        )}
         disableRipple
         aria-haspopup="menu"
         aria-expanded={Boolean(anchor)}
@@ -345,9 +412,26 @@ function NavGroupMenu({ group, isStaff }) {
         anchorEl={anchor}
         open={Boolean(anchor)}
         onClose={() => setAnchor(null)}
+        // Hover-opened: leave focus where it is. Click/keyboard-opened: take it.
+        autoFocus={byKeyboard}
+        disableAutoFocusItem={!byKeyboard}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { minWidth: 232, mt: 0.5 } } }}
+        slotProps={{
+          root: { sx: { pointerEvents: 'none' } },
+          paper: {
+            onMouseEnter: cancelClose,
+            onMouseLeave: scheduleClose,
+            sx: {
+              pointerEvents: 'auto',
+              minWidth: 248, mt: 0, borderRadius: '0 0 8px 8px',
+              // A crimson rule across the top ties the panel to the underline on the
+              // item that opened it, so the two read as one object.
+              borderTop: `2px solid ${BRAND.primary}`,
+              boxShadow: '0 12px 28px -8px rgba(16,24,40,.22)',
+            },
+          },
+        }}
       >
         {sections.map((sec, si) => {
           const visible = sec.items.filter(i => i.roles !== 'staff' || isStaff)
@@ -360,8 +444,25 @@ function NavGroupMenu({ group, isStaff }) {
                 </Typography>
               )}
               {visible.map(i => (
-                <MenuItem key={i.to} component={RouterLink} to={i.to} selected={i.to === location.pathname} onClick={() => setAnchor(null)}
-                  sx={{ fontSize: 14, fontWeight: 500, '&.Mui-selected': { fontWeight: 700, bgcolor: 'action.selected' } }}>
+                <MenuItem
+                  key={i.to}
+                  component={RouterLink}
+                  to={i.to}
+                  selected={i.to === location.pathname}
+                  onClick={() => setAnchor(null)}
+                  sx={{
+                    fontSize: 14, fontWeight: 500, py: 0.9,
+                    // A left rule that fills in on hover, echoing the underline on the
+                    // top-level items. Reserved as transparent rather than added on
+                    // hover, so the label never shifts sideways by 2px.
+                    borderLeft: '2px solid transparent',
+                    transition: 'border-color .12s ease, background-color .12s ease',
+                    '&:hover': { borderLeftColor: BRAND.primary },
+                    '&.Mui-selected': {
+                      fontWeight: 700, bgcolor: 'action.selected', borderLeftColor: BRAND.primary,
+                    },
+                  }}
+                >
                   {i.label}
                 </MenuItem>
               ))}
@@ -379,7 +480,9 @@ function HorizontalNav({ isStaff }) {
   return (
     // collapses to the drawer below lg (1200px) - three top-level items plus the
     // utility cluster is what makes that breakpoint survivable
-    <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 0.5, ml: 2 }}>
+    // Items spaced apart rather than packed: `gap: 0.5` had them nearly touching, which
+    // reads as a button group. Still anchored beside the logo, not centred.
+    <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 1.5, ml: 3 }}>
       {groups.map((g, gi) => (
         // a group with a single destination is a plain link, not a dropdown
         g.to
@@ -665,16 +768,16 @@ function RouteBoundary({ children }) {
 const FULL_BLEED_PATHS = new Set(['/rodent-heatmap', '/action-queue'])
 // Same full-height shell, but these pages render SiteFooter themselves at the end
 // of their own scroll region - so the footer is still reachable.
-const FULL_HEIGHT_PATHS = new Set(['/notif-log', '/alert-rules'])
-// Routes that keep the app chrome and footer but drop the centred max-width, so a
-// dense grid can use the full screen instead of being boxed at 1536px.
-const WIDE_PATHS = new Set(['/dashboard'])
+const FULL_HEIGHT_PATHS = new Set(['/notif-log', '/alert-rules', '/prevention', '/rodent', '/dashboard'])
+// The WIDE_PATHS set that used to live here held only /dashboard - routes keeping the
+// app chrome but dropping the centred max-width. /dashboard is now a FULL_HEIGHT path,
+// and a full-height page renders outside the Container entirely and owns its own measure
+// and padding, so the set had nothing left in it and `wide` was permanently false.
 
 function AppFrame() {
   const location = useLocation()
   const fullHeight = FULL_HEIGHT_PATHS.has(location.pathname)
   const fullBleed = FULL_BLEED_PATHS.has(location.pathname) || fullHeight
-  const wide = WIDE_PATHS.has(location.pathname)
   const routed = (
     <RouteBoundary>
       <Routes>
@@ -721,7 +824,7 @@ function AppFrame() {
       <NavBar />
       {fullBleed
         ? <Box component="main" sx={{ flexGrow: 1, minHeight: 0 }}>{routed}</Box>
-        : <Container maxWidth={wide ? false : 'xl'} sx={{ flexGrow: 1, px: wide ? { xs: 2, md: 3 } : undefined }}>{routed}</Container>}
+        : <Container maxWidth="xl" sx={{ flexGrow: 1 }}>{routed}</Container>}
       {/* fullHeight pages emit their own footer inside their scroll region */}
       {!fullBleed && <SiteFooter />}
     </Box>

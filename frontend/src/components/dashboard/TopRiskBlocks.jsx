@@ -1,6 +1,6 @@
 import { Box, Card, CardContent, Stack, Typography, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { BRAND, SURFACE, NEON, RADII, surfaceSx, glow, ON_SURFACE } from '../../theme';
+import { BRAND, SURFACE, NEON, RADII, surfaceSx, ON_SURFACE } from '../../theme';
 
 // The estate's own hotspot rule (backend computeHotspots uses minCount = 3, see
 // backend/src/services/estateStats.js:10, and both production call sites take the
@@ -103,7 +103,15 @@ export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, 
             {shown.map(b => {
               const over = b.count >= HOTSPOT_MIN;
               const pct = axisMax ? (b.count / axisMax) * 100 : 0;
-              const ink = over ? breach : n.cyan;
+              // Slate under the threshold, the danger ink over it.
+              //
+              // Cyan for the normal state made every row look like a highlight, so the
+              // chart shouted in two colours at once and the red lost its meaning by
+              // contrast. Slate is recessive - a bar you read rather than one that
+              // announces itself - and it leaves red doing the only job red should do
+              // here, which is marking a block that has crossed the hotspot threshold.
+              // That is a genuine urgent state, so it keeps the alarm colour.
+              const ink = over ? breach : n.slate;
               return (
                 <Box key={b.block_number} role="row">
                   <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', justifyContent: 'space-between', mb: 0.6 }}>
@@ -122,13 +130,18 @@ export default function TopRiskBlocks({ sightingsByBlock = [], topBlock = null, 
                     </Stack>
                   </Stack>
 
+                  {/* ROUNDED CAPS, THINNER BAR, CALMER INK.
+                      These were 18px blocks with a 6px chip radius and a coloured glow,
+                      which read as filled rectangles rather than a chart. Now 12px with
+                      a pill radius on both the track and the fill, so the ends are
+                      properly capped, and no glow: the glow only ever rendered in dark
+                      mode anyway, and on the bar it added weight without adding data. */}
                   <Tooltip title={`${b.block_number}: ${b.count} sighting${b.count === 1 ? '' : 's'} - ${bandLabel(b.count)}`}>
-                    <Box sx={{ position: 'relative', height: 18, borderRadius: `${RADII.chip}px`, bgcolor: s.raised, cursor: 'help' }}>
+                    <Box sx={{ position: 'relative', height: 12, borderRadius: `${RADII.pill}px`, bgcolor: s.raised, cursor: 'help' }}>
                       <Box
                         sx={{
-                          position: 'absolute', inset: 0, width: `${pct}%`, minWidth: 4,
-                          borderRadius: `${RADII.chip}px`, bgcolor: ink,
-                          boxShadow: glow(mode, ink, 0.5),
+                          position: 'absolute', inset: 0, width: `${pct}%`, minWidth: 8,
+                          borderRadius: `${RADII.pill}px`, bgcolor: ink,
                           transition: 'width .4s ease',
                         }}
                       />

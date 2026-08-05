@@ -67,7 +67,11 @@ export const THEME_TOKENS = {
     '--em-text-light': '#5B6470',
     '--em-border': '#E5E7EB',     // grey-200
     '--em-section': '#F3F4F6', // page field - cards sit on it as pure white
-    '--em-canvas': '#F8FAFC',  // slate-50: dense table pages, so white rows lift off it
+    // One step deeper than slate-50 (#F8FAFC). At slate-50 a white card's 1px border was
+    // doing all the separating and washed out on a bright display, so the KPI row read as
+    // four labels on one continuous field. #F4F7F9 is still a near-white page - nothing
+    // reads as grey - but it is enough contrast for a white card to sit ON it.
+    '--em-canvas': '#F4F7F9',
     '--em-surface': '#FFFFFF',
     '--em-navy-soft': '#E8EDF4',
     '--em-ink': '#0F172A',
@@ -155,7 +159,23 @@ export const THEME_TOKENS = {
  * utilitarian, which is the right register, and at 8px a card still reads as a card
  * without looking like a phone widget.
  */
-export const RADII = { pill: 999, card: 8, inset: 8, control: 8, chip: 6, sm: 6 };
+/**
+ * Corner radii.
+ *
+ * Cards moved 8 -> 14 and insets 8 -> 12. Two reference dashboards were the prompt, but
+ * the reason is a hierarchy the flat 8 could not express: at one radius for everything, a
+ * card, the chart well inside it and the control on top of it all read as the same
+ * surface, so the eye got no help telling container from content. Cards are now the
+ * softest shape, insets sit inside them, controls are tighter again, chips tightest.
+ *
+ * Deliberately theme-agnostic - radii carry the same hierarchy in light and dark, which
+ * is why this belongs here rather than in either scheme's tokens.
+ *
+ * CAVEAT: about 20 files hardcode a pixel radius instead of reading these, so they will
+ * not follow. Worth converting them opportunistically; not worth a sweep that touches
+ * every file at once.
+ */
+export const RADII = { pill: 999, card: 14, inset: 12, control: 10, chip: 8, sm: 6 };
 
 export const SURFACE = {
   dark: {
@@ -191,7 +211,24 @@ export const SURFACE = {
  * Dark gets none. A black shadow on a charcoal page is invisible, so there the inner
  * white highlight (SURFACE.dark.border) catches the edge instead.
  */
-const CARD_SHADOW = { light: '0 2px 4px rgba(0,0,0,0.04)', dark: 'none' };
+/**
+ * A LAYERED shadow, not a single soft blur.
+ *
+ * `0 2px 4px rgba(0,0,0,.04)` was a haze - visible only as a slight dirtying of the pixels
+ * under the card, which reads as a rendering artefact rather than as elevation. Two stops
+ * is what actually says "raised": a tight 1px contact shadow that anchors the card's edge
+ * to the page, and a wider soft one that carries the height. This is the same two-stop
+ * shape Tailwind's shadow-md and every corporate design system uses, for the reason that
+ * one blur radius cannot express both contact and distance.
+ *
+ * Dark stays none: on a charcoal page a black shadow is invisible, and the card is already
+ * separated by being LIGHTER than its field. Elevation is carried by value there, not by
+ * shadow - which is why this is mode-indexed rather than one constant.
+ */
+const CARD_SHADOW = {
+  light: '0 4px 6px -1px rgba(16,24,40,0.05), 0 1px 3px -1px rgba(16,24,40,0.07)',
+  dark: 'none',
+};
 
 /**
  * NEON DATA PALETTE - for CHARTS AND DATA HIGHLIGHTS ONLY.
@@ -245,6 +282,31 @@ export function glow(mode, color, strength = 0.45) {
  * Card styling for the reference look. Spread into `sx`.
  * `tone` picks the ladder step: 'card' for a panel, 'inset' for a nested one.
  */
+/**
+ * Hover lift for an interactive card. Spread AFTER surfaceSx so it overrides the
+ * resting shadow.
+ *
+ * Only for cards that actually do something on click - a lift on a static panel
+ * promises an interaction that is not there, which is worse than no feedback. It also
+ * respects reduced-motion: the shadow still deepens so the hover is not lost, but the
+ * card stops moving.
+ */
+export function liftSx(mode = 'dark') {
+  return {
+    transition: 'transform .16s ease, box-shadow .16s ease',
+    '&:hover': {
+      transform: 'translateY(-2px)',
+      boxShadow: mode === 'dark'
+        ? '0 8px 20px -6px rgba(0,0,0,.55)'
+        : '0 8px 18px -8px rgba(16,24,40,.20)',
+    },
+    '@media (prefers-reduced-motion: reduce)': {
+      transition: 'box-shadow .16s ease',
+      '&:hover': { transform: 'none' },
+    },
+  };
+}
+
 export function surfaceSx(mode = 'dark', tone = 'card') {
   const s = SURFACE[mode] || SURFACE.dark;
   const isInset = tone === 'inset';

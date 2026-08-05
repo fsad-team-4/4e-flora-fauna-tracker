@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, Button, Alert, Collapse, Stack, IconButton,
-  Skeleton, Card, CardContent, LinearProgress, Tooltip,
+  Skeleton, LinearProgress, Tooltip,
   Menu, MenuItem, GlobalStyles,
-  useMediaQuery, useTheme, useScrollTrigger,
+  useMediaQuery, useTheme,
 } from '@mui/material';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -14,11 +14,12 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import { useUser } from '../contexts/UserContext';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import { alpha } from '@mui/material/styles';
-import { BRAND, SURFACE, RADII } from '../theme';
+import { BRAND, SURFACE, RADII, SVG_ACCENT } from '../theme';
+import SiteFooter from '../components/SiteFooter';
 
 import http from '../http';
-import HeroCommandCard from '../components/dashboard/HeroCommandCard';
-import KpiStack from '../components/dashboard/KpiStack';
+import ActivityCard, { RiskIndexCard, PreventionImpactCard } from '../components/dashboard/HeroCommandCard';
+import { KpiTile } from '../components/dashboard/KpiStack';
 import CategoryBar from '../components/dashboard/CategoryBar';
 import FeedingRodentCorrelation from '../components/dashboard/FeedingRodentCorrelation';
 import BlockPerformance from '../components/dashboard/BlockPerformance';
@@ -59,9 +60,26 @@ const NAV_TABS = [
   { to: '/all-reports', label: 'Reports' },
 ];
 
+// NO MEASURE CAP - the content fills the page width.
+//
+// A 1440px centred cap was tried here and removed: it left empty gutters either side
+// while the header band ran edge to edge, so the grid read as floating inside the page
+// rather than filling it. The scorecard and the assessment page are un-capped for the
+// same reason, and all three full-height pages now agree.
+//
+// The 12 columns therefore stretch on an ultra-wide monitor. That is the accepted
+// trade: the cost is a KPI number sitting in a wider card, and the fix if it ever
+// bites is per-card `maxWidth` on the sparse ones, not a cap on the whole grid - the
+// dense sections (block performance, the diagnosis table, the activity chart) all
+// genuinely use the width.
+const contentWidth = { width: '100%' };
+
 // Every content row hangs off one 12-column grid, so card edges line up down the
 // whole page instead of each row picking its own fractional split.
-const GRID_12 = { display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: 3, alignItems: 'start' };
+const GRID_12 = {
+  ...contentWidth,
+  display: 'grid', gridTemplateColumns: 'repeat(12, minmax(0, 1fr))', gap: 3, alignItems: 'start',
+};
 // span(md) => full width below md; pass xs/sm to keep a card multi-up on smaller
 // screens (the KPI tiles stay 2-up rather than becoming a tall single file).
 const span = (md, xs = 12, sm = 12) => ({ gridColumn: { xs: `span ${xs}`, sm: `span ${sm}`, md: `span ${md}` } });
@@ -78,10 +96,10 @@ function seriesOf(history, key) {
 /**
  * The three supporting metrics.
  *
- * NO COLOUR, TINT OR ICON in here any more. KpiStack assigns its own neon ink per slot
- * from NEON[mode], so the tone lookup that used to ride along on each item - and the
- * per-metric icon - were dead weight passed into a component that ignores them. What is
- * left is the data: label, value, the week-over-week movement, and the series.
+ * NO COLOUR, TINT OR ICON. The per-tile accent ink went with the sparkline it coloured,
+ * so the tone lookup and the per-metric icon that used to ride along on each item were
+ * dead weight passed into a component that ignores them. What is left is the data:
+ * label, value and the week-over-week movement.
  */
 function buildKpis(m) {
   const t = m?.trends || {};
@@ -91,18 +109,18 @@ function buildKpis(m) {
   // the hero's activity panel, so a tile repeating both was the same reading twice.
   return [
     {
-      label: 'Critical Flora', value: m?.criticalFlora ?? 0,
+      key: 'criticalFlora', label: 'Critical Flora', value: m?.criticalFlora ?? 0,
       trend: m ? { delta: t.critical_flora?.sinceLastWeek ?? null, improve: 'down', base: m.criticalFlora } : null,
       series: seriesOf(h, 'criticalFlora'),
     },
     {
-      label: 'Active Hotspots', value: m?.activeHotspots ?? 0,
+      key: 'hotspots', label: 'Active Hotspots', value: m?.activeHotspots ?? 0,
       trend: m ? { delta: t.active_hotspots?.sinceLastWeek ?? null, improve: 'down', base: m.activeHotspots } : null,
       series: seriesOf(h, 'hotspots'),
     },
     {
       // tracks the picker: value, delta and sparkline all cover the same window
-      label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0,
+      key: 'alerts', label: `Alerts Sent (${win}d)`, value: m?.notificationsWindow ?? m?.notificationsLast7Days ?? 0,
       trend: m ? { delta: (m.notificationsWindow ?? 0) - (m.notificationsPrevWindow ?? 0), improve: null, base: m.notificationsWindow } : null,
       trendLabel: `vs prev ${win} days`,
       series: seriesOf(m?.notificationsByDay || [], 'count'),
@@ -143,42 +161,28 @@ function useSyncedAgo(updatedAt) {
 function DashboardSkeleton() {
   return (
     <Box sx={GRID_12}>
-      {/* Hero card */}
-      <Box sx={span(12)}>
-        <Card>
-          <CardContent sx={{ p: { xs: 3, md: 4 } }}>
-            <Skeleton variant="text" width={140} height={20} />
-            <Skeleton variant="text" width={100} height={56} sx={{ mt: 0.5 }} />
-            <Skeleton variant="rounded" height={10} sx={{ mt: 1.5, borderRadius: '5px' }} />
-          </CardContent>
-        </Card>
-      </Box>
+      {/* Zone A · four KPI cards, risk index first.
+          Kept in step with the real grid on purpose. This block has been wrong twice:
+          it drew the pre-rebuild layout (four tiles then an 8|4 split) long after that
+          layout was gone, so every load promised one arrangement and delivered
+          another. If the zones below change, change these spans with them. */}
+      {[0, 1, 2, 3].map(i => (
+        <Box key={i} sx={span(3, 12, 6)}>
+          <Skeleton variant="rounded" height={i === 0 ? 300 : 132} sx={{ borderRadius: '16px' }} />
+        </Box>
+      ))}
 
-      {/* Zone B · KpiStack | CategoryBar.
-          This block used to draw four separate KPI tiles and then an 8|4 split -
-          the shape of the layout BEFORE the dashboard rebuild. Neither exists on
-          the page any more, so the skeleton promised one arrangement and the loaded
-          page delivered another, and every load shifted. It now tracks the real
-          zones, and the header comment above is true again. */}
-      <Box sx={span(4, 12, 6)}>
-        <Stack spacing={2}>
-          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
-          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
-          <Skeleton variant="rounded" height={86} sx={{ borderRadius: '16px' }} />
-        </Stack>
-      </Box>
-      <Box sx={span(8, 12, 6)}>
-        <Skeleton variant="rounded" height={280} sx={{ borderRadius: '16px' }} />
-      </Box>
+      {/* Zone B · trend (8) + case mix (4) */}
+      <Box sx={span(8, 12, 12)}><Skeleton variant="rounded" height={330} sx={{ borderRadius: '16px' }} /></Box>
+      <Box sx={span(4, 12, 12)}><Skeleton variant="rounded" height={330} sx={{ borderRadius: '16px' }} /></Box>
 
-      {/* Zone C · block performance */}
-      <Box sx={span(12)}><Skeleton variant="rounded" height={240} sx={{ borderRadius: '16px' }} /></Box>
+      {/* Zone C · blocks (8) + recent activity (4) */}
+      <Box sx={span(8, 12, 12)}><Skeleton variant="rounded" height={260} sx={{ borderRadius: '16px' }} /></Box>
+      <Box sx={span(4, 12, 12)}><Skeleton variant="rounded" height={260} sx={{ borderRadius: '16px' }} /></Box>
 
-      {/* Zone D · correlation table */}
-      <Box sx={span(12)}><Skeleton variant="rounded" height={220} sx={{ borderRadius: '16px' }} /></Box>
-
-      {/* Zone E · recent activity detail */}
-      <Box sx={span(12)}><Skeleton variant="rounded" height={200} sx={{ borderRadius: '16px' }} /></Box>
+      {/* Zone D · correlation (8) + prevention impact (4) */}
+      <Box sx={span(8, 12, 12)}><Skeleton variant="rounded" height={220} sx={{ borderRadius: '16px' }} /></Box>
+      <Box sx={span(4, 12, 12)}><Skeleton variant="rounded" height={220} sx={{ borderRadius: '16px' }} /></Box>
     </Box>
   );
 }
@@ -187,6 +191,27 @@ export default function Dashboard() {
   const { user } = useUser();
   const theme = useTheme();
   const mode = theme.palette.mode;
+  /**
+   * SPARKLINE INKS, ONE PER METRIC AND SEMANTIC.
+   *
+   * This was `[magenta, cyan, teal]` from the NEON palette, indexed by the tile's POSITION
+   * in the row - so a metric's colour depended on where it happened to sit, and magenta,
+   * cyan and teal said nothing about critical flora, hotspots or alert volume. Three
+   * arbitrary pastels also put three hues on the dashboard that appear nowhere else in it,
+   * which is most of why the page read as having no palette.
+   *
+   * Keyed by metric now: danger for critical flora, warning for hotspots (a watch signal,
+   * not an emergency - red for both would flatten the distinction), info blue for alert
+   * volume, which is a count of activity and not a status at all.
+   *
+   * SVG_ACCENT, not the CSS custom properties: an SVG `stroke` and a gradient `stop-color`
+   * cannot resolve var(), so chart inks have to be mode-indexed literals. Same rule the
+   * rodent map's pathOptions follow.
+   */
+  const kpiInk = useMemo(() => {
+    const a = SVG_ACCENT[mode] || SVG_ACCENT.dark;
+    return { criticalFlora: a.danger, hotspots: a.warn, alerts: a.info };
+  }, [mode]);
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   // Global time window: governs the history/trend series (charts + sparklines) and
   // the alerts KPI. Point-in-time counts are always "now" regardless.
@@ -199,10 +224,14 @@ export default function Dashboard() {
   const [showPreview, setShowPreview] = useState(false);
   const [scorecard, setScorecard] = useState(null);
   const [rangeAnchor, setRangeAnchor] = useState(null);
-  // MUI's own passive scroll listener rather than a hand-rolled one. disableHysteresis
-  // means it tracks absolute position, so the shadow stays put while scrolled down
-  // instead of flickering off whenever the scroll direction reverses.
-  const scrolled = useScrollTrigger({ disableHysteresis: true, threshold: 8 });
+  // Scroll state for the header's shadow, read off THIS PAGE'S scroll container.
+  //
+  // This was useScrollTrigger, which listens to the window. That worked while the page
+  // scrolled the document, but the page now owns the viewport and scrolls internally -
+  // the window never moves, so the trigger would sit at false forever and the shadow
+  // would silently never appear. Same approach Alert Rules uses: read scrollTop off the
+  // container in its own onScroll.
+  const [scrolled, setScrolled] = useState(false);
 
   const kpis = useMemo(() => buildKpis(metrics), [metrics]);
   // Drives the header CTA's badge. Already in the metrics payload, so no extra request.
@@ -262,9 +291,18 @@ export default function Dashboard() {
   }
 
   return (
+    /* FULL-HEIGHT SHELL, matching Notification Log, Alert Rules, the scorecard and the
+       assessment page. The dashboard owns the viewport: a header band that does not
+       scroll, then one internal scroll region carrying the zones and the footer.
+       Registered in FULL_HEIGHT_PATHS in App.jsx, which supplies the 100dvh that this
+       height:100% resolves against - and which also drops the app's own <Container>, so
+       the page is responsible for its own measure. */
     <Box
       component="main"
-      sx={{ width: '100%', px: { xs: 0, md: 1 }, pb: showStickyCta ? 12 : 6 }}
+      sx={{
+        width: '100%', height: '100%', minHeight: 0,
+        display: 'flex', flexDirection: 'column',
+      }}
       aria-busy={loading}
     >
 
@@ -281,14 +319,15 @@ export default function Dashboard() {
       {/* ── Page header ─────────────────────────────────── */}
       <Box
         sx={{
-          // Sticks BELOW the app bar, not at top: 0. Both were pinned to 0, so the
-          // two bars overlapped the moment the page scrolled.
+          // NOT sticky any more, and it does not need to be.
           //
-          // A FLAT 64, not a responsive 56/64: App.jsx pins its Toolbar to
-          // `minHeight: 64, height: 64` at every breakpoint, so the old xs:56
-          // offset left an 8px slot on mobile where page content scrolled through
-          // the gap between the two bars.
-          position: 'sticky', top: 64, zIndex: 100,
+          // This was `position: sticky, top: 64` - offset to clear App.jsx's 64px
+          // Toolbar so the two bars did not overlap as the document scrolled. In the
+          // full-height shell the band is simply the first flex child and never
+          // scrolls, so stickiness has nothing to do: `flexShrink: 0` is the whole
+          // mechanism. Keeping the 64px offset would now push the header 64px DOWN
+          // inside its own container, leaving a gap under the app bar.
+          flexShrink: 0, zIndex: 100,
           /* GLASSMORPHIC. Translucent card colour plus a backdrop blur, so content
              scrolling underneath is sensed rather than seen. The fallback matters: with
              no `backdrop-filter` support the bar would be plain see-through and the
@@ -305,13 +344,31 @@ export default function Dashboard() {
             ? (mode === 'dark' ? '0 4px 16px rgba(0,0,0,.45)' : '0 4px 6px -1px rgba(16,24,40,.05)')
             : 'none',
           transition: 'box-shadow .2s ease',
-          px: { xs: 2, md: 1 }, pt: 2, pb: 1.5, mb: 3,
-          mx: { xs: -2, md: -1 },
+          // The negative `mx` is gone with the Container it was cancelling: full-height
+          // routes render without App.jsx's <Container>, so pulling sideways by -2/-1
+          // would now drag the band past the viewport edge instead of undoing padding
+          // that no longer exists. `mb` is gone too - the scroll region below owns the
+          // gap, so the band sits flush against its own bottom border.
+          px: { xs: 2, md: 3 }, pt: 2, pb: 1.5,
         }}
       >
         {/* Strict two-cluster flex row. `alignItems: center` on BOTH the row and the
-            left cluster is what puts the live dot on the title's optical centre. */}
-        <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            left cluster is what puts the live dot on the title's optical centre.
+            The row spans the full width, matching the grid below it now that the grid is
+            uncapped - so the title still lines up with the first card's left edge and the
+            utility cluster with the last card's right edge. */}
+        <Stack direction="row" spacing={2} sx={{ ...contentWidth, justifyContent: 'space-between', alignItems: 'center' }}>
+          {/* LEFT GROUP: identity and navigation together.
+              The nav used to be the middle child of a space-between row, which floated
+              it in the centre of the header with a gap on either side - it read as a
+              third, unrelated cluster. Branding and navigation belong to each other, so
+              they are one group now and space-between separates them from the utility
+              tools on the right, which is the only split the header needs. */}
+          <Stack
+            direction="row"
+            spacing={{ md: 2.5, lg: 3.5 }}
+            sx={{ alignItems: 'center', minWidth: 0, flexShrink: 1 }}
+          >
           <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', minWidth: 0 }}>
             <Typography
               component="h1"
@@ -343,6 +400,11 @@ export default function Dashboard() {
                     '100%': { boxShadow: `0 0 6px 1px ${alpha(live.dot, 0.7)}, 0 0 0 0 ${alpha(live.dot, 0)}` },
                   },
                   animation: 'liveDot 2s ease-in-out infinite',
+                  // The halo stays so the dot still reads as lit; only the heartbeat stops.
+                  '@media (prefers-reduced-motion: reduce)': {
+                    animation: 'none',
+                    boxShadow: `0 0 6px 1px ${alpha(live.dot, 0.7)}`,
+                  },
                 }}
               />
               <Typography sx={{ color: live.ink, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.3px' }}>LIVE</Typography>
@@ -387,11 +449,19 @@ export default function Dashboard() {
                     display: 'flex', alignItems: 'center',
                     px: 1.75, pt: 0.5, pb: 0.75,
                     fontSize: 13.5, textDecoration: 'none', whiteSpace: 'nowrap',
-                    fontWeight: active ? 700 : 500,
-                    color: active ? BRAND.heading : BRAND.text,
+                    // BRAND.textLight for inactive, not BRAND.text. Active was already
+                    // 800/heading, but inactive sat at BRAND.text - a mid grey close enough
+                    // to heading that the 3px rule was doing nearly all the work of saying
+                    // which tab you were on. Dropping the inactive links one step widens the
+                    // gap from both sides, so the selected tab reads as selected from
+                    // weight and value before the underline is even noticed.
+                    fontWeight: active ? 800 : 500,
+                    color: active ? BRAND.heading : BRAND.textLight,
                     // the rule is always present so the row never shifts by 2px when
                     // the active tab changes; it is just transparent when inactive
-                    borderBottom: `2px solid ${active ? BRAND.action : 'transparent'}`,
+                    // 3px in the action blue, not 2px: at 2 the active rule read as an
+                    // underline on a link rather than a selected tab.
+                    borderBottom: `3px solid ${active ? BRAND.action : 'transparent'}`,
                     transition: 'color .15s ease, border-color .15s ease',
                     '&:hover': { color: BRAND.heading, borderBottomColor: active ? BRAND.action : BRAND.border },
                     '&:focus-visible': { outline: `2px solid ${BRAND.accent}`, outlineOffset: 2 },
@@ -402,6 +472,7 @@ export default function Dashboard() {
               );
             })}
           </Stack>
+          </Stack>
 
           {/* Right cluster: the global time window, then the primary action. */}
           <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexShrink: 0 }}>
@@ -411,14 +482,20 @@ export default function Dashboard() {
               endIcon={<ExpandMoreRoundedIcon sx={{ fontSize: 20, transform: rangeAnchor ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
               aria-haspopup="listbox"
               aria-expanded={Boolean(rangeAnchor)}
-              // A bordered select, not a ghost button. Borderless read as static text
-              // on a white bar - there was nothing to say it could be opened. The
-              // hairline gives it a hit area, and the grey wash on hover confirms it.
+              /* A FILLED select, not a bordered-but-white one.
+               * It went borderless -> bordered already, which fixed "is this even
+               * clickable". What was left is that a white fill on a white header bar means
+               * only the 1px hairline separates the control from the bar behind it, so it
+               * still read as a label with a box drawn round it. Filling it at rest gives
+               * it a body; hover then goes the OTHER way, lifting to white with a darker
+               * edge, so the hover state is a real change of state rather than a slightly
+               * different grey. */
               sx={{
                 textTransform: 'none', fontWeight: 600, fontSize: 13.5, color: BRAND.text,
                 px: 1.5, py: 0.65, whiteSpace: 'nowrap', borderRadius: '8px',
-                border: `1px solid ${BRAND.border}`, bgcolor: BRAND.surface,
-                '&:hover': { bgcolor: BRAND.section, borderColor: BRAND.textLight, color: BRAND.heading },
+                border: `1px solid ${BRAND.border}`, bgcolor: BRAND.section,
+                transition: 'background-color .15s ease, border-color .15s ease, color .15s ease',
+                '&:hover': { bgcolor: BRAND.surface, borderColor: BRAND.textLight, color: BRAND.heading },
               }}
             >
               <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
@@ -459,6 +536,17 @@ export default function Dashboard() {
               </Tooltip>
             )}
 
+            {/* Divider: the date picker and mail are settings, the CTA commits work.
+                A rule between them says "these are not the same kind of control" more
+                cheaply than extra spacing, which at this density just reads as drift. */}
+            <Box
+              aria-hidden
+              sx={{
+                width: '1px', alignSelf: 'stretch', my: 0.75, mx: 0.75,
+                bgcolor: SURFACE[mode].border, flexShrink: 0,
+              }}
+            />
+
             {/* ── PRIMARY CTA, always reachable ──────────────────────────────────
                 The blueprint suggested "Dispatch Team" or "Generate Report". Neither
                 exists as an action in this system, and a header button that does
@@ -477,9 +565,19 @@ export default function Dashboard() {
               aria-label={pendingCount > 0 ? `Process escalation queue, ${pendingCount} pending` : 'Open escalation queue'}
               sx={{
                 ml: 0.5, px: 2, py: 0.85, fontWeight: 700, fontSize: 13.5, whiteSpace: 'nowrap', flexShrink: 0,
+                // The count badge is absolutely positioned to overlap the top-right
+                // corner, so the button has to BE its containing block. Without this the
+                // badge anchors to whatever ancestor happens to be positioned and lands
+                // somewhere unrelated - it would not error, it would just be wrong.
+                position: 'relative',
                 borderRadius: `${RADII.control}px`,
                 background: `linear-gradient(135deg, ${BRAND.action} 0%, ${BRAND.actionHover} 100%)`,
-                boxShadow: 'none',
+                // A resting shadow, not none. Flat, the one committing action on the page
+                // sat in the same plane as the ghost buttons beside it; a small lift reads
+                // as "this one does something" before the colour is even registered.
+                // Outer lift plus a 1px inset highlight along the top edge - the inner
+                // shadow reads as a slightly domed surface rather than a flat fill.
+                boxShadow: `0 2px 6px -1px ${alpha(BRAND.action, 0.45)}, inset 0 1px 0 rgba(255,255,255,0.18)`,
                 transition: 'transform .15s ease, box-shadow .15s ease',
                 '&:hover': {
                   background: `linear-gradient(135deg, ${BRAND.actionHover} 0%, #143A9E 100%)`,
@@ -496,7 +594,12 @@ export default function Dashboard() {
                   component="span"
                   aria-hidden
                   sx={{
-                    ml: 1, minWidth: 20, height: 20, px: 0.5, borderRadius: `${RADII.pill}px`,
+                    // Overlaps the button's top-right corner rather than sitting inside
+                    // the label run: a count tucked in the text row reads as part of the
+                    // wording, where a badge breaking the edge reads as a notification.
+                    position: 'absolute', top: -7, right: -7,
+                    minWidth: 20, height: 20, px: 0.5, borderRadius: `${RADII.pill}px`,
+                    border: `2px solid ${SURFACE[mode].card}`,
                     bgcolor: BRAND.primary, color: '#fff',
                     display: 'inline-grid', placeItems: 'center',
                     fontSize: 11.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
@@ -533,52 +636,93 @@ export default function Dashboard() {
         )}
       </Box>
 
-      {/* ── Content ─────────────────────────────────────── */}
+      {/* ── Content ───────────────────────────────────────
+          The one scroll region, and the only place the header's shadow state comes
+          from. `minHeight: 0` is load-bearing: a flex child will not shrink below its
+          content without it, so the shell would grow and the page would scroll the
+          document again instead of this box. */}
+      <Box
+        onScroll={e => setScrolled(e.currentTarget.scrollTop > 8)}
+        sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto', px: { xs: 2, md: 3 }, pt: 3, pb: showStickyCta ? 12 : 3 }}
+      >
       {loading && !metrics ? (
         <DashboardSkeleton />
       ) : metrics && (
         <Box sx={GRID_12}>
 
-          {/* ZONE A — the hook. Status, what past action achieved, and the one
-              action demanded now, in a single Command Card across all 12. */}
-          {/* ── ZONE A · ONE hero card ─────────────────────────────────────────
-              The risk index and the activity chart were two full-width cards, each
-              spending a screen on a single idea. Merged: instrument left, trend right. */}
-          <Box ref={heroRef} sx={span(12)}>
-            <HeroCommandCard
+          {/* ── ZONE A · KPI BANNER ────────────────────────────────────────────
+              Four equal cards, risk index first.
+              The gauge and the activity chart used to share one merged card, which
+              gave a single time series half the screen before any headline number had
+              been stated. The four figures a manager checks first now lead the page as
+              one row, and the risk index takes the first slot because it is the one
+              number that summarises the rest.
+              3 of 12 each on desktop; 6 (two-up) on tablet so the numbers stay
+              readable rather than shrinking to a quarter of a narrow screen. */}
+          {/* `alignSelf: stretch` on THIS ROW ONLY.
+              The grid is alignItems:'start', so every cell sized to its own content and
+              the risk card - which carries a label, a figure and a band line - stood
+              visibly taller than the three plain tiles, leaving a band of dead space
+              under them. Stretching makes the four match.
+              Not applied to the grid as a whole on purpose: the 8+4 rows below pair a
+              dense table with a short card, and stretching those would inflate the short
+              one into a mostly-empty box. */}
+          <Box ref={heroRef} sx={{ ...span(3, 12, 6), alignSelf: 'stretch' }}>
+            <RiskIndexCard
               estateHealth={metrics.estateHealth}
-              scorecard={scorecard}
+              scoreSeries={seriesOf(metrics.history || [], 'riskScore')}
+              loading={loading}
+            />
+          </Box>
+          {kpis.map(item => (
+            <Box key={item.label} sx={{ ...span(3, 12, 6), alignSelf: 'stretch' }}>
+              <KpiTile item={item} ink={kpiInk[item.key]} loading={loading} />
+            </Box>
+          ))}
+
+          {/* ── ZONE B · TREND (8) + CASE MIX (4), one row ──────────────────────
+              These were two stacked full-width rows. A 7-point time series across the
+              whole measure left a wide, flat, mostly-empty plot, and a five-slice donut
+              on its own row was worse - a small ring with half a screen of nothing
+              beside it. Pairing them fills both: the chart gets the room a series
+              actually uses, the donut gets a column that fits it. */}
+          <Box sx={span(8, 12, 12)}>
+            <ActivityCard
               trends={metrics.trends}
               history={metrics.history || []}
               sightingsByDay={metrics.sightingsByDay || []}
               openCases={metrics.openCases ?? 0}
               windowDays={windowDays}
               onWindowChange={setWindowDays}
-              loading={loading}
             />
           </Box>
-
-          {/* ── ZONE B · MEASURES ──────────────────────────────────────────────
-              Supporting numbers left, the one summary chart right.
-              RecentActivity used to hold the third cell here, which put a list of
-              individual recent cases ABOVE both aggregate sections. It is row-level
-              detail, so it now sits in Zone E: numbers, then charts, then detail,
-              reading down the page. Leaving the two survivors at 3+4 of 12 would have
-              stranded five empty columns, so they widen to fill the row. */}
-          <Box sx={span(4, 12, 6)}>
-            <KpiStack items={kpis} loading={loading} />
-          </Box>
-          <Box sx={span(8, 12, 6)}>
-            <CategoryBar casesByCategory={metrics.casesByCategory} />
+          {/* TWO SHORT CARDS STACKED, so the right column matches the chart's height.
+              Cases by Category alone left a large empty area beside the lower half of
+              Estate Activity, and Prevention Impact - which is one sentence until work
+              orders close - orphaned a second gap next to the diagnosis table further
+              down. Paired, they fill one column between them and both gaps close. */}
+          <Box sx={span(4, 12, 12)}>
+            <Stack spacing={3} sx={{ height: '100%' }}>
+              <CategoryBar casesByCategory={metrics.casesByCategory} />
+              <PreventionImpactCard scorecard={scorecard} />
+            </Stack>
           </Box>
 
-          {/* ── ZONE C · block performance, full width ────────────────────────── */}
-          <Box sx={span(12)}>
+          {/* ── ZONE C · BLOCKS (8) + RECENT ACTIVITY (4) ───────────────────────
+              Recent Activity moves up here and narrows to a 4-column rail. At 12
+              columns its rows ran the full screen, so the eye had to cross the whole
+              glass from a case title to its status - the exact distance problem a
+              narrow rail removes. It sits beside the block table because both answer
+              "where should I look", one aggregated and one case by case. */}
+          <Box sx={span(8, 12, 12)}>
             <BlockPerformance
               sightingsByBlock={metrics.sightingsByBlock || []}
               hotspots={metrics.hotspots || []}
               topBlock={metrics.estateHealth?.highestRiskBlock}
             />
+          </Box>
+          <Box sx={span(4, 12, 12)}>
+            <RecentActivity cases={metrics.recentCases || []} />
           </Box>
 
           {/* ZONE D — granular data. The diagnosis table gets all 12 columns; in the
@@ -587,21 +731,18 @@ export default function Dashboard() {
             <FeedingRodentCorrelation />
           </Box>
 
-          {/* ── ZONE E · DETAIL ────────────────────────────────────────────────
-              Individual recent cases, last: the page now goes headline instrument ->
-              supporting numbers -> aggregate charts -> individual records, which is
-              the order a manager reads it in. The hero still carries the open-case
-              count and the primary action, so nothing needed for acting quickly moved
-              below the fold. */}
-          <Box sx={span(12)}>
-            <RecentActivity cases={metrics.recentCases || []} />
-          </Box>
-
         </Box>
       )}
 
+      {/* Inside the scroll region, like every other full-height page: the shell hides
+          page-level overflow, so a footer outside this box would be unreachable. */}
+      <SiteFooter />
+      </Box>
+
       {/* Sticky mobile conversion bar - same destination and wording as the card
-          CTA, so it reinforces rather than introduces a second action. */}
+          CTA, so it reinforces rather than introduces a second action. It stays OUTSIDE
+          the scroll region and `position: fixed`, so it pins to the viewport rather
+          than scrolling away with the content. */}
       {showStickyCta && (
         <Box
           sx={{
