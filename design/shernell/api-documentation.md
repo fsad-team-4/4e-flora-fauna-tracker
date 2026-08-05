@@ -16,7 +16,7 @@ The token is issued by `POST /api/auth/login` (Member 3's auth module); its
 payload is `{ user_id, role, name }`.
 
 - `protect` - rejects with `401` if the header is missing/malformed or the token
-  is invalid; otherwise attaches the decoded payload to `req.user`. All six
+  is invalid; otherwise attaches the decoded payload to `req.user`. All eight
   flora routes use it.
 - `restrictTo('staff', 'admin')` - runs after `protect`; rejects with `403` if
   `req.user.role` is not staff or admin. Residents have no access to the flora
@@ -346,5 +346,54 @@ Example response (`200`):
   "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:45:00.000Z"
+}
+```
+
+---
+
+## POST /api/flora/planting-suggestions
+
+Recommend species for a planting site condition, grounded in the active
+catalog only. See [UC-8](use-cases.md#uc-8-staff-gets-ai-suggested-species-for-a-planting-site-condition)
+in `use-cases.md` for the full behavior.
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | condition | string | yes | free text description of the site; trimmed |
+
+- Behavior: every active (non-deleted) `GreeneryRecord`'s species, plant
+  family, site suitability, colour, and max height at maturity is loaded into
+  a catalog listing. `gemini-3.5-flash` is prompted to recommend species
+  using ONLY that catalog - it is instructed not to invent species outside
+  the list - and to reason comparatively, recommending the closest-fitting
+  options with an honest tradeoff noted for each, rather than defaulting to
+  "nothing suitable" whenever no entry matches every criterion exactly.
+- Success: `200` - `{ "suggestions": "<plain text>" }` (no markdown)
+- Errors:
+  - `400` - `{ "error": "condition is required" }` (missing, non-string, or
+    empty/whitespace-only `condition`)
+  - `401` - missing/invalid token
+  - `403` - role not staff/admin
+  - `503` - `{ "error": "AI service not configured" }` (`GEMINI_API_KEY` unset)
+  - `502` - `{ "error": "AI request failed: <message>" }` (Gemini call failed)
+
+Example request:
+
+```
+POST /api/flora/planting-suggestions
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "condition": "shaded car park, low maintenance, no fruiting trees" }
+```
+
+Example response (`200`):
+
+```json
+{
+  "suggestions": "Ficus benjamina is a close fit - shade tolerant and low maintenance, though it can grow taller than ideal for a compact car park planter. Frangipani is more sun-loving than this site calls for, but its low litter and non-fruiting habit still make it a reasonable second choice with extra watering in the shade."
 }
 ```
