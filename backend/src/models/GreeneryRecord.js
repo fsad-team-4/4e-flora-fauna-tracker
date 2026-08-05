@@ -19,6 +19,10 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  location: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
   health_status: {
     type: DataTypes.ENUM('healthy', 'at_risk', 'critical'),
     allowNull: false,

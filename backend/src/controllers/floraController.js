@@ -2,11 +2,16 @@ const yup = require('yup');
 const { Op } = require('sequelize');
 const { GoogleGenAI } = require('@google/genai');
 const { GreeneryRecord, User } = require('../models');
+const sequelize = require('../config/database');
 const { sendMail } = require('../config/mailer');
 const floraQueryService = require('../services/floraQueryService');
 
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
+
+// Postgres' LIKE is case-sensitive (unlike SQLite's), so use iLike there to
+// keep substring filters matching regardless of case on both databases.
+const CASE_INSENSITIVE_OP = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.substring;
 
 // Rule-based notification: email all staff/admin when a plant's health becomes
 // at_risk or critical. Fire-and-forget - sendMail swallows its own errors, so
@@ -40,6 +45,7 @@ const createSchema = yup.object({
   species: yup.string().required().trim(),
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
+  location: yup.string().trim(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -59,6 +65,7 @@ const updateSchema = yup.object({
   species: yup.string().trim(),
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
+  location: yup.string().trim(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -99,10 +106,13 @@ async function getAllGreenery(req, res) {
     where.health_status = req.query.health_status;
   }
   if (req.query.plant_family) {
-    where.plant_family = { [Op.substring]: req.query.plant_family };
+    where.plant_family = { [CASE_INSENSITIVE_OP]: req.query.plant_family };
   }
   if (req.query.site_suitability) {
-    where.site_suitability = { [Op.substring]: req.query.site_suitability };
+    where.site_suitability = { [CASE_INSENSITIVE_OP]: req.query.site_suitability };
+  }
+  if (req.query.location) {
+    where.location = { [CASE_INSENSITIVE_OP]: req.query.location };
   }
   if (req.query.color) {
     where.color = req.query.color;
@@ -130,6 +140,7 @@ async function createGreenery(req, res) {
     species: data.species,
     common_name: data.common_name,
     location_zone: data.location_zone,
+    location: data.location,
     health_status: data.health_status,
     health_notes: data.health_notes,
     plant_family: data.plant_family,
@@ -217,6 +228,7 @@ async function bulkUploadCSV(req, res) {
       const record = await GreeneryRecord.create({
         species: data.species,
         common_name: data.common_name,
+        location: data.location,
         location_zone: data.location_zone,
         health_status: data.health_status,
         health_notes: data.health_notes,
