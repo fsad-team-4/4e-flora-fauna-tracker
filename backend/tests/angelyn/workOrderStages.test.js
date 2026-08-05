@@ -13,6 +13,8 @@ jest.mock('../../src/services/emailService', () => ({
 const request = require('supertest');
 const app = require('../../src/index');
 const { sequelize, RodentAssessment, WorkOrder, WorkOrderEvent, NotificationLog, ResidentReport, User } = require('../../src/models');
+const { STAGE_LABEL } = require('../../src/services/workOrderStages');
+const { buildMessage } = require('../../src/services/workOrderNotify');
 
 let adminToken, staffToken, residentToken, residentId;
 
@@ -49,8 +51,8 @@ const patchStage = (id, token, body) => request(app)
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await registerAndLogin('Admin', 'wos-admin@test.com', 'manager');
-  staffToken = await registerAndLogin('Officer', 'wos-staff@test.com', 'field_officer');
+  adminToken = await registerAndLogin('Admin', 'wos-admin@test.com', 'admin');
+  staffToken = await registerAndLogin('Officer', 'wos-staff@test.com', 'staff');
   residentToken = await registerAndLogin('Resident', 'wos-res@test.com', 'resident');
   residentId = (await User.findOne({ where: { email: 'wos-res@test.com' } })).id;
 });
@@ -178,6 +180,166 @@ describe('closing', () => {
     expect(ok.body.status).toBe('closed');
     expect(ok.body.closed_by_name).toBe('Admin');
     expect(await WorkOrderEvent.count({ where: { work_order_id: wo.id, stage: 'closed' } })).toBe(1);
+  });
+});
+
+/**
+ * THE WIRING THAT MAKES THE RESIDENT EMAIL REACHABLE.
+ *
+ * Every test below this point used to link a report with a direct
+ * WorkOrder.update(), because the approval route had no way to express the link.
+ * That is why the "your case is being handled" email could never fire in the real
+ * app: notifyStageChange worked perfectly and always reported 'no resident linked'.
+ *
+ * The link is stated by the approving officer, NOT inferred from block+category.
+ * WorkOrder.js:66-68 rules inference out ("rather than inventing a recipient") and
+ * matching on block would email whoever else lives at the same block.
+ */
+describe('POST / accepts the resident reports a call-out answers', () => {
+  const raiseLinked = async (block, ids) => {
+    const a = await makeAssessment({ block_number: block });
+    return request(app)
+      .post('/api/work-orders')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ assessment_ids: [a.id], resident_report_ids: ids });
+  };
+
+  test('linked ids are persisted on the work order', async () => {
+    const report = await ResidentReport.create({
+      category: 'pest', title: 'Rats at the chute', description: 'Nightly', reported_by: residentId,
+    });
+    const res = await raiseLinked('Block 60', [report.id]);
+    expect(res.status).toBe(201);
+    const row = await WorkOrder.findByPk(res.body.id);
+    expect(row.resident_report_ids).toEqual([report.id]);
+  });
+
+  test('the resident is told when work STARTS, not only when it finishes', async () => {
+    const report = await ResidentReport.create({
+      category: 'pest', title: 'Rats at the void deck', description: 'Every evening', reported_by: residentId,
+    });
+    const raised = await raiseLinked('Block 61', [report.id]);
+    expect(raised.status).toBe(201);
+
+    const res = await patchStage(raised.body.id, staffToken, { stage: 'in_progress' });
+    expect(res.status).toBe(200);
+    expect(res.body.notified.attempted).toBe(1);
+    expect(res.body.notified.sent).toBe(1);
+    expect(res.body.notified.skipped).toBeNull();
+
+    // Asserted through STAGE_LABEL rather than a hardcoded string, so the wording
+    // cannot drift out from under the test.
+    const log = await NotificationLog.findOne({
+      where: { source_type: 'work_order', source_id: String(raised.body.id) },
+      order: [['createdAt', 'DESC']],
+    });
+    expect(log.status).toBe('sent');
+    expect(log.recipient).toBe('wos-res@test.com');
+    expect(log.subject).toContain(STAGE_LABEL.in_progress);
+  });
+
+  test('omitted resident_report_ids stays null and notifies nobody', async () => {
+    const res = await raiseLinked('Block 62', undefined);
+    expect(res.status).toBe(201);
+    expect((await WorkOrder.findByPk(res.body.id)).resident_report_ids).toBeNull();
+    const moved = await patchStage(res.body.id, staffToken, { stage: 'in_progress' });
+    expect(moved.body.notified.skipped).toBe('no resident linked');
+  });
+
+  test('an empty array is normalised to null, not stored as []', async () => {
+    const res = await raiseLinked('Block 63', []);
+    expect(res.status).toBe(201);
+    expect((await WorkOrder.findByPk(res.body.id)).resident_report_ids).toBeNull();
+  });
+
+  test('a non-numeric id is rejected -> 400', async () => {
+    const a = await makeAssessment({ block_number: 'Block 64' });
+    const res = await request(app)
+      .post('/api/work-orders')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ assessment_ids: [a.id], resident_report_ids: ['not-an-id'] });
+    expect(res.status).toBe(400);
+  });
+
+  /**
+   * NO DOUBLE-NOTIFYING ONE COMPLAINT.
+   *
+   * recordStage refuses a repeated stage within one work order, but it cannot see
+   * across work orders. Linking the same report to a second open call-out would
+   * email that resident "contractor on site" twice for one complaint.
+   */
+  test('a report already on an open work order cannot be linked to a second -> 400', async () => {
+    const report = await ResidentReport.create({
+      category: 'pest', title: 'Rats by the drain', description: 'Recurring', reported_by: residentId,
+    });
+    const first = await raiseLinked('Block 65', [report.id]);
+    expect(first.status).toBe(201);
+
+    const second = await raiseLinked('Block 65', [report.id]);
+    expect(second.status).toBe(400);
+    expect(second.body.error).toMatch(new RegExp(`already linked to open work order #${first.body.id}`));
+
+    // and the resident is emailed exactly once for the in_progress stage
+    const moved = await patchStage(first.body.id, staffToken, { stage: 'in_progress' });
+    expect(moved.body.notified.sent).toBe(1);
+    const logs = await NotificationLog.findAll({
+      where: { source_type: 'work_order', source_id: String(first.body.id) },
+    });
+    expect(logs.filter(l => l.subject.includes(STAGE_LABEL.in_progress))).toHaveLength(1);
+  });
+
+  test('once the first order is CLOSED the report can be linked again - a recurrence is new work', async () => {
+    const report = await ResidentReport.create({
+      category: 'pest', title: 'Rats returned', description: 'Months later', reported_by: residentId,
+    });
+    const first = await raiseLinked('Block 66', [report.id]);
+    await request(app)
+      .patch(`/api/work-orders/${first.body.id}/close`)
+      .set('Authorization', `Bearer ${adminToken}`);
+
+    const second = await raiseLinked('Block 66', [report.id]);
+    expect(second.status).toBe(201);
+  });
+
+  test('the guard names every clashing report, not just the first', async () => {
+    const mk = t => ResidentReport.create({
+      category: 'pest', title: t, description: 'x', reported_by: residentId,
+    });
+    const r1 = await mk('Clash one');
+    const r2 = await mk('Clash two');
+    const first = await raiseLinked('Block 67', [r1.id, r2.id]);
+    expect(first.status).toBe(201);
+
+    const second = await raiseLinked('Block 67', [r1.id, r2.id]);
+    expect(second.status).toBe(400);
+    expect(second.body.error).toContain(String(r1.id));
+    expect(second.body.error).toContain(String(r2.id));
+  });
+});
+
+describe('the resident email does not claim their case status changed', () => {
+  test('it is framed as the work order stage, and says the report is tracked separately', async () => {
+    const wo = await WorkOrder.create({
+      block_number: 'Block 70', animal_type: 'rodent', assessment_ids: [], consolidated_count: 1,
+      risk_level: 'high', status: 'raised',
+    });
+    const { subject, body } = buildMessage(wo, 'in_progress', 'Aisha');
+
+    // Not "Update on your report" - that implied a change to their own case.
+    expect(subject).not.toMatch(/your report/i);
+    expect(subject).toBe(`Pest control update - Block 70: ${STAGE_LABEL.in_progress}`);
+    expect(body).toContain(`Work status: ${STAGE_LABEL.in_progress}`);
+    expect(body).not.toMatch(/^Status:/m);
+    expect(body).toMatch(/status of your own\s*\n?\s*report is tracked separately/);
+  });
+
+  test('a work order with no block still addresses the resident sensibly', async () => {
+    const wo = await WorkOrder.create({
+      animal_type: 'rodent', assessment_ids: [], consolidated_count: 1,
+      risk_level: 'low', status: 'raised',
+    });
+    const { subject } = buildMessage(wo, 'resolved', null);
+    expect(subject).toBe(`Pest control update - your block: ${STAGE_LABEL.resolved}`);
   });
 });
 

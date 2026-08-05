@@ -28,6 +28,16 @@ const approveSchema = yup.object({
   dispatch: yup.boolean(),
   notes: yup.string().nullable().max(2000),
   target_agency: yup.string().nullable().max(200),
+  // Which of Klemens' resident reports this call-out answers. STATED BY THE
+  // OFFICER, never inferred.
+  //
+  // The tempting alternative is to match reports to the order by block and
+  // category, but WorkOrder.js:66-68 rules that out in as many words: an unlinked
+  // order "sends no resident email rather than inventing a recipient". A block
+  // heuristic would email whoever happens to live at the same block as a rodent
+  // report, which is a wrong recipient, not a helpful default. Omitted or empty
+  // stays null and notifies nobody - the documented, honest path.
+  resident_report_ids: yup.array().of(yup.number().integer().positive()).nullable(),
 });
 const dismissSchema = yup.object({
   assessment_ids: idList,
@@ -139,7 +149,7 @@ function blockLabel(block) {
 }
 
 // GET /queue - pending escalations grouped by block, most urgent first.
-router.get('/queue', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.get('/queue', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const rows = await RodentAssessment.findAll({
       where: PENDING_WHERE,
@@ -198,7 +208,7 @@ router.get('/queue', restrictTo('manager', 'field_officer'), async (req, res) =>
 // GET / - raised work orders (audit history).
 // ?status= accepts any pipeline stage; 'open' is kept as a legacy alias meaning
 // "not closed", so existing callers keep working after the open/closed change.
-router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const where = { is_deleted: false };
     const q = req.query.status;
@@ -253,7 +263,7 @@ router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
 });
 
 // GET /:id - one work order with its consolidated assessments
-router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -283,8 +293,8 @@ router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
 // This is the human approval step: nothing here runs without an officer's call.
 // Approving commits money, so this is admin-only. Officers (staff) see
 // everything and move the non-financial stages via PATCH /:id/stage.
-router.post('/', restrictTo('manager'), validateBody(approveSchema), async (req, res) => {
-  const { assessment_ids, dispatch, notes, target_agency } = req.body;
+router.post('/', restrictTo('admin'), validateBody(approveSchema), async (req, res) => {
+  const { assessment_ids, dispatch, notes, target_agency, resident_report_ids } = req.body;
   try {
     // only consolidate assessments that are genuinely still pending - guards
     // against a stale queue double-actioning the same complaint.
@@ -293,6 +303,37 @@ router.post('/', restrictTo('manager'), validateBody(approveSchema), async (req,
     });
     if (items.length === 0) {
       return res.status(400).json({ error: 'none of those assessments are pending escalation' });
+    }
+
+    // A resident report may be carried by only ONE open work order.
+    //
+    // Without this, the same report can be attached to a second call-out and its
+    // resident receives a full set of stage emails per order - "contractor on site"
+    // twice for one complaint. recordStage's same-stage guard cannot catch it: it
+    // only sees within a single work order, so across orders this is the only place
+    // it can be stopped. Reports on a CLOSED order stay re-linkable, because a
+    // recurrence later is a genuine new call-out rather than a duplicate.
+    //
+    // Overlap is computed in JS rather than with a JSON containment query:
+    // resident_report_ids is DataTypes.JSON, and containment syntax differs between
+    // SQLite (dev) and Postgres (Neon). Only open orders are loaded, so the set is
+    // small.
+    if (resident_report_ids && resident_report_ids.length) {
+      const openOrders = await WorkOrder.findAll({
+        where: { status: { [Op.ne]: 'closed' }, resident_report_ids: { [Op.ne]: null } },
+        attributes: ['id', 'resident_report_ids'],
+      });
+      const carriedBy = new Map();
+      for (const o of openOrders) {
+        const ids = Array.isArray(o.resident_report_ids) ? o.resident_report_ids : [];
+        for (const rid of ids) if (!carriedBy.has(rid)) carriedBy.set(rid, o.id);
+      }
+      const clash = resident_report_ids.filter(id => carriedBy.has(id));
+      if (clash.length) {
+        return res.status(400).json({
+          error: `resident report ${clash.join(', ')} is already linked to open work order #${carriedBy.get(clash[0])}`,
+        });
+      }
     }
 
     const block = items.find(i => i.block_number && i.block_number.trim())?.block_number || null;
@@ -309,6 +350,10 @@ router.post('/', restrictTo('manager'), validateBody(approveSchema), async (req,
       status: 'raised',
       town_council: DEFAULT_TOWN_COUNCIL,
       notes: notes || null,
+      // Empty array normalises to null so "no reports linked" is one value in the
+      // column, not two - resolveResidentRecipients treats both as nobody, but a
+      // reader of the row should not have to know that.
+      resident_report_ids: resident_report_ids && resident_report_ids.length ? resident_report_ids : null,
       approved_by: req.user.user_id,
       approved_by_name: req.user.name || null,
     });
@@ -399,7 +444,7 @@ router.post('/', restrictTo('manager'), validateBody(approveSchema), async (req,
 
 // POST /dismiss - officer reviews a cluster and decides no call-out is warranted
 // (false alarm, will monitor, etc). Records the decision as an audit trail.
-router.post('/dismiss', restrictTo('manager', 'field_officer'), validateBody(dismissSchema), async (req, res) => {
+router.post('/dismiss', restrictTo('admin', 'staff'), validateBody(dismissSchema), async (req, res) => {
   const { assessment_ids, note } = req.body;
   try {
     const [count] = await RodentAssessment.update(
@@ -420,7 +465,7 @@ router.post('/dismiss', restrictTo('manager', 'field_officer'), validateBody(dis
 
 // POST /undismiss - reverse a dismissal (the "Undo" affordance), putting the
 // reports back in the pending queue and clearing the decision audit.
-router.post('/undismiss', restrictTo('manager', 'field_officer'), validateBody(undismissSchema), async (req, res) => {
+router.post('/undismiss', restrictTo('admin', 'staff'), validateBody(undismissSchema), async (req, res) => {
   const { assessment_ids } = req.body;
   try {
     const [count] = await RodentAssessment.update(
@@ -443,7 +488,7 @@ router.post('/undismiss', restrictTo('manager', 'field_officer'), validateBody(u
  * stage is committed and its true outcome is returned - a mail failure never
  * rolls back a stage that genuinely happened.
  */
-router.patch('/:id/stage', restrictTo('manager', 'field_officer'), validateBody(stageSchema), async (req, res) => {
+router.patch('/:id/stage', restrictTo('admin', 'staff'), validateBody(stageSchema), async (req, res) => {
   const { stage, note, scheduled_for, at } = req.body;
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
@@ -482,7 +527,7 @@ router.patch('/:id/stage', restrictTo('manager', 'field_officer'), validateBody(
  * staff + admin: drafting text costs nothing. Raising the work order is the
  * financial act, and that stays restricted at POST /.
  */
-router.post('/briefing/draft', restrictTo('manager', 'field_officer'), validateBody(briefingDraftSchema), async (req, res) => {
+router.post('/briefing/draft', restrictTo('admin', 'staff'), validateBody(briefingDraftSchema), async (req, res) => {
   try {
     const items = await RodentAssessment.findAll({
       where: { id: { [Op.in]: req.body.assessment_ids }, is_deleted: false },
@@ -543,7 +588,7 @@ router.post('/briefing/draft', restrictTo('manager', 'field_officer'), validateB
  * carries the true outcome and a failure shows as failed - the UI only ever
  * renders "sent HH:MM" off a row that actually sent.
  */
-router.post('/briefing/send', restrictTo('manager', 'field_officer'), validateBody(briefingSendSchema), async (req, res) => {
+router.post('/briefing/send', restrictTo('admin', 'staff'), validateBody(briefingSendSchema), async (req, res) => {
   try {
     const { body, block, assessment_ids, recipient, risk_level } = req.body;
     const to = (recipient && recipient.trim()) || CONTRACTOR_EMAIL;
@@ -577,7 +622,7 @@ router.post('/briefing/send', restrictTo('manager', 'field_officer'), validateBo
 
 // PATCH /:id/close - closing terminates a paid engagement, so it stays admin.
 // Delegates to the same stage machine so it is logged like every other scan.
-router.patch('/:id/close', restrictTo('manager'), async (req, res) => {
+router.patch('/:id/close', restrictTo('admin'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -602,7 +647,7 @@ router.patch('/:id/close', restrictTo('manager'), async (req, res) => {
  * untouched and the response names which photos were not stored, so the UI can
  * say so rather than render a broken image.
  */
-router.post('/:id/photos', restrictTo('manager', 'field_officer'), validateBody(photoSchema), async (req, res) => {
+router.post('/:id/photos', restrictTo('admin', 'staff'), validateBody(photoSchema), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });
@@ -655,7 +700,7 @@ router.post('/:id/photos', restrictTo('manager', 'field_officer'), validateBody(
  * Drafts ONLY. It saves the text on the work order for a human to review and
  * edit; it never emails anyone and is not on the dispatch path.
  */
-router.post('/:id/briefing', restrictTo('manager', 'field_officer'), async (req, res) => {
+router.post('/:id/briefing', restrictTo('admin', 'staff'), async (req, res) => {
   try {
     const wo = await WorkOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
     if (!wo) return res.status(404).json({ error: 'not found' });

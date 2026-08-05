@@ -46,17 +46,30 @@ async function resolveResidentRecipients(workOrder) {
   return out;
 }
 
+// WHY THIS EMAIL TALKS ABOUT THE WORKS, NOT ABOUT "YOUR REPORT".
+//
+// It used to open "Update on your report" and then state "Status: Contractor on
+// site". That read as though the resident's own case had changed status - and it
+// had not. Nothing in this module writes ResidentReport.status or CaseStatusLog
+// (those are Klemens' M3, and this file's handover note keeps the overlap to one
+// read-only seam), so a resident who opened the app after that email saw their
+// case still sitting at 'open' and the two sources contradicted each other.
+//
+// The stage genuinely belongs to the WORK ORDER, so the wording now says so. The
+// resident is told what is happening on the ground without any claim about their
+// report's status, which keeps this honest without a cross-module write.
 function buildMessage(workOrder, stage, recipientName) {
   const label = STAGE_LABEL[stage] || stage;
   const where = workOrder.block_number || 'your block';
-  const subject = `Update on your report - ${where}: ${label}`;
+  const subject = `Pest control update - ${where}: ${label}`;
 
   const lines = [
     `Hello${recipientName ? ` ${recipientName}` : ''},`,
     '',
-    `There is an update on the pest control work for ${where}.`,
+    `This is an update on the pest control work for ${where}, raised in response to`,
+    'reports from residents including yours.',
     '',
-    `Status: ${label}`,
+    `Work status: ${label}`,
   ];
 
   // Only state a date when one was actually recorded. No estimates, no "within
@@ -70,7 +83,16 @@ function buildMessage(workOrder, stage, recipientName) {
     lines.push('The contractor has reported the work as completed.');
   }
 
-  lines.push('', 'This is an automated update from the estate management system.');
+  // Names the boundary explicitly, so the email cannot be read as a change to the
+  // resident's own case. Their report is updated on its own track by the officer
+  // handling it.
+  lines.push(
+    '',
+    'This describes the pest control work at the block. The status of your own',
+    'report is tracked separately in the app.',
+    '',
+    'This is an automated update from the estate management system.',
+  );
   return { subject, body: lines.join('\n') };
 }
 
