@@ -118,13 +118,22 @@ describe('static: no real-metric service reads SensorReading', () => {
       .map(f => path.relative(SRC, f))
       .sort();
     // The simulated layer's own model, its service, its route, the model
-    // registry and the seed. Anything else appearing here is a leak.
+    // registry, and the two scripts that WRITE the rows (seed.js and testData.js).
+    // Anything else appearing here is a leak.
+    //
+    // A writer is not a leak: the risk this test exists to catch is a simulated
+    // reading being counted as a real measurement, which only happens on the READ
+    // side. Both scripts set is_simulated: true, and routes/sensorSurface.js pins
+    // that flag in its WHERE clause - so what they insert is reachable from exactly
+    // one endpoint, which labels itself as modelled. The guarded list above is what
+    // holds the read side honest.
     expect(readers).toEqual([
       'models/SensorReading.js',
       'models/index.js',
       'routes/sensorSurface.js',
       'services/sensorSurface.js',
       'seed.js',
+      'testData.js',
     ].sort());
   });
 });

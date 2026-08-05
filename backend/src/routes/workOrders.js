@@ -17,7 +17,7 @@ const { recordDispatch } = require('../services/notificationService');
 const { STAGES, recordStage, buildPipeline, lastUpdate, isStage } = require('../services/workOrderStages');
 const { notifyStageChange } = require('../services/workOrderNotify');
 const { draftBriefing } = require('../services/vendorBriefing');
-const { blockKey } = require('../services/blockDiagnosis');
+const { blockKey, blockLabel } = require('../services/blockDiagnosis');
 const { councilFor } = require('../services/townCouncils');
 const { sendAndRecord } = require('../services/notificationService');
 const { validateBody } = require('../utils/validate');
@@ -144,8 +144,25 @@ const PENDING_WHERE = {
   is_deleted: false,
 };
 
-function blockLabel(block) {
-  return block && block.trim() ? block.trim() : '(No block specified)';
+/**
+ * GROUP BY THE NORMALISED BLOCK, DISPLAY THE CANONICAL LABEL.
+ *
+ * This used to group on the raw trimmed string, which is the same double-counting bug
+ * that was fixed in estateStats: "Block 123" and "123" are one block and produced TWO
+ * clusters in the queue. That is worse here than on a dashboard - a duplicated cluster
+ * means an officer consolidates half the pending reports at a block into a work order,
+ * the other half stays in the queue looking like a separate job, and the block gets two
+ * contractor visits for one problem. Exactly the consolidation this endpoint exists to
+ * perform, defeated by a label.
+ *
+ * blockKey/blockLabel are imported rather than reimplemented so the queue, the dashboard
+ * and the risk map cannot disagree about what one block is.
+ */
+function queueKey(block) {
+  return blockKey(block) || '(No block specified)';
+}
+function queueLabel(block) {
+  return block && block.trim() ? blockLabel(block) : '(No block specified)';
 }
 
 // GET /queue - pending escalations grouped by block, most urgent first.
@@ -156,14 +173,16 @@ router.get('/queue', restrictTo('admin', 'staff'), async (req, res) => {
       order: [['createdAt', 'DESC']],
     });
 
+    // keyed on the normalised block, but the LABEL carried alongside it - rebuilding a
+    // display name from the key would render "Block b" (see blockLabel).
     const groups = new Map();
     for (const r of rows) {
-      const key = blockLabel(r.block_number);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
+      const key = queueKey(r.block_number);
+      if (!groups.has(key)) groups.set(key, { label: queueLabel(r.block_number), items: [] });
+      groups.get(key).items.push(r);
     }
 
-    const clusters = [...groups.entries()].map(([block, items]) => {
+    const clusters = [...groups.values()].map(({ label: block, items }) => {
       const risk = highestRisk(items.map(i => i.risk_level || 'low'));
       const callOutsAvoided = items.length - 1; // N complaints -> 1 visit
       return {

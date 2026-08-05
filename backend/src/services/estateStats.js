@@ -7,10 +7,28 @@
 // output key is block_number to match the dashboard/frontend contract.
 // each hotspot also carries the count, the animals seen there and the most
 // recent sighting time (lastSeen) so the UI can show richer context.
+/**
+ * ONE BLOCK, ONE ROW.
+ *
+ * Grouping used the raw block_number, so "123" and "Block 123" were two different keys -
+ * the dashboard listed the same block twice, with its sightings split between the rows,
+ * and whichever half was larger was reported as the top block. Both halves also
+ * under-counted, so a block could sit below the hotspot threshold on each row while
+ * being over it in reality.
+ *
+ * blockKey() (reused from blockDiagnosis rather than reimplemented, so the two services
+ * cannot drift on what counts as the same block) strips the prefix and case for the
+ * grouping. `blockLabel` then renders one canonical form, so the display is consistent
+ * whatever the operator typed.
+ */
+const { blockKey, blockLabel } = require('./blockDiagnosis');
+
+
 function computeHotspots(sightings, minCount = 3) {
   const blocks = {};
   sightings.forEach(s => {
-    const b = (blocks[s.block_number] ||= { count: 0, animals: new Set(), lastSeen: null });
+    const key = blockKey(s.block_number);
+    const b = (blocks[key] ||= { count: 0, animals: new Set(), lastSeen: null, label: blockLabel(s.block_number) });
 
     b.count += 1;
     if (s.species) b.animals.add(s.species);
@@ -19,8 +37,9 @@ function computeHotspots(sightings, minCount = 3) {
   });
   return Object.entries(blocks)
     .filter(([, b]) => b.count >= minCount)
-    .map(([block_number, b]) => ({
-      block_number,
+    .map(([, b]) => ({
+      // the first-seen spelling, not the normalised key - consumers render this directly
+      block_number: b.label,
       count: b.count,
       animals: [...b.animals],
       lastSeen: b.lastSeen ? b.lastSeen.toISOString() : null,
@@ -108,10 +127,16 @@ function computeEstateMetrics({ flora, sightings, cases }) {
   const casesByCategory = Object.entries(byCategory).map(([category, count]) => ({ category, count }));
 
   // every block ranked by sighting volume (for the "activity by block" list)
+  // Same normalisation as computeHotspots - this list had the identical split-block bug,
+  // and it is the one the Block Performance panel renders.
   const byBlock = {};
-  sightings.forEach(s => { byBlock[s.block_number] = (byBlock[s.block_number] || 0) + 1; });
-  const sightingsByBlock = Object.entries(byBlock)
-    .map(([block_number, count]) => ({ block_number, count }))
+  sightings.forEach(s => {
+    const key = blockKey(s.block_number);
+    const b = (byBlock[key] ||= { count: 0, label: blockLabel(s.block_number) });
+    b.count += 1;
+  });
+  const sightingsByBlock = Object.values(byBlock)
+    .map(b => ({ block_number: b.label, count: b.count }))
     .sort((a, b) => b.count - a.count);
 
   const riskScore = computeRiskScore({

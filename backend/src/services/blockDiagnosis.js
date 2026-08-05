@@ -33,8 +33,28 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // trim + lowercase we also strip a leading "block" prefix - otherwise "128" and
 // "block 128" fall into different buckets and a real co-occurrence is missed
 // (they were, until this was fixed). Returns '' if unusable.
+//
+// "BLK" TOO, not just "BLOCK". The live data carries both spellings in the same
+// column - "Block 128" alongside "Blk 165 Bishan St 13" - and stripping only the long
+// form left the abbreviated ones keyed on their own prefix, so the same block written
+// two ways never matched. The optional dot covers "Blk." as well.
+//
+// It is deliberately a PREFIX strip and nothing more. A premises name has to survive
+// intact: "Sunshine Mall" must key as itself, because rodent reports are not all at
+// residential blocks and a normaliser that mangles a mall's name to chase block
+// numbers would silently merge unrelated locations.
+//
+// KNOWN LIMIT, not a bug to be regexed away: "blk 123" and "blk 123 ang mo kio ave 3"
+// are almost certainly the same block, and nothing in the strings proves it. Resolving
+// that needs a postal code or coordinate proximity, so the two stay separate rather
+// than being guessed into one.
 function blockKey(block) {
-  return (block || '').trim().toLowerCase().replace(/^block\s*/, '').trim();
+  // The lookahead is load-bearing: the prefix is only stripped when a NUMBER follows,
+  // which is what a block label is. Without it the strip ate the front of any word
+  // beginning with "block" - "Blockbuster Cafe" keyed as "buster cafe", quietly
+  // inventing a location. Requiring digits also means "Blk123" with no space still
+  // normalises, while a premises name never can.
+  return (block || '').trim().toLowerCase().replace(/^(?:block|blk)\.?\s*(?=\d)/, '').trim();
 }
 
 // True if a sighting was tagged as feeding. This repo currently carries TWO
@@ -79,7 +99,7 @@ function computeFeedingRodentCorrelation({
     let b = blocks.get(key);
     if (!b) {
       b = {
-        block_number: (rawBlock || '').trim(), // display label, original casing
+        block_number: blockLabel(rawBlock), // canonical display label - see blockLabel
         feedingCount: 0,
         rodentAssessmentCount: 0,
         elevatedRodentCount: 0,
@@ -132,4 +152,30 @@ function computeFeedingRodentCorrelation({
     );
 }
 
-module.exports = { computeFeedingRodentCorrelation, blockKey, FEEDING_TAG, ELEVATED_LEVELS };
+/**
+ * DISPLAY label for a block - blockKey's counterpart, and here for the same reason
+ * blockKey is: three files had grown their own version, and two of them were wrong.
+ *
+ * blockKey answers "are these the same place" and must lowercase to do it. This answers
+ * "what do we call it", so it must NOT - rebuilding a label from the key rendered
+ * "Block b". The rule instead:
+ *
+ *  - a block/blk prefix followed by a NUMBER is normalised to one spelling, so the
+ *    dashboard's tables cannot print "Block 123" and "123" for the same block;
+ *  - a bare number gets the prefix;
+ *  - anything else is a named place - a mall, a food centre, a bin centre - and is left
+ *    exactly as the operator typed it.
+ *
+ * The digit lookahead is the same load-bearing detail as in blockKey: without it, the
+ * strip ate part of real names and turned "Blockbuster Cafe" into "Block buster Cafe".
+ */
+function blockLabel(raw) {
+  const s = String(raw ?? '').trim();
+  if (!s) return 'Unspecified block';
+  const prefixed = s.match(/^(?:block|blk)\.?\s*(?=\d)(.*)$/i);
+  if (prefixed) return `Block ${prefixed[1].trim()}`;
+  if (/^\d/.test(s)) return `Block ${s}`;
+  return s;
+}
+
+module.exports = { computeFeedingRodentCorrelation, blockKey, blockLabel, FEEDING_TAG, ELEVATED_LEVELS };
