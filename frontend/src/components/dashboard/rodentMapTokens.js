@@ -71,13 +71,21 @@ export const densityStep = count => {
  * style would require an access token this build does not have. "Muted" drops road
  * labels entirely, which is what actually stops street type competing with the pins.
  */
+// EVERY OPTION IS LABEL-FREE, DELIBERATELY.
+//
+// The CARTO "light_all" variant used to be offered here as "Labelled". It was
+// removed: its labels are Singapore PLANNING AREA names, which are not town
+// councils. It printed "Yio Chu Kang" and "Ang Mo Kio" as separate places when
+// both are managed by one body - Yio Chu Kang SMC sits inside Ang Mo Kio Town
+// Council - so the basemap contradicted the estate's actual management structure.
+//
+// Region naming now comes solely from TownCouncilLabels, which draws council names
+// from /api/town-councils. Do not reintroduce a labelled basemap: it would put two
+// competing naming schemes on the same canvas.
 export const BASEMAPS = {
   // Default. CARTO Positron with no labels: a desaturated near-greyscale ground
-  // that gives the data layers the only saturated colour on the canvas. The
-  // previous default was the LABELLED variant, whose road casings and green park
-  // fills competed directly with the severity hues.
+  // that gives the data layers the only saturated colour on the canvas.
   muted: { label: 'Muted', url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png' },
-  labelled: { label: 'Labelled', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' },
   dark: { label: 'Dark', url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png' },
 };
 

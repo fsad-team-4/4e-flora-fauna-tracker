@@ -44,6 +44,7 @@ app.use('/api/geocode', require('./routes/geocode'));
 // SIMULATED sensor surface - kept a separate endpoint from the real risk map on
 // purpose, so the two data kinds can never be served in one merged shape
 app.use('/api/sensor-surface', require('./routes/sensorSurface'));
+app.use('/api/town-councils', require('./routes/townCouncils'));
 
 // Global error handler - must stay last.
 app.use((err, req, res, next) => {
