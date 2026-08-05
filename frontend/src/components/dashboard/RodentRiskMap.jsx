@@ -6,7 +6,7 @@ import {
   Card, Box, Stack, Typography, Skeleton, Button, IconButton, Divider, Collapse,
   ToggleButton, ToggleButtonGroup, Paper, Tooltip, GlobalStyles, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, FormControlLabel, Checkbox, CircularProgress,
-  Alert, Snackbar, Slider, Switch,
+  Alert, Snackbar, Slider, Switch, LinearProgress,
 } from '@mui/material';
 import CenterFocusStrongOutlinedIcon from '@mui/icons-material/CenterFocusStrongOutlined';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -35,6 +35,7 @@ import SensorSurfaceLayer from './SensorSurfaceLayer';
 import VendorBriefingDialog from './VendorBriefingDialog';
 import VenueDetailDrawer from './VenueDetailDrawer';
 import { useSensorSurface, SIMULATED_LABEL, bandThresholds } from './sensorSurfaceData';
+import TownCouncilLabels from './TownCouncilLabels';
 import http from '../../http';
 
 // Pinned to the LIGHT teal on purpose: it inks the white marker discs, which stay
@@ -814,10 +815,77 @@ function FocusPoint({ focus, markerRefs }) {
   return null;
 }
 
-function FitToData({ latlngs, fitSignal }) {
+/**
+ * KEEP SINGAPORE, AND ONLY SINGAPORE, IN VIEW.
+ *
+ * maxBounds on its own does not achieve this. Leaflet can only honour bounds while
+ * the viewport is SMALLER than they are; at a fixed minZoom of 11 an ordinary
+ * desktop viewport spans about 0.55 degrees of longitude against the 0.5 degrees
+ * SG_MAX_BOUNDS covers, so the constraint is unsatisfiable and Malaysia and
+ * Indonesia appear at the edges however tight the bounds are.
+ *
+ * So the floor is DERIVED, not hardcoded: getBoundsZoom() reports the deepest zoom
+ * at which the bounds still fit the current container, and that becomes minZoom.
+ * Zoomed all the way out you get Singapore filling the frame and nothing beyond it.
+ *
+ * It is recomputed on resize because the answer depends on container size - the
+ * map lives in a panel that changes width when the toolbar collapses, and a floor
+ * computed for a wide container would let a narrow one zoom out too far.
+ */
+function LockToSingapore({ bounds }) {
   const map = useMap();
   useEffect(() => {
+    const b = L.latLngBounds(bounds);
+    const apply = () => {
+      // inside=TRUE, and the choice is the whole point.
+      //
+      // inside=false gives the deepest zoom at which Singapore fits within the
+      // view - about zoom 11, which is the hardcoded floor this replaced. At that
+      // zoom the viewport spans roughly 0.82 degrees of longitude while Singapore
+      // spans 0.5, so the leftover frame is filled by Malaysia and Indonesia. That
+      // is unavoidable: the island and the viewport are different shapes.
+      //
+      // inside=true instead gives the shallowest zoom at which the VIEW fits inside
+      // the BOUNDS. The trade is real - fully zoomed out you no longer see the whole
+      // island at once, it is cropped to the viewport's aspect - but nothing outside
+      // Singapore is ever on screen, which is the requirement.
+      const floor = map.getBoundsZoom(b, true);
+      map.setMinZoom(floor);
+      if (map.getZoom() < floor) map.setZoom(floor);
+      map.setMaxBounds(b);
+    };
+    apply();
+    map.on('resize', apply);
+    return () => map.off('resize', apply);
+  }, [map, bounds]);
+  return null;
+}
+
+/**
+ * Frame the data ONCE, then leave the camera alone.
+ *
+ * This effect listed `latlngs` as a trigger, and every fetch builds a fresh array,
+ * so changing the window to 7d - or just pressing Refresh - re-fitted the map. An
+ * officer who had zoomed into a block to read it lost that view on every reload,
+ * with no way to keep it.
+ *
+ * Now it fits on the first arrival of data and afterwards only when the officer
+ * asks, via the "fit to data" button's fitSignal. Same lastSignal-ref shape FlyTo
+ * uses below, for the same reason: an identity change is not an intent.
+ *
+ * This does not contradict the camera-target comment further down - that defends
+ * deriving targets from unfiltered data, not re-framing on every fetch.
+ */
+function FitToData({ latlngs, fitSignal }) {
+  const map = useMap();
+  const lastSignal = useRef(fitSignal);
+  const framedOnce = useRef(false);
+  useEffect(() => {
     if (!latlngs.length) return;
+    const asked = fitSignal !== lastSignal.current;
+    if (framedOnce.current && !asked) return;
+    lastSignal.current = fitSignal;
+    framedOnce.current = true;
     if (latlngs.length === 1) map.setView(latlngs[0], 17);
     else map.fitBounds(latlngs, { padding: [40, 40], maxZoom: 17 });
   }, [latlngs, fitSignal, map]);
@@ -1183,6 +1251,13 @@ export default function RodentRiskMap() {
   // page's evidence, and a smooth field must be an opt-in the officer chose.
   const [showSensors, setShowSensors] = useState(false);
   const [councilFilter, setCouncilFilter] = useState([]);
+  // Council names are the map's ONLY region labels now that the labelled basemap is
+  // gone, so this defaults ON - a map with no place names at all is harder to read
+  // than one named by the wrong scheme. The dashed region rings stay opt-in: they
+  // are approximate circles and drawing them by default would imply surveyed
+  // boundaries.
+  const [showCouncilLabels, setShowCouncilLabels] = useState(true);
+  const [showCouncilRegions, setShowCouncilRegions] = useState(false);
   const [radiusArmed, setRadiusArmed] = useState(false);
   const [radiusCentre, setRadiusCentre] = useState(null);
   const [radiusM, setRadiusM] = useState(150);
@@ -1415,13 +1490,27 @@ export default function RodentRiskMap() {
         // wrapper has no radius, so `inherit` resolved to 0 and the pulse drew a
         // rectangle around the pin. Head diameter equals the box width, so a
         // square block at the top with a 50% radius sits exactly on it.
-        '.rk-coocc > .rk-pin::after': {
-          content: '""', position: 'absolute', left: '-2px', top: '-2px',
-          width: 'calc(100% + 4px)', aspectRatio: '1', borderRadius: '50%',
-          pointerEvents: 'none', animation: 'rkMarkerPulse 1.8s ease-out infinite',
+        // CO-OCCURRENCE IS A STATIC RING, ON ::before.
+        //
+        // Two bugs met here. This rule used ::after and animated it, and
+        // `.rk-coocc > .rk-pin::after` (specificity 0,2,1) outranks
+        // `.rk-pin-critical::after` (0,1,1) on the SAME pseudo-element - so a pin
+        // that was both critical and co-occurring silently lost its critical
+        // pulse. The most urgent state on the map was hidden by a less urgent one.
+        //
+        // Fixed by giving each meaning its own pseudo-element: co-occurrence takes
+        // ::before, critical keeps ::after, and a pin that is both now shows both.
+        // Co-occurrence also stops pulsing - an animated ring now means critical and
+        // only critical, which is the invariant this file states further up, and a
+        // static ring is what CoOccurSwatch has always drawn in the legend. The map
+        // was contradicting its own key.
+        '.rk-coocc > .rk-pin::before': {
+          content: '""', position: 'absolute', left: '-3px', top: '-3px',
+          width: 'calc(100% + 6px)', aspectRatio: '1', borderRadius: '50%',
+          border: `2px solid ${CATEGORY_COLORS[resolvedMode].flora_health}`,
+          boxSizing: 'border-box', pointerEvents: 'none', zIndex: 1,
         },
         '@keyframes rkpulse': { '0%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},.5)` }, '70%': { boxShadow: `0 0 0 7px rgba(${pulseRgb},0)` }, '100%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},0)` } },
-        '@keyframes rkMarkerPulse': { '0%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},.45)` }, '70%': { boxShadow: `0 0 0 9px rgba(${pulseRgb},0)` }, '100%': { boxShadow: `0 0 0 0 rgba(${pulseRgb},0)` } },
         // Leaflet's stock chrome follows the scheme: popup panel/tip, the canvas
         // behind tiles, zoom control and attribution strip all ride the em- vars.
         '.leaflet-popup-content-wrapper, .leaflet-popup-tip': { background: BRAND.surface, color: BRAND.text },
@@ -1467,9 +1556,16 @@ export default function RodentRiskMap() {
         },
         '@keyframes rkHexIn': { from: { opacity: 0, transform: 'scale(.86)' }, to: { opacity: 1, transform: 'scale(1)' } },
         'path.rk-hex': { transformBox: 'fill-box', transformOrigin: 'center', animation: 'rkHexIn .28s ease-out both' },
+        // Reduced motion, actually honoured. This listed `.rk-pin-critical`, but the
+        // animation is declared on `.rk-pin-critical::after` - so the rule matched an
+        // element carrying no animation and cancelled nothing. The pins kept pulsing
+        // for every user who had asked the OS for less movement. Now targets the
+        // pseudo-element where the animation really lives. (The header's pulsing dot
+        // is styled inline, so its own guard sits in its sx - see the header below.)
         '@media (prefers-reduced-motion: reduce)': {
           'path.rk-hex': { animation: 'none' },
-          '.rk-pin-critical': { animation: 'none' },
+          '.rk-pin-critical::after': { animation: 'none' },
+          '.rk-marker > div': { transition: 'none' },
         },
       }} />
 
@@ -1531,7 +1627,14 @@ export default function RodentRiskMap() {
               // must be the same red as the "High-risk locations" figure in the
               // dock (#B3261E). BRAND.accent (#C1272D) is brand chrome for links
               // and icons - two near-identical reds for one meaning read as sloppy.
-              startIcon={<Box aria-hidden sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: ON_SURFACE.danger, animation: 'rkpulse 1.8s infinite' }} />}
+              /* The reduced-motion guard lives in the sx rather than the GlobalStyles
+                 block: this animation is applied inline, so there is no stable class
+                 for a global rule to target. */
+              startIcon={<Box aria-hidden sx={{
+                width: 8, height: 8, borderRadius: '50%', bgcolor: ON_SURFACE.danger,
+                animation: 'rkpulse 1.8s infinite',
+                '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+              }} />}
               sx={{ textTransform: 'none', fontWeight: 700, whiteSpace: 'nowrap', borderColor: BRAND.border, color: ON_SURFACE.danger, '&:hover': { borderColor: ON_SURFACE.danger } }}>
               {coBlocks.length} co-occurrence{coBlocks.length === 1 ? '' : 's'}
             </Button>
@@ -1714,7 +1817,14 @@ export default function RodentRiskMap() {
           which is the only height it should ever occupy. ───────────────────── */}
       <Box sx={{ position: 'relative', display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexGrow: 1, minHeight: 0 }}>
       <Box className={radiusArmed ? 'rk-radius-armed' : undefined} sx={{ position: 'relative', flexGrow: 1, minWidth: 0, minHeight: { xs: 400, lg: 0 } }}>
-        {state.loading ? (
+        {/* FIRST load only. This was plain `state.loading`, which swapped the whole
+            MapContainer for a Skeleton on every refetch - unmounting Leaflet and
+            destroying the officer's zoom, centre and any open popup. A window
+            change or a Refresh now keeps the map mounted and veils it instead
+            (see the overlay just inside the map branch). `updatedAt` is only set
+            after a successful load, so the very first render still gets a
+            skeleton rather than an empty grey canvas. */}
+        {state.loading && !updatedAt ? (
           <Box sx={{ position: 'absolute', inset: 0, p: 2 }}><Skeleton variant="rounded" width="100%" height="100%" /></Box>
         ) : state.error ? (
           <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
@@ -1730,19 +1840,30 @@ export default function RodentRiskMap() {
               zoom={16}
               zoomControl={false}
               maxBounds={SG_MAX_BOUNDS}
-              maxBoundsViscosity={0.85}   // bounce back rather than hard-stop
+              // 1.0, not 0.85: a soft edge let the canvas be dragged past Singapore
+              // and rubber-band back, which still showed another country mid-drag.
+              maxBoundsViscosity={1.0}
+              // Starting floor only. LockToSingapore replaces it with a value derived
+              // from the container, since the correct floor depends on viewport size.
               minZoom={SG_MIN_ZOOM}
               style={{ height: '100%', width: '100%' }}
             >
               <TileLayer key={basemap} attribution={TILE_ATTR} url={BASEMAPS[basemap].url} subdomains="abcd" maxZoom={20}
                 eventHandlers={{ tileerror: () => setTileError(true) }} />
               <ZoomControl position="bottomright" />
+              <LockToSingapore bounds={SG_MAX_BOUNDS} />
               <FitToData latlngs={dataLatLngs} fitSignal={fitSignal} />
               <FlyTo latlngs={coOccurLatLngs} signal={flySignal} />
               <RadiusPicker armed={radiusArmed} onPick={c => { setRadiusCentre(c); setRadiusArmed(false); }} />
               <FocusPoint focus={focus} markerRefs={markerRefs} />
               <Polygon positions={ESTATE_BOUNDARY}
                 pathOptions={{ color: boundaryInk, weight: 1, opacity: 0.35, dashArray: '3 7', fill: true, fillColor: boundaryInk, fillOpacity: 0.03 }} />
+
+              {/* The map's only region naming. Non-interactive, so it never steals a
+                  click from a pin or a hexagon beneath it. */}
+              {showCouncilLabels && (
+                <TownCouncilLabels mode={resolvedMode} showRegions={showCouncilRegions} />
+              )}
 
               {radiusCentre && (
                 <Circle center={radiusCentre} radius={radiusM}
@@ -1770,6 +1891,31 @@ export default function RodentRiskMap() {
                 </>
               )}
             </MapContainer>
+
+            {/* Refetch indicator for a map that stays mounted. The skeleton above
+                only covers the first load, so this is what a window change or a
+                Refresh looks like now: the officer keeps their view, the stale
+                data is visibly marked as being replaced, and pointer events pass
+                through so panning still works while it lands. */}
+            {state.loading && (
+              <>
+                <Box
+                  aria-hidden
+                  sx={{
+                    position: 'absolute', inset: 0, zIndex: 1001, pointerEvents: 'none',
+                    bgcolor: resolvedMode === 'dark' ? 'rgba(17,24,39,.28)' : 'rgba(255,255,255,.38)',
+                    transition: 'opacity .15s',
+                  }}
+                />
+                <LinearProgress
+                  sx={{
+                    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 1002, height: 2,
+                    bgcolor: 'transparent',
+                    '& .MuiLinearProgress-bar': { bgcolor: ON_SURFACE.info },
+                  }}
+                />
+              </>
+            )}
 
             {tileError && (
               <Paper elevation={2} sx={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, px: 1.5, py: 0.5, borderRadius: '8px' }}>
@@ -1883,8 +2029,22 @@ export default function RodentRiskMap() {
                               <Typography sx={{ fontSize: 13, fontWeight: 700, color: BRAND.heading, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {p.block || 'Unlabelled block'}
                               </Typography>
+                              {/* Recency, display only. Nothing on this map encoded
+                                  time, so four critical reports from three months
+                                  ago ranked and read exactly like four from
+                                  yesterday. p.assessments is already sorted
+                                  latest-first by the service, so [0] is the most
+                                  recent - no client-side sorting needed.
+
+                                  Deliberately NOT folded into the ordering: the
+                                  comment above this list delegates ranking to the
+                                  backend's weightedScore, and re-sorting here would
+                                  invent a second, competing rule. */}
                               <Typography sx={{ fontSize: 11.5, color: BRAND.textLight }}>
                                 {p.count} report{p.count === 1 ? '' : 's'} · score {p.weightedScore ?? '-'}
+                                {p.assessments?.[0]?.createdAt
+                                  ? ` · latest ${relTimeLabel(new Date(p.assessments[0].createdAt), nowMs)}`
+                                  : ''}
                               </Typography>
                             </Box>
                             {/* the same high/critical gate the popup uses */}
@@ -1925,6 +2085,22 @@ export default function RodentRiskMap() {
                     <LayerSwitch checked={showCoOccur} disabled={coBlocks.length === 0} onChange={() => setShowCoOccur(v => !v)} swatch={<CoOccurSwatch />} label="Co-occur" count={coBlocks.length} />
                   </Stack>
 
+                  {/* WHICH blocks co-occur, not just how many. The API has always
+                      sent the names (coOccurrenceBlocks) and only the count was
+                      rendered, so the officer had to switch the layer on and hunt
+                      the map to find out where feeding and rodent activity actually
+                      overlap - which is the single most actionable thing this map
+                      knows. Naming them here makes it readable without a click. */}
+                  {coBlocks.length > 0 && (
+                    <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.6, mb: 1.5, mt: -0.75 }}>
+                      Feeding and rodent activity overlap at{' '}
+                      <Box component="span" sx={{ color: BRAND.text, fontWeight: 600 }}>
+                        {coBlocks.join(', ')}
+                      </Box>
+                      .
+                    </Typography>
+                  )}
+
                   {/* LAYER B toggle. The label states what the layer IS, not just
                       its name - a reader must not have to hunt for the caveat. */}
                   <Typography sx={SECTION_LABEL}>Sensor pilot</Typography>
@@ -1941,6 +2117,30 @@ export default function RodentRiskMap() {
                   </Tooltip>
                   <Typography sx={{ fontSize: 11, color: BRAND.textLight, lineHeight: 1.5, mt: 0.5 }}>
                     {SIMULATED_LABEL}
+                  </Typography>
+
+                  {/* Region naming. The basemap carries no place names, so these are
+                      the map's only labels - hence naming what they ARE (councils,
+                      approximate) rather than just switching a nameless layer. */}
+                  <Typography sx={{ ...SECTION_LABEL, mt: 1.5 }}>Region labels</Typography>
+                  <Stack spacing={0.25}>
+                    <LayerSwitch
+                      checked={showCouncilLabels}
+                      onChange={() => setShowCouncilLabels(v => !v)}
+                      swatch={<Box aria-hidden sx={{ width: 12, height: 12, borderRadius: '3px', border: `1px solid ${BRAND.border}`, bgcolor: BRAND.section }} />}
+                      label="Town council names"
+                    />
+                    <LayerSwitch
+                      checked={showCouncilRegions}
+                      disabled={!showCouncilLabels}
+                      onChange={() => setShowCouncilRegions(v => !v)}
+                      swatch={<Box aria-hidden sx={{ width: 12, height: 12, borderRadius: '50%', border: `1px dashed ${BRAND.slate}` }} />}
+                      label="Council regions"
+                    />
+                  </Stack>
+                  <Typography sx={{ fontSize: 11, color: BRAND.textLight, lineHeight: 1.5, mt: 0.5 }}>
+                    Council regions are approximate circles around town centres, not
+                    official boundaries. Names appear from zoom 12 in.
                   </Typography>
                 </PanelSection>
 
@@ -2041,6 +2241,23 @@ export default function RodentRiskMap() {
                           ? 'Pin colour = severity · ! marks critical. Severity bands above apply to pins and popups.'
                           : 'Colour = severity · bigger pin = more reports · ! marks critical.'}
                       </Typography>
+
+                      {/* THE SCORE KEY. "score 34" appears on every Action required
+                          row and "Weighted score" in every rodent popup, but the
+                          scale behind the number was never shown, so the figure was
+                          unreadable - is 34 bad? The API has always returned these
+                          weights for exactly this purpose (see the comment on
+                          RISK_WEIGHTS in backend/src/services/rodentRiskMap.js) and
+                          nothing rendered them. Read from the response, never
+                          hardcoded, so the key cannot drift from the maths. */}
+                      {state.weights && (
+                        <Typography sx={{ fontSize: 11.5, color: BRAND.textLight, lineHeight: 1.6, mt: 0.75 }}>
+                          Score = sum of report weights:{' '}
+                          {BAND_ORDER.filter(b => state.weights[b] != null)
+                            .map(b => `${BAND_LABEL[b].toLowerCase()} ${state.weights[b]}`)
+                            .join(' · ')}
+                        </Typography>
+                      )}
 
                       {viewMode === 'density' && (
                         <Box sx={{ mt: 1.5, pt: 1.5, borderTop: `1px solid ${BRAND.border}` }}>
