@@ -340,10 +340,32 @@ async function queryHandbook(req, res) {
   }
 
   try {
-    const { answer, plantCount } = await floraQueryService.queryCatalog(question.trim());
-    return res.status(200).json({ question: question.trim(), answer, plantCount });
+    const { answer, plantCount, referencedPlants } =
+      await floraQueryService.queryCatalog(question.trim());
+    return res
+      .status(200)
+      .json({ question: question.trim(), answer, plantCount, referencedPlants });
   } catch (err) {
-    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+    // The raw SDK message is meaningless to staff, so log it for the Render
+    // logs and hand the client something they can act on instead.
+    console.error('AI catalog query failed:', err);
+
+    const status = err.status;
+    const message = (err.message || '').toLowerCase();
+
+    if (status === 429 || message.includes('quota') || message.includes('rate limit')) {
+      return res.status(429).json({
+        error: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (status === 503 || message.includes('overloaded') || message.includes('unavailable')) {
+      return res.status(503).json({
+        error: 'The AI service is temporarily overloaded. Please try again in a moment.',
+      });
+    }
+    return res.status(502).json({
+      error: 'Could not get an answer from the AI service. Please try again.',
+    });
   }
 }
 

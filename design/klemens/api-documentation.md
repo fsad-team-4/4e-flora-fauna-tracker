@@ -231,11 +231,27 @@ AI-generated answer grounded only in the stored `GreeneryRecord` data.
 - Success: `200`
 
   ```json
-  { "question": "Which plants are at risk?", "answer": "<plain-text answer>", "plantCount": 24 }
+  {
+    "question": "Which plants are at risk?",
+    "answer": "<plain-text answer>",
+    "plantCount": 24,
+    "referencedPlants": [
+      { "id": 3, "species": "Ficus benjamina", "common_name": "Weeping Fig" },
+      { "id": 7, "species": "Cassia fistula", "common_name": null }
+    ]
+  }
   ```
 
   `plantCount` is the number of non-deleted catalog records the answer was
   grounded in.
+
+  `referencedPlants` lists the catalog plants the answer names, in order of
+  first appearance, deduplicated by `id`. A record is included when the answer
+  mentions its `species` or its `common_name` as a whole word (case-insensitive).
+  Matching only ever runs against the records fetched from the database - names
+  are never extracted from the answer text - so a plant the model invents can
+  never appear here. The client uses it to link each mentioned plant to its
+  `/flora/:id` detail page.
 
 - Errors:
   - `400` - `{ "error": "question is required" }` (missing, not a string, or
@@ -243,7 +259,20 @@ AI-generated answer grounded only in the stored `GreeneryRecord` data.
   - `400` - `{ "error": "question must be 500 characters or fewer" }`
   - `401` - missing/invalid token
   - `403` - role not staff/admin (residents cannot query the catalog)
-  - `502` - `{ "error": "AI request failed: <message>" }` (the Gemini call
-    threw)
+  - `429` - `{ "error": "The AI service is busy right now. Please try again in
+    a moment." }` (Gemini rate limit or quota exhausted - the SDK error carried
+    status 429, or its message mentioned a quota or rate limit)
+  - `502` - `{ "error": "Could not get an answer from the AI service. Please
+    try again." }` (any other Gemini failure)
   - `503` - `{ "error": "AI service not configured" }` (`GEMINI_API_KEY` is not
     set)
+  - `503` - `{ "error": "The AI service is temporarily overloaded. Please try
+    again in a moment." }` (the model is overloaded or unavailable - the SDK
+    error carried status 503, or its message mentioned overloaded/unavailable)
+
+  The two `503` cases are distinguished by their message, not their status: the
+  client shows the "not configured" hint only for the exact string
+  `AI service not configured`.
+
+  Gemini failures never return the raw SDK message to the client - the original
+  error is written to the server log (visible in the Render logs) instead.
