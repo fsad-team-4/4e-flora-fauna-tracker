@@ -296,15 +296,22 @@ async function careRecommendation(req, res) {
   }
 
   const prompt = `You are advising estate maintenance staff in Singapore's tropical climate.
-Give a concise, actionable care recommendation for this plant. Keep it practical -
-cover watering, shade, pest treatment, pruning, and when to escalate to a specialist.
+Give a concise, actionable care recommendation for this plant, broken down by life stage -
+seedling/young, establishing, and mature. Keep it practical and stage-appropriate: a
+seedling/young plant needs more careful watering and shade guidance, an establishing plant
+needs a balance of watering, feeding, and pest vigilance, and a mature plant leans more
+toward pruning and escalation to a specialist when issues arise.
 
 Species: ${record.species}
 Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
 Health notes: ${record.health_notes || 'none'}
-Respond with only the recommendation itself, as 3-5 short bullet points. Plain text only - no markdown, no asterisks, no bold. Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. After those care bullets, add one final additional bullet point estimating the species' typical lifespan in Singapore's climate, prefixed with ⏳. No preamble or introduction.`;
+Respond with only the recommendation itself. Plain text only - no markdown, no asterisks, no bold. Structure the response as three short sections in this order, each with its own plain-text heading (no markdown symbols) and 2-3 short bullet points - do not exceed 3 bullets per section:
+Seedling/Young
+Establishing
+Mature
+Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. Only include the topics that matter most for that stage - do not force all five into every section. After all three stage sections, add exactly one final bullet point estimating the species' typical lifespan in Singapore's climate, prefixed with ⏳ - do not repeat this per stage. Keep the overall response brief; do not pad any stage with filler advice just to reach the bullet limit. No preamble or introduction.`;
 
   let recommendation;
   try {
