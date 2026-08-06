@@ -166,8 +166,10 @@ Main flow:
    common name, location zone, health status, and notes, and calls Gemini
    (`gemini-3.5-flash`).
 4. Gemini returns 3-5 short, emoji-prefixed actionable bullets (💧 watering,
-   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plain text
-   only.
+   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plus one
+   additional bullet estimating the species' typical lifespan in Singapore's
+   climate, prefixed with a distinct emoji (⏳) separate from the five care
+   categories, plain text only.
 5. The backend stores the text in `care_recommendation`, saves, and returns
    `200` with the updated record. The detail page renders the bullets.
 
@@ -289,7 +291,102 @@ filter text, narrowing the plant directory for their current task.
 
 ---
 
-## UC-8: Staff gets AI-suggested species for a planting site condition
+## UC-8: Staff selects a known species and gets botanical fields auto-filled
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, on the Add
+  Plant form or a plant's Edit form.
+
+Main flow:
+
+1. On opening the form, the frontend calls `GET /api/flora/species-catalog`.
+2. The backend loads all active (non-deleted) records, groups them by
+   `species`, and - ordering by `createdAt` descending first - keeps one
+   representative entry per distinct species (`plant_family`,
+   `site_suitability`, `color`, `max_height_at_maturity`), so the most
+   recently created record for that species wins. It returns `200` with the
+   array of distinct species entries.
+3. The staff member starts typing in the Species field, a freeSolo
+   Autocomplete whose options are the distinct species names from the
+   catalog.
+4. The staff member selects an existing species from the dropdown list.
+5. The frontend sets the species field to the selected value, then looks up
+   that species in the catalog and, for each of `plant_family`,
+   `site_suitability`, `color`, and `max_height_at_maturity`, fills in the
+   catalog's value only if the corresponding field on the form is currently
+   empty - a field the staff member has already typed into is never
+   overwritten.
+
+Alternate / edge flows:
+
+- Typing free text that does not match any catalog species -> no match is
+  found, so no fields are auto-filled; the typed species is kept as-is
+  (freeSolo).
+- Clearing the Species field -> the field is set to empty and no auto-fill
+  logic runs.
+- This applies identically on both the Add Plant form (AddFlora.jsx) and the
+  Edit Plant form (FloraDetail.jsx).
+- If `GET /api/flora/species-catalog` fails (network error, non-2xx
+  response), the frontend catches the error and falls back to an empty
+  catalog rather than showing an error to the user; the Species field still
+  works as a plain freeSolo text input, just without autocomplete options or
+  auto-fill.
+- A resident attempting to load either form -> `403` on the
+  `species-catalog` call, consistent with the RBAC note at the top of this
+  document (staff/admin only).
+
+Postcondition: the species field reflects the staff member's selection or
+free text; any previously-blank botanical fields (`plant_family`,
+`site_suitability`, `color`, `max_height_at_maturity`) are pre-filled from
+the most recent existing record of that species, while fields already
+populated by the staff member are left untouched.
+
+## UC-9: Staff captures GPS coordinates for a location entry
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, and is on the
+  Add Plant form with at least one location entry.
+
+Main flow:
+
+1. On a location card in the Add Plant form, the staff member clicks "Capture
+   GPS Location".
+2. The frontend calls the browser's built-in Geolocation API
+   (`navigator.geolocation.getCurrentPosition`) - no external mapping or
+   geolocation service is involved. While the request is in flight, the
+   button is disabled and reads "Capturing...".
+3. On success, the returned latitude and longitude are stored in that
+   location's `gps_lat`/`gps_lng` fields, and a confirmation
+   ("Location captured (lat, lng)") is shown on the card.
+4. When the location is submitted, `gps_lat`/`gps_lng` are included in that
+   location's `POST /api/flora` payload alongside its other fields.
+
+Alternate / edge flows:
+
+- The browser does not support the Geolocation API
+  (`navigator.geolocation` is undefined) -> an inline error, "Geolocation is
+  not supported by this browser", is shown on that location's card; the
+  button is not clicked-through, nothing is submitted.
+- The user denies the browser's location permission prompt -> an inline
+  error, "Location permission denied", is shown.
+- The request times out -> an inline error, "Location request timed out", is
+  shown.
+- Any other geolocation failure -> a generic inline error, "Unable to
+  retrieve location", is shown.
+- In every failure case, `gps_lat`/`gps_lng` for that location remain `null`
+  and form submission is not blocked - GPS capture is optional/supplementary,
+  never required. A location can be submitted with `gps_lat`/`gps_lng` left
+  null.
+- This feature is scoped to the Add Plant form only. The Edit Plant form
+  (`FloraDetail.jsx`) has no "Capture GPS Location" button or geolocation
+  logic - a plant's GPS coordinates cannot currently be added or changed
+  after initial creation.
+
+Postcondition: the location's greenery record is created with `gps_lat` and
+`gps_lng` set to the captured coordinates if capture succeeded, or `null` if
+it was skipped or failed.
+
+## UC-10: Staff gets AI-suggested species for a planting site condition
 
 - Actor: staff (or admin)
 - Precondition: the user is logged in with role staff or admin.

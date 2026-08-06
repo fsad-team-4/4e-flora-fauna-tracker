@@ -67,6 +67,8 @@ Example response (`200`):
     "common_name": null,
     "location_zone": null,
     "location": null,
+    "gps_lat": null,
+    "gps_lng": null,
     "health_status": "critical",
     "health_notes": null,
     "care_recommendation": null,
@@ -77,6 +79,57 @@ Example response (`200`):
     "createdAt": "2026-07-03T02:10:00.000Z",
     "updatedAt": "2026-07-03T02:10:00.000Z",
     "recorder": { "id": 1, "name": "staff" }
+  }
+]
+```
+
+---
+
+## GET /api/flora/species-catalog
+
+List distinct species already recorded, each with one representative set of
+botanical fields. Soft-deleted records (`is_deleted = true`) are always
+excluded. When the same species appears in multiple records, the most
+recently created record (by `createdAt`) wins.
+
+Intended use: powers the Species Autocomplete/autofill feature on the Add
+Plant and Edit Plant forms - selecting a known species auto-fills
+`plant_family`, `site_suitability`, `color`, and `max_height_at_maturity`
+(see `use-cases.md` UC-8).
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body: none
+- Query params: none
+- Success: `200` - array of `{ species, plant_family, site_suitability,
+  color, max_height_at_maturity }`, one entry per distinct species
+- Errors:
+  - `401` - missing/invalid token
+  - `403` - role not staff/admin
+
+Example request:
+
+```
+GET /api/flora/species-catalog
+Authorization: Bearer <token>
+```
+
+Example response (`200`):
+
+```json
+[
+  {
+    "species": "Ficus benjamina",
+    "plant_family": "Moraceae",
+    "site_suitability": "Full sun",
+    "color": "Green",
+    "max_height_at_maturity": 20
+  },
+  {
+    "species": "Palm",
+    "plant_family": null,
+    "site_suitability": null,
+    "color": null,
+    "max_height_at_maturity": null
   }
 ]
 ```
@@ -98,6 +151,8 @@ If the record is created with health_status of at_risk or critical, an alert ema
   | common_name | string | no | trimmed |
   | location_zone | string | no | trimmed |
   | location | string | no | trimmed |
+  | gps_lat | number | no | nullable |
+  | gps_lng | number | no | nullable |
   | health_status | string | no | one of `healthy`, `at_risk`, `critical`; defaults to `healthy` |
   | health_notes | string | no | trimmed |
   | plant_family | string | no | trimmed |
@@ -109,6 +164,10 @@ If the record is created with health_status of at_risk or critical, an alert ema
 
   `recorded_by` is taken from the JWT (`req.user.user_id`); any value sent in the
   body is ignored.
+
+  `gps_lat`/`gps_lng` are typically populated via the Add Plant form's
+  "Capture GPS Location" button (browser Geolocation API), but can be set
+  directly via the API too - see `use-cases.md` UC-8.
 
 - Success: `201` - the created record object (includes `id`, `recorded_by`,
   `is_deleted: false`, `care_recommendation: null`, timestamps)
@@ -141,6 +200,8 @@ Example response (`201`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "healthy",
   "health_notes": null,
   "last_inspected_at": null,
@@ -171,6 +232,8 @@ If this update causes a fresh transition to at_risk or critical (the status chan
   | common_name | string | trimmed |
   | location_zone | string | trimmed |
   | location | string | trimmed |
+  | gps_lat | number | nullable |
+  | gps_lng | number | nullable |
   | health_status | string | one of `healthy`, `at_risk`, `critical` |
   | health_notes | string | trimmed |
   | plant_family | string | trimmed |
@@ -206,6 +269,8 @@ Example response (`200`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
@@ -258,10 +323,11 @@ others fail.
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Request: `multipart/form-data` with a single CSV file in the field named
   `file`. The first row is the header; recognised columns are `species`,
-  `common_name`, `location_zone`, `location`, `health_status`, `health_notes`,
-  `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
-  `last_inspected_at`. Each row is validated with the same schema as create
-  (species required, valid `health_status`); `recorded_by` is set from the JWT.
+  `common_name`, `location_zone`, `location`, `gps_lat`, `gps_lng`,
+  `health_status`, `health_notes`, `plant_family`, `site_suitability`, `color`,
+  `max_height_at_maturity`, `last_inspected_at`. Each row is validated with the
+  same schema as create (species required, valid `health_status`);
+  `recorded_by` is set from the JWT.
 - Success: `201` - `{ "created": <count>, "errors": [ { "row", "error" } ] }`,
   where `row` is the 1-based line number in the file (header is row 1, so the
   first data row is row 2) and `error` is the yup message array (or an error
@@ -304,7 +370,9 @@ Example response (`201`):
 ## POST /api/flora/:id/care-recommendation
 
 Generate an AI care recommendation for a plant using Gemini and store it on the
-record. The recommendation is 3-5 short, emoji-prefixed actionable bullets.
+record. The recommendation is 3-5 short, emoji-prefixed actionable bullets,
+plus one additional final bullet estimating the species' typical lifespan in
+Singapore's climate (prefixed with ⏳).
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Path params: `id` - the record id
@@ -337,12 +405,14 @@ Example response (`200`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
-  "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.",
+  "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.\n⏳ In Singapore's climate, this species typically lives 20-30 years with proper care.",
   "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:45:00.000Z"

@@ -8,6 +8,7 @@ const csvUpload = multer({ storage: multer.memoryStorage() });
 
 // Main endpoints for Flora Management
 router.get('/', protect, restrictTo('staff', 'admin'), floraController.getAllGreenery);       // Fetch plant directory
+router.get('/species-catalog', protect, restrictTo('staff', 'admin'), floraController.getSpeciesCatalog); // Distinct species lookup for autofill
 router.post('/', protect, restrictTo('staff', 'admin'), floraController.createGreenery);      // Create manual record
 router.post('/query', protect, restrictTo('staff', 'admin'), floraController.queryHandbook);   // AI natural-language catalog query
 router.post('/planting-suggestions', protect, restrictTo('staff', 'admin'), floraController.getPlantingSuggestions); // AI planting suggestions
