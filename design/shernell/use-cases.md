@@ -437,3 +437,58 @@ Alternate / edge flows:
 Postcondition: the staff member sees a set of catalog-grounded planting
 suggestions with tradeoffs for the described site; no data is persisted -
 each request is independent and nothing is saved to any record.
+
+## UC-11: Staff picks a location from an interactive map
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, and is on the
+  Add Plant form with at least one location entry.
+
+Main flow:
+
+1. On a location card in the Add Plant form, next to "Capture GPS Location",
+   the staff member clicks "Pick from Map".
+2. A dialog opens showing a Leaflet/OpenStreetMap map (the same mapping
+   library and pattern used by the Fauna Sightings module, per team
+   convention - no external Google Maps dependency, no API key required).
+3. The staff member clicks anywhere on the map to drop a pin; the Confirm
+   button stays disabled until a point has been picked.
+4. Clicking Confirm stores the picked point's coordinates into that
+   location's `gps_lat`/`gps_lng` fields, then reverse-geocodes the
+   coordinates via OpenStreetMap's free Nominatim API
+   (`GET https://nominatim.openstreetmap.org/reverse`) to derive a
+   descriptive place name for `location_zone`.
+5. Separately, the geocoded result's address fields are checked against the
+   existing `SINGAPORE_LOCATIONS` list (the same 55 URA planning areas used
+   by the Location Autocomplete in UC-1). If a match is found, `location` is
+   auto-filled with the matched canonical value; if no match is found,
+   `location_zone` still fills but `location` is left for the staff member
+   to pick or type manually.
+6. The dialog closes.
+
+Alternate / edge flows:
+
+- Clicking Cancel discards the pick entirely - no coordinates, location
+  zone, or location are changed on that location's card.
+- The reverse-geocoding request fails (network error) or returns no usable
+  place name (no `suburb`, `neighbourhood`, `city_district`, or
+  `display_name` in the response) -> `gps_lat`/`gps_lng` are still saved
+  from the picked point, and a note, "Couldn't auto-fill location name from
+  the map pin - please type it manually.", is shown on the location card so
+  the staff member knows to fill `location_zone` and `location` themselves.
+- The reverse-geocoding request succeeds and fills `location_zone`, but no
+  entry in `SINGAPORE_LOCATIONS` matches the geocoded address -> a lighter
+  note, "Location zone filled from map pin - please select the Location
+  area manually.", is shown, since only `location` needs manual entry in
+  this case.
+- While the reverse-geocode lookup is in progress, both Cancel and Confirm
+  are disabled and the dialog shows "Looking up location name...".
+- This feature is scoped to the Add Plant form only, same as GPS capture
+  (UC-9). The Edit Plant form (`FloraDetail.jsx`) has no "Pick from Map"
+  button.
+
+Postcondition: the location's `gps_lat`/`gps_lng` reflect the picked map
+point. `location_zone` is filled with a geocoded place name whenever
+Nominatim returns one; `location` is additionally auto-filled only when
+that place name matches an entry in `SINGAPORE_LOCATIONS`, otherwise it is
+left for the staff member to complete manually.
