@@ -319,7 +319,9 @@ Example response (`201`):
 ## POST /api/flora/:id/care-recommendation
 
 Generate an AI care recommendation for a plant using Gemini and store it on the
-record. The recommendation is 3-5 short, emoji-prefixed actionable bullets.
+record. The recommendation is 3-5 short, emoji-prefixed actionable bullets,
+plus one additional final bullet estimating the species' typical lifespan in
+Singapore's climate (prefixed with ⏳).
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Path params: `id` - the record id
@@ -359,7 +361,7 @@ Example response (`200`):
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
-  "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.",
+  "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.\n⏳ In Singapore's climate, this species typically lives 20-30 years with proper care.",
   "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:45:00.000Z"
