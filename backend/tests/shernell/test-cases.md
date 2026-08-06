@@ -49,6 +49,15 @@ pending microtasks (~50ms) before asserting.
 | 23 | GET /api/flora | Filter by plant_family (partial match) | `?plant_family=Rubi` against seeded records including one `Rubiaceae` and one `Nyctaginaceae` | 200; only the `Rubiaceae` record is returned |
 | 24 | GET /api/flora | Filter by color (exact match) | `?color=red` against seeded records of different colors | 200; only the exact-match record is returned |
 
+## Location Field & Case-Insensitive Filtering (`flora.test.js`)
+
+| # | Endpoint | Scenario | Input | Expected |
+|---|----------|----------|-------|----------|
+| 25 | POST /api/flora | Create with location and location_zone set to different values | `location: "Bishan Park"`, `location_zone: "Block A"` | 201; `location` is `Bishan Park` and `location_zone` is `Block A` - both saved independently |
+| 26 | GET /api/flora | Filter by location (partial match) | `?location=Bishan` against seeded records including one `location: "Bishan Park"` and one `location: "Toa Payoh Central"` | 200; only the record containing `Bishan` in its location is returned |
+| 27 | GET /api/flora | Case-insensitive location match (regression) | Record with `location: "Bishan Park"` seeded; request `?location=bishan` (lowercase) | 200; the "Bishan Park" record is found despite the case mismatch |
+| 28 | POST /api/flora/bulk | CSV bulk import saves location column (regression) | CSV with `species,common_name,location,health_status` header and a row with `location: Bishan Park` | 201; `created: 1`; subsequent `GET /api/flora?location=Bishan` returns the record with `location: "Bishan Park"` persisted |
+
 ## AI Care Recommendation - live Gemini (manual testing via Postman/browser)
 
 The `POST /api/flora/:id/care-recommendation` endpoint calls Google Gemini, an
@@ -77,6 +86,11 @@ must not call the live API.
   so a soft-deleted record is absent from GET without being physically removed.
 - The care-recommendation existence check runs before the API-key check, so a
   request for a missing record returns 404 even when the key is absent.
+- Tests 27 and 28 are regression tests, not routine feature coverage: each
+  guards against a specific defect that was actually found and fixed - test 27
+  against a case-sensitive filter query before it was made dialect-aware via
+  `Op.iLike`, and test 28 against the CSV bulk importer silently dropping the
+  `location` column instead of persisting it.
 - Prompt formatting is a deliberate readability decision for maintenance staff:
   the model is instructed to return 3-5 short plain-text bullets (no markdown /
   asterisks / bold), each prefixed with a topic emoji - 💧 watering, 🌤️ shade/light,
