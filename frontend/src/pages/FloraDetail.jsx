@@ -108,7 +108,14 @@ export default function FloraDetail() {
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    http.get('/api/flora/species-catalog')
+      .then((res) => setSpeciesCatalog(res.data))
+      .catch(() => setSpeciesCatalog([]));
+  }, []);
 
   const handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -186,6 +193,19 @@ export default function FloraDetail() {
       }
     },
   });
+
+  const handleSpeciesSelect = (_e, newValue) => {
+    formik.setFieldValue('species', newValue || '');
+
+    const match = speciesCatalog.find((entry) => entry.species === newValue);
+    if (!match) return;
+
+    ['plant_family', 'site_suitability', 'color', 'max_height_at_maturity'].forEach((field) => {
+      if (!formik.values[field] && match[field] != null) {
+        formik.setFieldValue(field, match[field]);
+      }
+    });
+  };
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -270,10 +290,11 @@ export default function FloraDetail() {
       {!loading && error && <Alert severity="error">{error}</Alert>}
 
       {!loading && !error && plant && (
+        <>
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1fr 340px' },
+            gridTemplateColumns: '1fr',
             gap: 3,
             alignItems: 'start',
           }}
@@ -289,16 +310,24 @@ export default function FloraDetail() {
                   subtitle="Identifies the plant and its current condition"
                 />
 
-                <TextField
+                <Autocomplete
+                  freeSolo
                   fullWidth
-                  margin="normal"
-                  label="Species"
-                  name="species"
+                  options={speciesCatalog.map((entry) => entry.species)}
                   value={formik.values.species}
-                  onChange={formik.handleChange}
-                  onBlur={formik.handleBlur}
-                  error={formik.touched.species && Boolean(formik.errors.species)}
-                  helperText={formik.touched.species && formik.errors.species}
+                  onChange={handleSpeciesSelect}
+                  onInputChange={(e, newInputValue) => formik.setFieldValue('species', newInputValue)}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      margin="normal"
+                      label="Species"
+                      name="species"
+                      onBlur={formik.handleBlur}
+                      error={formik.touched.species && Boolean(formik.errors.species)}
+                      helperText={formik.touched.species && formik.errors.species}
+                    />
+                  )}
                 />
                 <TextField
                   fullWidth
@@ -570,46 +599,9 @@ export default function FloraDetail() {
                     Delete
                   </Button>
                 </Stack>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Sidebar: AI recommendation + record metadata */}
-          <Box>
-            <Card>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                  <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
-                  <Typography variant="h6">AI Care Recommendation</Typography>
-                </Stack>
-                {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+                <Divider sx={{ my: 3 }} />
 
-                {plant.care_recommendation && (
-                  <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
-                    <CardContent>
-                      <Typography sx={{ whiteSpace: 'pre-line' }}>
-                        {plant.care_recommendation}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Button
-                  variant="outlined"
-                  onClick={handleGetRecommendation}
-                  disabled={recommending}
-                >
-                  {recommending
-                    ? 'Getting recommendation...'
-                    : plant.care_recommendation
-                      ? 'Regenerate'
-                      : 'Get AI Recommendation'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={{ mt: 2 }}>
-              <CardContent>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
                   Record Info
                 </Typography>
@@ -634,8 +626,43 @@ export default function FloraDetail() {
                 </Stack>
               </CardContent>
             </Card>
-          </Box>
+          )}
+
         </Box>
+
+        {/* Full-width AI care recommendation section */}
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+              <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
+              <Typography variant="h6">AI Care Recommendation</Typography>
+            </Stack>
+            {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+
+            {plant.care_recommendation && (
+              <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
+                <CardContent>
+                  <Typography sx={{ whiteSpace: 'pre-line' }}>
+                    {plant.care_recommendation}
+                  </Typography>
+                </CardContent>
+              </Card>
+            )}
+
+            <Button
+              variant="outlined"
+              onClick={handleGetRecommendation}
+              disabled={recommending}
+            >
+              {recommending
+                ? 'Getting recommendation...'
+                : plant.care_recommendation
+                  ? 'Regenerate'
+                  : 'Get AI Recommendation'}
+            </Button>
+          </CardContent>
+        </Card>
+        </>
       )}
 
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>

@@ -75,6 +75,12 @@ export default function HorticultureHandbook() {
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState('');
 
+  // state for the AI planting suggestions box
+  const [condition, setCondition] = useState('');
+  const [suggestions, setSuggestions] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestError, setSuggestError] = useState('');
+
   // Bulk Import (catalog upload)
   const [csvFile, setCsvFile] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -150,6 +156,24 @@ export default function HorticultureHandbook() {
         }
       })
       .finally(() => setAsking(false));
+  };
+
+  // submit a site condition to the AI planting suggestions endpoint
+  const handleSuggest = () => {
+    setSuggesting(true);
+    setSuggestError('');
+    setSuggestions('');
+    http
+      .post('/api/flora/planting-suggestions', { condition: condition.trim() })
+      .then((res) => setSuggestions(res.data.suggestions))
+      .catch((err) => {
+        if (err.response?.status === 503) {
+          setSuggestError('AI querying is not configured (no API key set)');
+        } else {
+          setSuggestError(err.response?.data?.error || 'Failed to get suggestions.');
+        }
+      })
+      .finally(() => setSuggesting(false));
   };
 
   const filtersActive = Boolean(plantFamily || siteSuitability || color);
@@ -362,6 +386,40 @@ export default function HorticultureHandbook() {
           {answer && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
               <Typography variant="body2">{answer}</Typography>
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Planting Suggestions - AI recommendations for a given site condition,
+          grounded in the actual catalog (as opposed to open-ended Q&A above). */}
+      <Card variant="outlined" sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+            Planting Suggestions
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Describe a planting site and get AI suggestions grounded in the estate plant catalog.
+          </Typography>
+          <TextField
+            fullWidth
+            label="Site condition"
+            placeholder="e.g. shaded car park, low maintenance, no fruiting trees"
+            value={condition}
+            onChange={(e) => setCondition(e.target.value)}
+            sx={{ mb: 1.5 }}
+          />
+          <Button
+            variant="contained"
+            onClick={handleSuggest}
+            disabled={suggesting || condition.trim() === ''}
+          >
+            {suggesting ? <CircularProgress size={24} color="inherit" /> : 'Suggest'}
+          </Button>
+          {suggestError && <Alert severity="error" sx={{ mt: 2 }}>{suggestError}</Alert>}
+          {suggestions && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
+              <Typography variant="body2">{suggestions}</Typography>
             </Box>
           )}
         </CardContent>
