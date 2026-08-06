@@ -296,15 +296,22 @@ async function careRecommendation(req, res) {
   }
 
   const prompt = `You are advising estate maintenance staff in Singapore's tropical climate.
-Give a concise, actionable care recommendation for this plant. Keep it practical -
-cover watering, shade, pest treatment, pruning, and when to escalate to a specialist.
+Give a concise, actionable care recommendation for this plant, broken down by life stage -
+seedling/young, establishing, and mature. Keep it practical and stage-appropriate: a
+seedling/young plant needs more careful watering and shade guidance, an establishing plant
+needs a balance of watering, feeding, and pest vigilance, and a mature plant leans more
+toward pruning and escalation to a specialist when issues arise.
 
 Species: ${record.species}
 Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
 Health notes: ${record.health_notes || 'none'}
-Respond with only the recommendation itself, as 3-5 short bullet points. Plain text only - no markdown, no asterisks, no bold. Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. After those care bullets, add one final additional bullet point estimating the species' typical lifespan in Singapore's climate, prefixed with ⏳. No preamble or introduction.`;
+Respond with only the recommendation itself. Plain text only - no markdown, no asterisks, no bold. Structure the response as three short sections in this order, each with its own plain-text heading (no markdown symbols) and 2-3 short bullet points - do not exceed 3 bullets per section:
+Seedling/Young
+Establishing
+Mature
+Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. Only include the topics that matter most for that stage - do not force all five into every section. After all three stage sections, add exactly one final bullet point estimating the species' typical lifespan in Singapore's climate, prefixed with ⏳ - do not repeat this per stage. Keep the overall response brief; do not pad any stage with filler advice just to reach the bullet limit. No preamble or introduction.`;
 
   let recommendation;
   try {
@@ -422,6 +429,64 @@ If literally nothing in the catalog is suitable, "recommendations" must be an em
   }
 }
 
+// Identify a plant species from an already-uploaded photo
+async function identifySpecies(req, res) {
+  const { image_url } = req.body || {};
+  if (typeof image_url !== 'string' || image_url.trim() === '') {
+    return res.status(400).json({ error: 'image_url is required' });
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  let base64Image;
+  let mimeType;
+  try {
+    const imageResponse = await fetch(image_url.trim());
+    if (!imageResponse.ok) {
+      throw new Error(`image fetch returned status ${imageResponse.status}`);
+    }
+    mimeType = (imageResponse.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    base64Image = Buffer.from(arrayBuffer).toString('base64');
+  } catch (err) {
+    return res.status(502).json({ error: `Failed to fetch image: ${err.message}` });
+  }
+
+  const prompt = `You are helping estate maintenance staff in Singapore identify a plant species from a photo.
+
+Look at the image and identify the most likely plant species. Respond with ONLY a JSON object (no markdown, no code fences, no commentary) in exactly this shape:
+{"species": "common name (Scientific name if confident)", "confidence": "high", "notes": "short explanation"}
+
+"confidence" must be one of: high, medium, low.
+If the image does not clearly show a plant, or the species cannot be reasonably determined, set "species" to "Unknown" and honestly explain why in "notes" instead of guessing.`;
+
+  let responseText;
+  try {
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await client.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [
+        { text: prompt },
+        { inlineData: { mimeType, data: base64Image } },
+      ],
+      config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+    });
+    responseText = response.text;
+  } catch (err) {
+    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+  }
+
+  const cleaned = responseText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try {
+    const parsed = JSON.parse(cleaned);
+    return res.status(200).json(parsed);
+  } catch (err) {
+    return res.status(200).json({ raw: responseText });
+  }
+}
+
 module.exports = {
   getAllGreenery,
   getSpeciesCatalog,
@@ -432,4 +497,5 @@ module.exports = {
   careRecommendation,
   queryHandbook,
   getPlantingSuggestions,
+  identifySpecies,
 };

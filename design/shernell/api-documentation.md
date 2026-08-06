@@ -16,7 +16,7 @@ The token is issued by `POST /api/auth/login` (Member 3's auth module); its
 payload is `{ user_id, role, name }`.
 
 - `protect` - rejects with `401` if the header is missing/malformed or the token
-  is invalid; otherwise attaches the decoded payload to `req.user`. All eight
+  is invalid; otherwise attaches the decoded payload to `req.user`. All ten
   flora routes use it.
 - `restrictTo('staff', 'admin')` - runs after `protect`; rejects with `403` if
   `req.user.role` is not staff or admin. Residents have no access to the flora
@@ -370,9 +370,13 @@ Example response (`201`):
 ## POST /api/flora/:id/care-recommendation
 
 Generate an AI care recommendation for a plant using Gemini and store it on the
-record. The recommendation is 3-5 short, emoji-prefixed actionable bullets,
-plus one additional final bullet estimating the species' typical lifespan in
-Singapore's climate (prefixed with ⏳).
+record. The recommendation is broken down by plant life stage - three
+plain-text-headed sections in order (Seedling/Young, Establishing, Mature),
+each with 2-3 emoji-prefixed bullets covering only the topics most relevant to
+that stage, not all five forced into every section. After all three stage
+sections, exactly one final bullet estimates the species' typical lifespan in
+Singapore's climate, prefixed with a distinct emoji (⏳) - not repeated per
+stage.
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Path params: `id` - the record id
@@ -412,7 +416,7 @@ Example response (`200`):
   "last_inspected_at": null,
   "recorded_by": 1,
   "is_deleted": false,
-  "care_recommendation": "💧 Water deeply twice a week; let the topsoil dry between.\n🌤️ Keep in bright, indirect light - avoid harsh afternoon sun.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.\n⏳ In Singapore's climate, this species typically lives 20-30 years with proper care.",
+  "care_recommendation": "Seedling/Young\n💧 Water lightly but frequently; keep soil consistently moist, not soggy.\n🌤️ Provide filtered shade to protect tender leaves from harsh sun.\n\nEstablishing\n💧 Water deeply twice a week; let the topsoil dry between.\n🐛 Inspect leaves for scale and spray neem if pests appear.\n⚠️ Escalate to an arborist if leaf drop continues past two weeks.\n\nMature\n✂️ Prune the affected north-side branches to redirect growth.\n⚠️ Escalate to an arborist if structural dieback is observed.\n\n⏳ In Singapore's climate, this species typically lives 20-30 years with proper care.",
   "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg",
   "createdAt": "2026-07-03T02:00:00.000Z",
   "updatedAt": "2026-07-03T02:45:00.000Z"
@@ -491,5 +495,69 @@ Example response (`200`):
     }
   ],
   "notes": "Avoid mango or rambutan here - both fruit heavily and would create litter/pest issues in a car park setting."
+}
+```
+
+---
+
+## POST /api/flora/identify-species
+
+Identify a plant species from an already-uploaded photo using Gemini. This
+is the only vision-capable AI endpoint in this module - the other AI
+endpoints (`care-recommendation`, `query`, `planting-suggestions`) send
+Gemini text-only prompts, while this one fetches the image server-side,
+base64-encodes it, and sends it to Gemini as inline image data alongside a
+text prompt. See [UC-11](use-cases.md#uc-11-staff-identifies-a-plant-species-from-a-photo)
+in `use-cases.md` for the full behavior, including the never-auto-apply UX
+rule (the frontend always requires an explicit "Use this species" click).
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | image_url | string | yes | an already-uploaded Cloudinary URL, not a raw file upload |
+
+- Behavior: the backend fetches `image_url`, base64-encodes the bytes, and
+  calls `gemini-3.5-flash` with the image plus a prompt asking it to
+  identify the species. Gemini is instructed to reply with only a JSON
+  object shaped `{"species", "confidence", "notes"}` and to honestly set
+  `species` to `"Unknown"` (explaining why in `notes`) rather than guess, if
+  the photo doesn't clearly show a plant. The backend strips markdown code
+  fences and parses the response as JSON. If parsing fails, the endpoint
+  falls back to returning `{ "raw": "<the raw text>" }` instead of the
+  structured shape; the frontend shows this raw text with only a "Dismiss"
+  action and no "Use this species" action, since there is no parsed species
+  to apply.
+- Success: `200` - `{ "species", "confidence", "notes" }`, where
+  `confidence` is one of `high`, `medium`, `low`
+- Errors:
+  - `400` - `{ "error": "image_url is required" }` (missing, non-string, or
+    empty/whitespace-only `image_url`)
+  - `401` - missing/invalid token
+  - `403` - role not staff/admin
+  - `503` - `{ "error": "AI service not configured" }` (`GEMINI_API_KEY` unset)
+  - `502` - `{ "error": "Failed to fetch image: <message>" }` (the image
+    fetch failed or returned a non-OK status) or `{ "error": "AI request
+    failed: <message>" }` (the Gemini call itself failed) - these are
+    distinct messages depending on which step failed
+
+Example request:
+
+```
+POST /api/flora/identify-species
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "image_url": "https://res.cloudinary.com/example/image/upload/v1/flora/ficus-benjamina.jpg" }
+```
+
+Example response (`200`):
+
+```json
+{
+  "species": "Weeping fig (Ficus benjamina)",
+  "confidence": "high",
+  "notes": "Distinctive drooping branches and small glossy oval leaves typical of Ficus benjamina."
 }
 ```
