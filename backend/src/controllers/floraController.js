@@ -408,6 +408,64 @@ Respond in plain text only - no markdown, no asterisks, no bold.`;
   return res.status(200).json({ suggestions });
 }
 
+// Identify a plant species from an already-uploaded photo
+async function identifySpecies(req, res) {
+  const { image_url } = req.body || {};
+  if (typeof image_url !== 'string' || image_url.trim() === '') {
+    return res.status(400).json({ error: 'image_url is required' });
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  let base64Image;
+  let mimeType;
+  try {
+    const imageResponse = await fetch(image_url.trim());
+    if (!imageResponse.ok) {
+      throw new Error(`image fetch returned status ${imageResponse.status}`);
+    }
+    mimeType = (imageResponse.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    base64Image = Buffer.from(arrayBuffer).toString('base64');
+  } catch (err) {
+    return res.status(502).json({ error: `Failed to fetch image: ${err.message}` });
+  }
+
+  const prompt = `You are helping estate maintenance staff in Singapore identify a plant species from a photo.
+
+Look at the image and identify the most likely plant species. Respond with ONLY a JSON object (no markdown, no code fences, no commentary) in exactly this shape:
+{"species": "common name (Scientific name if confident)", "confidence": "high", "notes": "short explanation"}
+
+"confidence" must be one of: high, medium, low.
+If the image does not clearly show a plant, or the species cannot be reasonably determined, set "species" to "Unknown" and honestly explain why in "notes" instead of guessing.`;
+
+  let responseText;
+  try {
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await client.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: [
+        { text: prompt },
+        { inlineData: { mimeType, data: base64Image } },
+      ],
+      config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+    });
+    responseText = response.text;
+  } catch (err) {
+    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+  }
+
+  const cleaned = responseText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try {
+    const parsed = JSON.parse(cleaned);
+    return res.status(200).json(parsed);
+  } catch (err) {
+    return res.status(200).json({ raw: responseText });
+  }
+}
+
 module.exports = {
   getAllGreenery,
   getSpeciesCatalog,
@@ -418,4 +476,5 @@ module.exports = {
   careRecommendation,
   queryHandbook,
   getPlantingSuggestions,
+  identifySpecies,
 };

@@ -492,3 +492,66 @@ point. `location_zone` is filled with a geocoded place name whenever
 Nominatim returns one; `location` is additionally auto-filled only when
 that place name matches an entry in `SINGAPORE_LOCATIONS`, otherwise it is
 left for the staff member to complete manually.
+
+---
+
+## UC-12: Staff identifies a plant species from a photo
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, is on the Add
+  Plant form, and has already uploaded a photo for that location entry.
+
+Client priority served: speeding up data entry for field officers who can
+photograph a plant on-site but may not know its species offhand, while
+keeping a human in the loop so a wrong AI guess never silently corrupts the
+record.
+
+Main flow:
+
+1. After a photo is uploaded for a location entry, an "Identify Species"
+   button appears next to the photo preview (it is not rendered at all until
+   `loc.imageUrl` is set - there is no location entry without a photo to
+   disable it against).
+2. Clicking the button calls `POST /api/flora/identify-species` with
+   `{ image_url }`, the Cloudinary URL of the already-uploaded photo.
+3. The backend fetches the image server-side, converts it to base64, and
+   sends it to Gemini (`gemini-3.5-flash`) as inline image data alongside a
+   text prompt - a vision call, unlike the text-only prompts used by the
+   other AI features (UC-4, UC-10).
+4. The prompt instructs Gemini to return only a JSON object shaped
+   `{"species": "...", "confidence": "high|medium|low", "notes": "..."}`,
+   and to honestly set `species` to "Unknown" and explain why in `notes`
+   rather than guess, if the photo does not clearly show a plant.
+5. The backend strips any markdown code fences from the response and parses
+   it as JSON, returning `200` with the parsed `{ species, confidence,
+   notes }`.
+6. The frontend shows the suggestion in an info alert with two actions:
+   "Use this species" and "Dismiss". The suggestion is never auto-applied.
+7. Clicking "Use this species" calls the same species-selection/autofill
+   handler used by the Species Autocomplete (UC-8) with the suggested
+   species name, so plant_family/site_suitability/color/max_height_at_maturity
+   are filled in from the catalog only where still blank; clicking "Dismiss"
+   discards the suggestion without changing the form.
+
+Alternate / edge flows:
+
+- Missing or blank `image_url` -> `400` `{ "error": "image_url is
+  required" }`.
+- No API key configured (`GEMINI_API_KEY` unset) -> `503`
+  `{ "error": "AI service not configured" }`.
+- The image fetch or the Gemini request fails (network error, bad status,
+  quota, upstream error) -> `502` with an error message describing which
+  step failed.
+- Gemini's response is not valid JSON -> the backend falls back to `200`
+  `{ "raw": "<the raw text>" }`; the frontend renders this as plain text
+  under a "Could not be structured into a clean suggestion:" heading with
+  only a "Dismiss" action - "Use this species" is not offered since there is
+  no parsed species to apply.
+- A resident attempting the request -> `403` (same RBAC as every other
+  flora route).
+
+Postcondition: on "Use this species", the form's species field (and any
+still-blank botanical fields) reflect the suggestion, identical to a manual
+Species Autocomplete selection; on "Dismiss" or any error, the form is
+unchanged and nothing is persisted - identification is stateless and does
+not save to the record until the staff member submits the form.

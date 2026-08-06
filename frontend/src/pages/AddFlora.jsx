@@ -68,6 +68,9 @@ const makeLocation = (key) => ({
   gpsLoading: false,
   gpsError: '',
   locationAutoFillNote: '',
+  identifyLoading: false,
+  identifyError: '',
+  identifySuggestion: null,
 });
 
 // Small colored dot matching the same convention used in FloraList's filter
@@ -293,7 +296,7 @@ export default function AddFlora() {
     );
   };
 
-  const openMapPicker = (key) => {
+const openMapPicker = (key) => {
     setMapPickerKey(key);
     setPickedCoords(null);
     setReverseGeocodeError('');
@@ -380,6 +383,22 @@ export default function AddFlora() {
     closeMapPicker();
   };
 
+  const handleIdentifySpecies = async (key) => {
+    updateLocationField(key, 'identifyError', '');
+    updateLocationField(key, 'identifySuggestion', null);
+    updateLocationField(key, 'identifyLoading', true);
+
+    const loc = locations.find((l) => l.key === key);
+    try {
+      const res = await http.post('/api/flora/identify-species', { image_url: loc.imageUrl });
+      updateLocationField(key, 'identifySuggestion', res.data);
+    } catch (err) {
+      updateLocationField(key, 'identifyError', err.response?.data?.error || 'Species identification failed');
+    } finally {
+      updateLocationField(key, 'identifyLoading', false);
+    }
+  };
+
   const formik = useFormik({
     initialValues: {
       species: '',
@@ -453,6 +472,11 @@ export default function AddFlora() {
         formik.setFieldValue(field, match[field]);
       }
     });
+  };
+
+  const handleUseSuggestion = (key, species) => {
+    handleSpeciesSelect(null, species);
+    updateLocationField(key, 'identifySuggestion', null);
   };
 
   const anyUploading = locations.some((loc) => loc.uploading);
@@ -701,7 +725,76 @@ export default function AddFlora() {
                         <Button color="error" onClick={() => handleRemovePhoto(loc.key)} size="small">
                           Remove
                         </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => handleIdentifySpecies(loc.key)}
+                          disabled={loc.identifyLoading}
+                        >
+                          {loc.identifyLoading ? 'Identifying...' : 'Identify Species'}
+                        </Button>
                       </Stack>
+                    )}
+
+                    {loc.identifyError && (
+                      <Alert severity="error" sx={{ mt: 1 }}>{loc.identifyError}</Alert>
+                    )}
+
+                    {loc.identifySuggestion && (
+                      <Alert
+                        severity="info"
+                        sx={{ mt: 1 }}
+                        onClose={() => updateLocationField(loc.key, 'identifySuggestion', null)}
+                      >
+                        {loc.identifySuggestion.raw ? (
+                          <>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              Could not be structured into a clean suggestion:
+                            </Typography>
+                            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', mt: 0.5 }}>
+                              {loc.identifySuggestion.raw}
+                            </Typography>
+                            <Button
+                              size="small"
+                              sx={{ mt: 1 }}
+                              onClick={() => updateLocationField(loc.key, 'identifySuggestion', null)}
+                            >
+                              Dismiss
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                              {loc.identifySuggestion.species}
+                            </Typography>
+                            {loc.identifySuggestion.confidence && (
+                              <Typography variant="body2" color="text.secondary">
+                                Confidence: {loc.identifySuggestion.confidence}
+                              </Typography>
+                            )}
+                            {loc.identifySuggestion.notes && (
+                              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                {loc.identifySuggestion.notes}
+                              </Typography>
+                            )}
+                            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                onClick={() => handleUseSuggestion(loc.key, loc.identifySuggestion.species)}
+                              >
+                                Use this species
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => updateLocationField(loc.key, 'identifySuggestion', null)}
+                              >
+                                Dismiss
+                              </Button>
+                            </Stack>
+                          </>
+                        )}
+                      </Alert>
                     )}
                   </Box>
                 </CardContent>
