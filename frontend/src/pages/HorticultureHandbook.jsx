@@ -3,7 +3,8 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, TextField, Card, CardActionArea, CardContent,
   Chip, Stack, InputAdornment, Skeleton, Alert, Divider, MenuItem,
-  Button, CircularProgress, IconButton,
+  Button, CircularProgress, IconButton, Dialog, DialogTitle,
+  DialogContent, DialogActions,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
@@ -118,9 +119,10 @@ export default function HorticultureHandbook() {
 
   // state for the AI planting suggestions box
   const [condition, setCondition] = useState('');
-  const [suggestions, setSuggestions] = useState('');
+  const [suggestionResult, setSuggestionResult] = useState(null);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState('');
+  const [selectedSpecies, setSelectedSpecies] = useState(null);
 
   // Bulk Import (catalog upload)
   const [csvFile, setCsvFile] = useState(null);
@@ -227,10 +229,10 @@ export default function HorticultureHandbook() {
   const handleSuggest = () => {
     setSuggesting(true);
     setSuggestError('');
-    setSuggestions('');
+    setSuggestionResult(null);
     http
       .post('/api/flora/planting-suggestions', { condition: condition.trim() })
-      .then((res) => setSuggestions(res.data.suggestions))
+      .then((res) => setSuggestionResult(res.data))
       .catch((err) => {
         if (err.response?.status === 503) {
           setSuggestError('AI querying is not configured (no API key set)');
@@ -260,6 +262,21 @@ export default function HorticultureHandbook() {
       return a.localeCompare(b);
     });
   }, [plants]);
+
+  // Species -> botanical fields, deduped from the already-fetched catalog
+  // (this page loads /api/flora?include_catalog=true into `plants`, which
+  // already carries every field the suggestion details dialog needs - no
+  // need for a separate /api/flora/species-catalog request).
+  const speciesCatalog = useMemo(() => {
+    const map = new Map();
+    plants.forEach((plant) => {
+      if (plant.species && !map.has(plant.species)) {
+        map.set(plant.species, plant);
+      }
+    });
+    return map;
+  }, [plants]);
+  const selectedSpeciesDetails = selectedSpecies ? speciesCatalog.get(selectedSpecies) : null;
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
@@ -507,13 +524,89 @@ export default function HorticultureHandbook() {
             {suggesting ? <CircularProgress size={24} color="inherit" /> : 'Suggest'}
           </Button>
           {suggestError && <Alert severity="error" sx={{ mt: 2 }}>{suggestError}</Alert>}
-          {suggestions && (
+
+          {suggestionResult?.raw && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
-              <Typography variant="body2">{suggestions}</Typography>
+              <Typography variant="body2">{suggestionResult.raw}</Typography>
+            </Box>
+          )}
+
+          {suggestionResult?.recommendations && (
+            <Box sx={{ mt: 2 }}>
+              <Stack spacing={1.5}>
+                {suggestionResult.recommendations.map((rec, i) => (
+                  <Box key={i} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                    <Button
+                      variant="text"
+                      onClick={() => setSelectedSpecies(rec.species)}
+                      sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 700 }}
+                    >
+                      {toTitleCase(rec.species)}
+                    </Button>
+                    {rec.tradeoff && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {rec.tradeoff}
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Stack>
+              {suggestionResult.notes && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, whiteSpace: 'pre-line' }}>
+                  {suggestionResult.notes}
+                </Typography>
+              )}
             </Box>
           )}
         </CardContent>
       </Card>
+
+      {/* Species details popup - opened by clicking a recommended species name */}
+      <Dialog open={Boolean(selectedSpecies)} onClose={() => setSelectedSpecies(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{selectedSpecies ? toTitleCase(selectedSpecies) : ''}</DialogTitle>
+        <DialogContent dividers>
+          {selectedSpeciesDetails ? (
+            <Stack spacing={1}>
+              {selectedSpeciesDetails.image_url && (
+                <Box
+                  component="img"
+                  src={selectedSpeciesDetails.image_url}
+                  alt={selectedSpeciesDetails.species}
+                  sx={{
+                    width: 200, height: 200, objectFit: 'cover',
+                    borderRadius: 2, display: 'block', mx: 'auto', mb: 1,
+                  }}
+                />
+              )}
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Family:</Box>{' '}
+                {selectedSpeciesDetails.plant_family || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Suitability:</Box>{' '}
+                {selectedSpeciesDetails.site_suitability || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Color:</Box>{' '}
+                {selectedSpeciesDetails.color || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Max height:</Box>{' '}
+                {selectedSpeciesDetails.max_height_at_maturity != null
+                  ? `${selectedSpeciesDetails.max_height_at_maturity} m`
+                  : '-'}
+              </Typography>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Details not available.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedSpecies(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
