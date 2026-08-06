@@ -239,7 +239,19 @@ Used to identify high-activity zones for staff intervention decisions.
 ### GET /api/fauna/hotspots/:block/summary
 
 Generate an AI summary of recent fauna activity for a block using Gemini API.
-Returns the summary, agency recommendation, sighting count, and period.
+Returns the summary, risk level, agency recommendation, sighting count, and period.
+
+`risk_level` is computed from the aggregated sightings in the window (it is not
+stored on any record):
+
+| Level | Condition |
+|-------|-----------|
+| `high` | 8 or more sightings in the window, **or** any sighting tagged `aggressive` or `nesting` |
+| `medium` | 4 to 7 sightings and no high-risk tag |
+| `low` | fewer than 4 sightings and no high-risk tag |
+
+The computed level is also fed into the Gemini prompt so the summary paragraph
+reflects it.
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - URL param: `:block` — URL-encoded block string e.g. `Block%20203`
@@ -253,6 +265,7 @@ Returns the summary, agency recommendation, sighting count, and period.
     "summary": "Block 203 has recorded 12 fauna sightings in the past 30 days,
       with community cats being the dominant concern (7 sightings). Four pigeon
       sightings were also reported near the playground area.",
+    "risk_level": "high",
     "agency_recommendation": {
       "cat": "Cat Welfare Society / SPCA",
       "pigeon": "ACRES"
@@ -268,3 +281,68 @@ Returns the summary, agency recommendation, sighting count, and period.
   - `404` — `{ "error": "No sightings found for this block" }`
   - `503` — `{ "error": "AI summary unavailable. Please try again later." }`
     (Gemini API failure; fallback message returned, app does not crash)
+
+---
+
+### POST /api/fauna/hotspots/:block/alert-draft
+
+Generate an editable alert email draft for a block using Gemini API. This only
+GENERATES the draft - nothing is sent. Uses the same aggregation (species
+counts, behaviour counts, risk level, agency recommendation) as the summary
+endpoint.
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- URL param: `:block` — URL-encoded block string e.g. `Block%20203`
+- Query filters (optional):
+  - `?days=` — number of days to look back (default `30`)
+- Request body: none
+- Success: `200` — `body` is plain text with newlines (no HTML; the shared
+  `sendEmail` service wraps it in HTML itself)
+
+  ```json
+  {
+    "subject": "Fauna alert - Block 203 (high risk)",
+    "body": "Team,\n\nBlock 203 has recorded 12 fauna sightings in the last 30 days...\n\nEstate Management",
+    "risk_level": "high"
+  }
+  ```
+
+- Errors:
+  - `401` — missing/invalid token
+  - `403` — role not staff/admin
+  - `404` — `{ "error": "No sightings found for this block" }`
+  - `503` — `{ "error": "AI summary unavailable. Please try again later." }`
+
+---
+
+### POST /api/fauna/hotspots/:block/alert-send
+
+Send the staff-edited alert email via the shared `sendEmail` service
+(`src/services/emailService.js`, owned by Member 3). The body sent is whatever
+the staff user submits - the draft endpoint's output is only a starting point.
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- URL param: `:block` — kept for routing/audit context; the sent content comes
+  entirely from the request body
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | to | string | yes | must be a valid email address |
+  | subject | string | yes | staff-edited subject |
+  | body | string | yes | staff-edited plain text body |
+
+  ```json
+  {
+    "to": "estate.ops@example.com",
+    "subject": "Fauna alert - Block 203 (high risk)",
+    "body": "Team,\n\nBlock 203 has recorded 12 fauna sightings...\n"
+  }
+  ```
+
+- Success: `200` — `{ "ok": true }`
+- Errors:
+  - `400` — missing `to`/`subject`/`body` or invalid email: `{ "error": [...messages] }`
+  - `401` — missing/invalid token
+  - `403` — role not staff/admin
+  - `500` — `{ "error": "Failed to send alert email" }` (mail transport failure)

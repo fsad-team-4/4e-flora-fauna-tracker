@@ -2,6 +2,7 @@ const yup = require('yup');
 const { Op } = require('sequelize');
 const { FaunaSighting } = require('../models');
 const { getGeminiClient } = require('../config/gemini');
+const { sendEmail } = require('../services/emailService');
 
 const STATUSES = ['open', 'in_progress', 'resolved'];
 const SPECIES = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
@@ -165,9 +166,12 @@ async function getHotspots(req, res) {
   return res.status(200).json(hotspots);
 }
 
-async function getBlockSummary(req, res) {
-  const block = req.params.block;
-  const days = parseInt(req.query.days, 10) || 30;
+// Behaviour tags that make a block high risk on their own, regardless of volume.
+const HIGH_RISK_TAGS = ['aggressive', 'nesting'];
+
+// Shared aggregation for a block over a window. Returns null when the block has
+// no sightings in the window. Used by both the AI summary and the alert draft.
+async function aggregateBlock(block, days) {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
   const sightings = await FaunaSighting.findAll({
@@ -180,7 +184,7 @@ async function getBlockSummary(req, res) {
   });
 
   if (sightings.length === 0) {
-    return res.status(404).json({ error: 'No sightings found for this block' });
+    return null;
   }
 
   // Aggregate what happened in this block to feed the prompt, and build the
@@ -203,6 +207,38 @@ async function getBlockSummary(req, res) {
     .map(([tag, n]) => `${tag}: ${n}`)
     .join(', ') || 'none recorded';
 
+  // Volume-driven, but any aggressive or nesting behaviour escalates to high.
+  const hasHighRiskTag = HIGH_RISK_TAGS.some((tag) => tagCounts[tag] > 0);
+  let risk_level;
+  if (sightings.length >= 8 || hasHighRiskTag) {
+    risk_level = 'high';
+  } else if (sightings.length >= 4) {
+    risk_level = 'medium';
+  } else {
+    risk_level = 'low';
+  }
+
+  return {
+    count: sightings.length,
+    speciesCounts,
+    tagCounts,
+    agency_recommendation,
+    speciesLine,
+    tagLine,
+    risk_level,
+  };
+}
+
+async function getBlockSummary(req, res) {
+  const block = req.params.block;
+  const days = parseInt(req.query.days, 10) || 30;
+
+  const agg = await aggregateBlock(block, days);
+  if (!agg) {
+    return res.status(404).json({ error: 'No sightings found for this block' });
+  }
+  const { agency_recommendation, speciesLine, tagLine, risk_level } = agg;
+
   const systemInstruction =
     'You are an estate management assistant for a town council. Summarise fauna ' +
     'sighting activity for a residential block in one short paragraph of plain ' +
@@ -212,11 +248,13 @@ async function getBlockSummary(req, res) {
   const prompt =
     `Block: ${block}\n` +
     `Period: last ${days} days\n` +
-    `Total sightings: ${sightings.length}\n` +
+    `Total sightings: ${agg.count}\n` +
     `Species breakdown: ${speciesLine}\n` +
-    `Behaviour tags: ${tagLine}\n\n` +
+    `Behaviour tags: ${tagLine}\n` +
+    `Assessed risk level: ${risk_level}\n\n` +
     'Write a one-paragraph summary of the recent fauna activity in this block for ' +
-    'estate staff, noting the dominant species and any notable behaviours.';
+    'estate staff, noting the dominant species and any notable behaviours. Reflect ' +
+    'the assessed risk level in the tone and wording of the summary.';
 
   let summary;
   try {
@@ -237,10 +275,94 @@ async function getBlockSummary(req, res) {
   return res.status(200).json({
     block,
     summary,
+    risk_level,
     agency_recommendation,
-    sighting_count: sightings.length,
+    sighting_count: agg.count,
     period_days: days,
   });
+}
+
+// Generates an editable email draft for a block. Does not send anything.
+async function getBlockAlertDraft(req, res) {
+  const block = req.params.block;
+  const days = parseInt(req.query.days, 10) || 30;
+
+  const agg = await aggregateBlock(block, days);
+  if (!agg) {
+    return res.status(404).json({ error: 'No sightings found for this block' });
+  }
+  const { agency_recommendation, speciesLine, tagLine, risk_level } = agg;
+
+  const agencyLine = Object.entries(agency_recommendation)
+    .map(([sp, agency]) => `${sp}: ${agency}`)
+    .join(', ');
+
+  const systemInstruction =
+    'You are an estate management assistant for a town council. Draft a short ' +
+    'internal alert email to estate staff about fauna activity in a block. ' +
+    'Reply with a subject line on the first line prefixed with "Subject: ", then ' +
+    'a blank line, then the email body as plain text with newlines. Do not use ' +
+    'markdown, HTML, bullet characters, or an em dash.';
+
+  const prompt =
+    `Block: ${block}\n` +
+    `Period: last ${days} days\n` +
+    `Total sightings: ${agg.count}\n` +
+    `Species breakdown: ${speciesLine}\n` +
+    `Behaviour tags: ${tagLine}\n` +
+    `Assessed risk level: ${risk_level}\n` +
+    `Agency recommendation: ${agencyLine}\n\n` +
+    'Draft the alert email for estate staff, stating the risk level, the key ' +
+    'observations, and the recommended agency to contact.';
+
+  let text;
+  try {
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: {
+        systemInstruction,
+      },
+    });
+    text = response.text;
+  } catch (err) {
+    console.error('Gemini alert draft failed:', err.message);
+    return res.status(503).json({ error: 'AI summary unavailable. Please try again later.' });
+  }
+
+  // Split the "Subject: ..." first line off the body; fall back to a plain
+  // subject if the model did not follow the format.
+  const match = /^\s*Subject:\s*(.+?)\n([\s\S]*)$/.exec(text || '');
+  const subject = match ? match[1].trim() : `Fauna alert - Block ${block} (${risk_level} risk)`;
+  const body = (match ? match[2] : text || '').trim();
+
+  return res.status(200).json({ subject, body, risk_level });
+}
+
+const alertSendSchema = yup.object({
+  to: yup.string().required().email(),
+  subject: yup.string().required(),
+  body: yup.string().required(),
+});
+
+// Sends the staff-edited draft using the shared email service.
+async function sendBlockAlert(req, res) {
+  let data;
+  try {
+    data = await alertSendSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.errors });
+  }
+
+  try {
+    await sendEmail(data);
+  } catch (err) {
+    console.error('Fauna alert send failed:', err.message);
+    return res.status(500).json({ error: 'Failed to send alert email' });
+  }
+
+  return res.status(200).json({ ok: true });
 }
 
 module.exports = {
@@ -251,4 +373,6 @@ module.exports = {
   softDeleteSighting,
   getHotspots,
   getBlockSummary,
+  getBlockAlertDraft,
+  sendBlockAlert,
 };

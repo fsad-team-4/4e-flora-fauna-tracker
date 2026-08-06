@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardActionArea, CardContent, Chip, Alert,
-  Stack, Collapse, Divider, ToggleButton, ToggleButtonGroup,
+  Stack, Collapse, Divider, ToggleButton, ToggleButtonGroup, Button, TextField,
 } from '@mui/material';
 import PetsIcon from '@mui/icons-material/Pets';
 import FlutterDashIcon from '@mui/icons-material/FlutterDash';
@@ -61,6 +61,9 @@ function HeatLayer({ points }) {
   return null;
 }
 
+// Risk level -> MUI chip colour.
+const RISK_COLORS = { high: 'error', medium: 'warning', low: 'success' };
+
 // Default map view - central Singapore.
 const DEFAULT_CENTER = [1.3521, 103.8198];
 
@@ -75,6 +78,14 @@ export default function FaunaHotspots() {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
+
+  // Alert email draft state. `draft` is null until the staff user asks for one.
+  const [draft, setDraft] = useState(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [draftError, setDraftError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState('');
+  const [sendError, setSendError] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -93,7 +104,15 @@ export default function FaunaHotspots() {
   const pinned = sightings.filter((s) => s.gps_lat != null && s.gps_lng != null);
   const heatPoints = pinned.map((s) => [s.gps_lat, s.gps_lng, 1.0]);
 
+  const resetDraft = () => {
+    setDraft(null);
+    setDraftError('');
+    setSendResult('');
+    setSendError('');
+  };
+
   const handleBlockClick = (block) => {
+    resetDraft();
     if (expandedBlock === block) {
       setExpandedBlock(null);
       return;
@@ -113,6 +132,36 @@ export default function FaunaHotspots() {
         }
       })
       .finally(() => setSummaryLoading(false));
+  };
+
+  const handleDraftAlert = (block) => {
+    resetDraft();
+    setDraftLoading(true);
+    http
+      .post(`/api/fauna/hotspots/${encodeURIComponent(block)}/alert-draft`)
+      .then((res) => setDraft({ to: '', subject: res.data.subject, body: res.data.body }))
+      .catch((err) => {
+        if (err.response?.status === 503) {
+          setDraftError('AI summary unavailable. Please try again later.');
+        } else {
+          setDraftError('Failed to draft alert email');
+        }
+      })
+      .finally(() => setDraftLoading(false));
+  };
+
+  const handleSendAlert = (block) => {
+    setSendResult('');
+    setSendError('');
+    setSending(true);
+    http
+      .post(`/api/fauna/hotspots/${encodeURIComponent(block)}/alert-send`, draft)
+      .then(() => setSendResult('Alert email sent'))
+      .catch((err) => {
+        const messages = err.response?.data?.error;
+        setSendError(Array.isArray(messages) ? messages.join(', ') : 'Failed to send alert email');
+      })
+      .finally(() => setSending(false));
   };
 
   return (
@@ -220,7 +269,17 @@ export default function FaunaHotspots() {
                   )}
                   {!summaryLoading && !summaryError && summary && (
                     <>
-                      <Typography variant="subtitle2" sx={{ mb: 0.5 }}>AI Summary</Typography>
+                      <Stack direction="row" spacing={1} sx={{ mb: 0.5, alignItems: 'center' }}>
+                        <Typography variant="subtitle2">AI Summary</Typography>
+                        {summary.risk_level && (
+                          <Chip
+                            label={`${summary.risk_level} risk`}
+                            size="small"
+                            color={RISK_COLORS[summary.risk_level] || 'default'}
+                            sx={{ textTransform: 'capitalize' }}
+                          />
+                        )}
+                      </Stack>
                       <Typography sx={{ mb: 2 }}>{summary.summary}</Typography>
                       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Agency Recommendation</Typography>
                       <Stack spacing={0.5}>
@@ -230,6 +289,54 @@ export default function FaunaHotspots() {
                           </Typography>
                         ))}
                       </Stack>
+
+                      <Divider sx={{ my: 2 }} />
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={draftLoading}
+                        onClick={() => handleDraftAlert(hotspot.block_number)}
+                      >
+                        {draftLoading ? 'Drafting...' : 'Draft alert email'}
+                      </Button>
+                      {draftError && <Alert severity="error" sx={{ mt: 2 }}>{draftError}</Alert>}
+
+                      {draft && (
+                        <Stack spacing={2} sx={{ mt: 2 }}>
+                          <TextField
+                            label="Recipient email"
+                            size="small"
+                            value={draft.to}
+                            onChange={(e) => setDraft({ ...draft, to: e.target.value })}
+                          />
+                          <TextField
+                            label="Subject"
+                            size="small"
+                            value={draft.subject}
+                            onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
+                          />
+                          <TextField
+                            label="Body"
+                            size="small"
+                            multiline
+                            minRows={6}
+                            value={draft.body}
+                            onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                          />
+                          <Box>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              disabled={sending}
+                              onClick={() => handleSendAlert(hotspot.block_number)}
+                            >
+                              {sending ? 'Sending...' : 'Send alert'}
+                            </Button>
+                          </Box>
+                          {sendResult && <Alert severity="success">{sendResult}</Alert>}
+                          {sendError && <Alert severity="error">{sendError}</Alert>}
+                        </Stack>
+                      )}
                     </>
                   )}
                 </Box>
