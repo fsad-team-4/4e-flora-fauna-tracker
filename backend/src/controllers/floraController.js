@@ -390,9 +390,17 @@ ${catalog}
 
 Site condition: ${condition.trim()}
 
-Respond in plain text only - no markdown, no asterisks, no bold.`;
+Respond with ONLY a JSON object (no markdown, no code fences, no commentary) in exactly this shape:
+{
+  "recommendations": [
+    { "species": "exact species name from the catalog", "tradeoff": "short honest tradeoff explanation" }
+  ],
+  "notes": "closing text - species to avoid and why, or any other general context"
+}
 
-  let suggestions;
+If literally nothing in the catalog is suitable, "recommendations" must be an empty array and the explanation belongs in "notes".`;
+
+  let responseText;
   try {
     const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await client.models.generateContent({
@@ -400,12 +408,18 @@ Respond in plain text only - no markdown, no asterisks, no bold.`;
       contents: prompt,
       config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
     });
-    suggestions = response.text;
+    responseText = response.text;
   } catch (err) {
     return res.status(502).json({ error: `AI request failed: ${err.message}` });
   }
 
-  return res.status(200).json({ suggestions });
+  const cleaned = responseText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  try {
+    const parsed = JSON.parse(cleaned);
+    return res.status(200).json(parsed);
+  } catch (err) {
+    return res.status(200).json({ raw: responseText });
+  }
 }
 
 module.exports = {
