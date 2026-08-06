@@ -4,7 +4,8 @@ import { useFormik } from 'formik';
 import * as yup from 'yup';
 import {
   Box, TextField, Button, Typography, Alert, MenuItem, Stack, Card,
-  CardContent, Divider, Chip, Autocomplete,
+  CardContent, Divider, Chip, Autocomplete, Dialog, DialogTitle,
+  DialogContent, DialogActions,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
@@ -12,9 +13,32 @@ import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import http from '../http';
 import { HEALTH_STATUS_OPTIONS, HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
 import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
+
+// Default map view - central Singapore.
+const DEFAULT_CENTER = [1.3521, 103.8198];
+
+// A single red pin as a Leaflet divIcon (avoids the default marker asset that
+// Vite does not bundle correctly).
+const pinIcon = L.divIcon({
+  className: '',
+  html: '<span style="display:block;width:26px;height:26px;border-radius:50%;background:#C1272D;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.4)"></span>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
+
+// Captures map clicks and reports the clicked coordinates upward.
+function ClickCapture({ onPick }) {
+  useMapEvents({
+    click: (e) => onPick(e.latlng.lat, e.latlng.lng),
+  });
+  return null;
+}
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
@@ -192,6 +216,8 @@ export default function AddFlora() {
   const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const nextKeyRef = useRef(1);
   const fileInputRefs = useRef({});
+  const [mapPickerKey, setMapPickerKey] = useState(null);
+  const [pickedCoords, setPickedCoords] = useState(null);
 
   useEffect(() => {
     http.get('/api/flora/species-catalog')
@@ -262,6 +288,24 @@ export default function AddFlora() {
         updateLocationField(key, 'gpsLoading', false);
       }
     );
+  };
+
+  const openMapPicker = (key) => {
+    setMapPickerKey(key);
+    setPickedCoords(null);
+  };
+
+  const closeMapPicker = () => {
+    setMapPickerKey(null);
+    setPickedCoords(null);
+  };
+
+  const confirmMapPicker = () => {
+    if (pickedCoords && mapPickerKey !== null) {
+      updateLocationField(mapPickerKey, 'gps_lat', pickedCoords.lat);
+      updateLocationField(mapPickerKey, 'gps_lng', pickedCoords.lng);
+    }
+    closeMapPicker();
   };
 
   const formik = useFormik({
@@ -509,14 +553,23 @@ export default function AddFlora() {
 
                   <Box sx={{ mt: 1, mb: 1 }}>
                     {loc.gpsError && <Alert severity="error" sx={{ mb: 1 }}>{loc.gpsError}</Alert>}
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => handleCaptureGps(loc.key)}
-                      disabled={loc.gpsLoading}
-                    >
-                      {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
-                    </Button>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleCaptureGps(loc.key)}
+                        disabled={loc.gpsLoading}
+                      >
+                        {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => openMapPicker(loc.key)}
+                      >
+                        Pick from Map
+                      </Button>
+                    </Stack>
                     {loc.gps_lat !== null && loc.gps_lng !== null && (
                       <Typography variant="body2" color="success.main" sx={{ mt: 0.5 }}>
                         Location captured ({loc.gps_lat.toFixed(5)}, {loc.gps_lng.toFixed(5)})
@@ -606,6 +659,36 @@ export default function AddFlora() {
           }}
         />
       </Box>
+
+      <Dialog open={mapPickerKey !== null} onClose={closeMapPicker} maxWidth="sm" fullWidth>
+        <DialogTitle>Pick Location from Map</DialogTitle>
+        <DialogContent>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            Click on the map to drop a pin.
+          </Typography>
+          <Box sx={{ height: 350, borderRadius: 2, overflow: 'hidden', border: '1px solid #EAEAEA' }}>
+            <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }}>
+              <TileLayer
+                attribution='&copy; OpenStreetMap contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <ClickCapture onPick={(lat, lng) => setPickedCoords({ lat, lng })} />
+              {pickedCoords && <Marker position={[pickedCoords.lat, pickedCoords.lng]} icon={pinIcon} />}
+            </MapContainer>
+          </Box>
+          {pickedCoords && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {pickedCoords.lat.toFixed(5)}, {pickedCoords.lng.toFixed(5)}
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeMapPicker}>Cancel</Button>
+          <Button onClick={confirmMapPicker} variant="contained" disabled={!pickedCoords}>
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
