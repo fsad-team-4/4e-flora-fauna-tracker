@@ -385,3 +385,55 @@ Alternate / edge flows:
 Postcondition: the location's greenery record is created with `gps_lat` and
 `gps_lng` set to the captured coordinates if capture succeeded, or `null` if
 it was skipped or failed.
+
+## UC-10: Staff gets AI-suggested species for a planting site condition
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin.
+
+Client priority served: helping horticulture officers choose what to plant
+for a new or difficult site (e.g. shade, poor drainage, low-maintenance
+requirement) by reasoning over the estate's own catalog instead of generic
+gardening advice, so every suggestion is something staff can actually source
+and has likely already grown successfully on this estate.
+
+Main flow:
+
+1. On the Horticulture Handbook page, in the Planting Suggestions card, the
+   staff member describes the site in free text (e.g. "shaded car park, low
+   maintenance, no fruiting trees").
+2. Clicking "Suggest" calls `POST /api/flora/planting-suggestions` with
+   `{ condition }`.
+3. The backend loads every active (non-deleted) `GreeneryRecord`'s species,
+   plant family, site suitability, colour, and max height at maturity, and
+   builds a catalog listing from them.
+4. The backend prompts Gemini (`gemini-3.5-flash`) to recommend species using
+   ONLY that catalog - it is explicitly told not to invent species outside
+   the list - and to weigh every entry comparatively against the stated
+   condition, recommending the closest-fitting options with an honest
+   tradeoff for each (e.g. "close fit but slightly more sun-tolerant than
+   ideal") even when nothing matches perfectly. The prompt only allows "no
+   suitable match" as an answer when literally nothing comes reasonably
+   close, not merely because no entry satisfies every criterion exactly.
+5. The backend returns `200` with `{ suggestions }` (plain text, no
+   markdown), which the card renders under the input.
+
+Alternate / edge flows:
+
+- Empty or whitespace-only condition -> `400` `{ "error": "condition is
+  required" }`; the frontend also disables the Suggest button while the
+  field is blank, so this mainly guards direct API calls.
+- No API key configured (`GEMINI_API_KEY` unset) -> `503`
+  `{ "error": "AI service not configured" }`; the frontend shows "AI
+  querying is not configured (no API key set)".
+- Gemini request fails (network, quota, upstream error) -> `502`
+  `{ "error": "AI request failed: <message>" }`; the frontend shows the
+  returned error message, or a generic fallback if none is present.
+- A resident attempting the request -> `403` (same RBAC as every other
+  flora route).
+- No active greenery records exist -> the catalog sent to Gemini is empty,
+  so the model has nothing grounded to recommend from.
+
+Postcondition: the staff member sees a set of catalog-grounded planting
+suggestions with tradeoffs for the described site; no data is persisted -
+each request is independent and nothing is saved to any record.

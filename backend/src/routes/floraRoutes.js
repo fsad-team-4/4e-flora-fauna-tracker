@@ -11,6 +11,7 @@ router.get('/', protect, restrictTo('staff', 'admin'), floraController.getAllGre
 router.get('/species-catalog', protect, restrictTo('staff', 'admin'), floraController.getSpeciesCatalog); // Distinct species lookup for autofill
 router.post('/', protect, restrictTo('staff', 'admin'), floraController.createGreenery);      // Create manual record
 router.post('/query', protect, restrictTo('staff', 'admin'), floraController.queryHandbook);   // AI natural-language catalog query
+router.post('/planting-suggestions', protect, restrictTo('staff', 'admin'), floraController.getPlantingSuggestions); // AI planting suggestions
 router.patch('/:id', protect, restrictTo('staff', 'admin'), floraController.updateGreenery);   // Update a record
 router.delete('/:id', protect, restrictTo('staff', 'admin'), floraController.softDeleteGreenery); // Soft-delete a record
 router.post('/bulk', protect, restrictTo('staff', 'admin'), csvUpload.single('file'), floraController.bulkUploadCSV);   // Bulk import spreadsheet hook

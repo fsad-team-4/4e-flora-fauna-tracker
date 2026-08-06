@@ -346,6 +346,67 @@ async function queryHandbook(req, res) {
   }
 }
 
+// One compact line per plant so the catalog stays cheap to send, grounding
+// the prompt in the same way floraQueryService does for queryHandbook.
+function formatPlantingCatalogLine(record) {
+  const height =
+    record.max_height_at_maturity != null
+      ? `${record.max_height_at_maturity}m`
+      : 'unknown';
+  return [
+    `Species: ${record.species}`,
+    `Family: ${record.plant_family || 'unknown'}`,
+    `Site suitability: ${record.site_suitability || 'unknown'}`,
+    `Colour: ${record.color || 'unknown'}`,
+    `Max height: ${height}`,
+  ].join(' | ');
+}
+
+// Recommend species for a planting site, grounded in the active catalog only
+async function getPlantingSuggestions(req, res) {
+  const { condition } = req.body || {};
+  if (typeof condition !== 'string' || condition.trim() === '') {
+    return res.status(400).json({ error: 'condition is required' });
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({ error: 'AI service not configured' });
+  }
+
+  const records = await GreeneryRecord.findAll({
+    where: { is_deleted: false },
+    attributes: ['species', 'plant_family', 'site_suitability', 'color', 'max_height_at_maturity'],
+  });
+
+  const catalog = records.map(formatPlantingCatalogLine).join('\n');
+
+  const prompt = `You are advising estate maintenance staff in Singapore on what to plant at a given site.
+
+Recommend species using ONLY the catalog list below - do not invent species that are not in the list. Weigh all catalog entries comparatively against the stated condition and recommend the closest-fitting options even if none is a perfect match - name the tradeoff honestly for each (e.g. "close fit but slightly more sun-tolerant than ideal"). Only say nothing in the catalog is suitable if literally no species comes reasonably close to the stated condition - do not default to that answer just because no entry matches every aspect exactly.
+
+Catalog (${records.length} plants, one per line):
+${catalog}
+
+Site condition: ${condition.trim()}
+
+Respond in plain text only - no markdown, no asterisks, no bold.`;
+
+  let suggestions;
+  try {
+    const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await client.models.generateContent({
+      model: 'gemini-3.5-flash',
+      contents: prompt,
+      config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
+    });
+    suggestions = response.text;
+  } catch (err) {
+    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+  }
+
+  return res.status(200).json({ suggestions });
+}
+
 module.exports = {
   getAllGreenery,
   getSpeciesCatalog,
@@ -355,4 +416,5 @@ module.exports = {
   bulkUploadCSV,
   careRecommendation,
   queryHandbook,
+  getPlantingSuggestions,
 };
