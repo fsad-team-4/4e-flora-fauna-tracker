@@ -4,7 +4,8 @@ import { useFormik } from 'formik';
 import * as yup from 'yup';
 import {
   Box, TextField, Button, Typography, Alert, MenuItem, Stack, Card,
-  CardContent, Divider, Chip, Autocomplete,
+  CardContent, Divider, Chip, Autocomplete, Dialog, DialogTitle,
+  DialogContent, DialogActions,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ParkOutlinedIcon from '@mui/icons-material/ParkOutlined';
@@ -12,9 +13,32 @@ import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import TipsAndUpdatesOutlinedIcon from '@mui/icons-material/TipsAndUpdatesOutlined';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import http from '../http';
 import { HEALTH_STATUS_OPTIONS, HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
 import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
+
+// Default map view - central Singapore.
+const DEFAULT_CENTER = [1.3521, 103.8198];
+
+// A single red pin as a Leaflet divIcon (avoids the default marker asset that
+// Vite does not bundle correctly).
+const pinIcon = L.divIcon({
+  className: '',
+  html: '<span style="display:block;width:26px;height:26px;border-radius:50%;background:#C1272D;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.4)"></span>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
+
+// Captures map clicks and reports the clicked coordinates upward.
+function ClickCapture({ onPick }) {
+  useMapEvents({
+    click: (e) => onPick(e.latlng.lat, e.latlng.lng),
+  });
+  return null;
+}
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
@@ -43,6 +67,7 @@ const makeLocation = (key) => ({
   gps_lng: null,
   gpsLoading: false,
   gpsError: '',
+  locationAutoFillNote: '',
   identifyLoading: false,
   identifyError: '',
   identifySuggestion: null,
@@ -195,6 +220,10 @@ export default function AddFlora() {
   const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const nextKeyRef = useRef(1);
   const fileInputRefs = useRef({});
+  const [mapPickerKey, setMapPickerKey] = useState(null);
+  const [pickedCoords, setPickedCoords] = useState(null);
+  const [reverseGeocoding, setReverseGeocoding] = useState(false);
+  const [reverseGeocodeError, setReverseGeocodeError] = useState('');
 
   useEffect(() => {
     http.get('/api/flora/species-catalog')
@@ -265,6 +294,93 @@ export default function AddFlora() {
         updateLocationField(key, 'gpsLoading', false);
       }
     );
+  };
+
+const openMapPicker = (key) => {
+    setMapPickerKey(key);
+    setPickedCoords(null);
+    setReverseGeocodeError('');
+  };
+
+  const closeMapPicker = () => {
+    setMapPickerKey(null);
+    setPickedCoords(null);
+    setReverseGeocoding(false);
+    setReverseGeocodeError('');
+  };
+
+  // Picks the most sensible short place name out of Nominatim's address
+  // breakdown - suburb reads best for estate locations, falling back to
+  // broader areas when it's missing.
+  const pickPlaceName = (data) => {
+    const address = data?.address || {};
+    return (
+      address.suburb ||
+      address.neighbourhood ||
+      address.city_district ||
+      data?.display_name ||
+      ''
+    );
+  };
+
+  // Looks for a SINGAPORE_LOCATIONS entry inside Nominatim's address fields
+  // so the canonical Location value can be auto-selected when possible.
+  const matchSingaporeLocation = (data) => {
+    const address = data?.address || {};
+    const haystack = [
+      address.suburb,
+      address.neighbourhood,
+      address.city_district,
+      data?.display_name,
+    ]
+      .filter(Boolean)
+      .join(' | ')
+      .toLowerCase();
+
+    return SINGAPORE_LOCATIONS.find((entry) => haystack.includes(entry.toLowerCase())) || '';
+  };
+
+  const confirmMapPicker = async () => {
+    if (!pickedCoords || mapPickerKey === null) {
+      closeMapPicker();
+      return;
+    }
+
+    const key = mapPickerKey;
+    updateLocationField(key, 'gps_lat', pickedCoords.lat);
+    updateLocationField(key, 'gps_lng', pickedCoords.lng);
+    updateLocationField(key, 'locationAutoFillNote', '');
+
+    setReverseGeocodeError('');
+    setReverseGeocoding(true);
+
+    const autoFillFailedNote = "Couldn't auto-fill location name from the map pin - please type it manually.";
+    const locationZoneOnlyNote = 'Location zone filled from map pin - please select the Location area manually.';
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${pickedCoords.lat}&lon=${pickedCoords.lng}`
+      );
+      const data = await res.json();
+      const placeName = pickPlaceName(data);
+      if (placeName) {
+        updateLocationField(key, 'location_zone', placeName);
+
+        const matchedLocation = matchSingaporeLocation(data);
+        if (matchedLocation) {
+          updateLocationField(key, 'location', matchedLocation);
+        } else {
+          updateLocationField(key, 'locationAutoFillNote', locationZoneOnlyNote);
+        }
+      } else {
+        updateLocationField(key, 'locationAutoFillNote', autoFillFailedNote);
+      }
+    } catch {
+      updateLocationField(key, 'locationAutoFillNote', autoFillFailedNote);
+    } finally {
+      setReverseGeocoding(false);
+    }
+
+    closeMapPicker();
   };
 
   const handleIdentifySpecies = async (key) => {
@@ -533,17 +649,31 @@ export default function AddFlora() {
 
                   <Box sx={{ mt: 1, mb: 1 }}>
                     {loc.gpsError && <Alert severity="error" sx={{ mb: 1 }}>{loc.gpsError}</Alert>}
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => handleCaptureGps(loc.key)}
-                      disabled={loc.gpsLoading}
-                    >
-                      {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
-                    </Button>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleCaptureGps(loc.key)}
+                        disabled={loc.gpsLoading}
+                      >
+                        {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => openMapPicker(loc.key)}
+                      >
+                        Pick from Map
+                      </Button>
+                    </Stack>
                     {loc.gps_lat !== null && loc.gps_lng !== null && (
                       <Typography variant="body2" color="success.main" sx={{ mt: 0.5 }}>
                         Location captured ({loc.gps_lat.toFixed(5)}, {loc.gps_lng.toFixed(5)})
+                      </Typography>
+                    )}
+                    {loc.locationAutoFillNote && (
+                      <Typography variant="body2" color="warning.main" sx={{ mt: 0.5 }}>
+                        {loc.locationAutoFillNote}
                       </Typography>
                     )}
                   </Box>
@@ -699,6 +829,44 @@ export default function AddFlora() {
           }}
         />
       </Box>
+
+      <Dialog open={mapPickerKey !== null} onClose={closeMapPicker} maxWidth="sm" fullWidth>
+        <DialogTitle>Pick Location from Map</DialogTitle>
+        <DialogContent>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            Click on the map to drop a pin.
+          </Typography>
+          <Box sx={{ height: 350, borderRadius: 2, overflow: 'hidden', border: '1px solid #EAEAEA' }}>
+            <MapContainer center={DEFAULT_CENTER} zoom={12} style={{ height: '100%', width: '100%' }}>
+              <TileLayer
+                attribution='&copy; OpenStreetMap contributors'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <ClickCapture onPick={(lat, lng) => setPickedCoords({ lat, lng })} />
+              {pickedCoords && <Marker position={[pickedCoords.lat, pickedCoords.lng]} icon={pinIcon} />}
+            </MapContainer>
+          </Box>
+          {pickedCoords && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {pickedCoords.lat.toFixed(5)}, {pickedCoords.lng.toFixed(5)}
+            </Typography>
+          )}
+          {reverseGeocoding && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Looking up location name...
+            </Typography>
+          )}
+          {reverseGeocodeError && (
+            <Alert severity="warning" sx={{ mt: 1 }}>{reverseGeocodeError}</Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeMapPicker} disabled={reverseGeocoding}>Cancel</Button>
+          <Button onClick={confirmMapPicker} variant="contained" disabled={!pickedCoords || reverseGeocoding}>
+            {reverseGeocoding ? 'Saving...' : 'Confirm'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
