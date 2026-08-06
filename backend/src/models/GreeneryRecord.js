@@ -19,6 +19,14 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  gps_lat: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  gps_lng: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
   location: {
     type: DataTypes.STRING,
     allowNull: true,

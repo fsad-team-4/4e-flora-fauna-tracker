@@ -166,8 +166,10 @@ Main flow:
    common name, location zone, health status, and notes, and calls Gemini
    (`gemini-3.5-flash`).
 4. Gemini returns 3-5 short, emoji-prefixed actionable bullets (💧 watering,
-   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plain text
-   only.
+   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plus one
+   additional bullet estimating the species' typical lifespan in Singapore's
+   climate, prefixed with a distinct emoji (⏳) separate from the five care
+   categories, plain text only.
 5. The backend stores the text in `care_recommendation`, saves, and returns
    `200` with the updated record. The detail page renders the bullets.
 
@@ -338,3 +340,48 @@ free text; any previously-blank botanical fields (`plant_family`,
 `site_suitability`, `color`, `max_height_at_maturity`) are pre-filled from
 the most recent existing record of that species, while fields already
 populated by the staff member are left untouched.
+
+## UC-9: Staff captures GPS coordinates for a location entry
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, and is on the
+  Add Plant form with at least one location entry.
+
+Main flow:
+
+1. On a location card in the Add Plant form, the staff member clicks "Capture
+   GPS Location".
+2. The frontend calls the browser's built-in Geolocation API
+   (`navigator.geolocation.getCurrentPosition`) - no external mapping or
+   geolocation service is involved. While the request is in flight, the
+   button is disabled and reads "Capturing...".
+3. On success, the returned latitude and longitude are stored in that
+   location's `gps_lat`/`gps_lng` fields, and a confirmation
+   ("Location captured (lat, lng)") is shown on the card.
+4. When the location is submitted, `gps_lat`/`gps_lng` are included in that
+   location's `POST /api/flora` payload alongside its other fields.
+
+Alternate / edge flows:
+
+- The browser does not support the Geolocation API
+  (`navigator.geolocation` is undefined) -> an inline error, "Geolocation is
+  not supported by this browser", is shown on that location's card; the
+  button is not clicked-through, nothing is submitted.
+- The user denies the browser's location permission prompt -> an inline
+  error, "Location permission denied", is shown.
+- The request times out -> an inline error, "Location request timed out", is
+  shown.
+- Any other geolocation failure -> a generic inline error, "Unable to
+  retrieve location", is shown.
+- In every failure case, `gps_lat`/`gps_lng` for that location remain `null`
+  and form submission is not blocked - GPS capture is optional/supplementary,
+  never required. A location can be submitted with `gps_lat`/`gps_lng` left
+  null.
+- This feature is scoped to the Add Plant form only. The Edit Plant form
+  (`FloraDetail.jsx`) has no "Capture GPS Location" button or geolocation
+  logic - a plant's GPS coordinates cannot currently be added or changed
+  after initial creation.
+
+Postcondition: the location's greenery record is created with `gps_lat` and
+`gps_lng` set to the captured coordinates if capture succeeded, or `null` if
+it was skipped or failed.

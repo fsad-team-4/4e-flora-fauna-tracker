@@ -46,6 +46,8 @@ const createSchema = yup.object({
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
   location: yup.string().trim(),
+  gps_lat: yup.number().nullable(),
+  gps_lng: yup.number().nullable(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -66,6 +68,8 @@ const updateSchema = yup.object({
   common_name: yup.string().trim(),
   location_zone: yup.string().trim(),
   location: yup.string().trim(),
+  gps_lat: yup.number().nullable(),
+  gps_lng: yup.number().nullable(),
   health_status: yup.string().oneOf(HEALTH_STATUSES),
   health_notes: yup.string().trim(),
   last_inspected_at: yup.date(),
@@ -165,6 +169,8 @@ async function createGreenery(req, res) {
     common_name: data.common_name,
     location_zone: data.location_zone,
     location: data.location,
+    gps_lat: data.gps_lat,
+    gps_lng: data.gps_lng,
     health_status: data.health_status,
     health_notes: data.health_notes,
     plant_family: data.plant_family,
@@ -254,6 +260,8 @@ async function bulkUploadCSV(req, res) {
         common_name: data.common_name,
         location: data.location,
         location_zone: data.location_zone,
+        gps_lat: data.gps_lat,
+        gps_lng: data.gps_lng,
         health_status: data.health_status,
         health_notes: data.health_notes,
         plant_family: data.plant_family,
@@ -295,7 +303,7 @@ Common name: ${record.common_name || 'unknown'}
 Location zone: ${record.location_zone || 'unspecified'}
 Health status: ${record.health_status}
 Health notes: ${record.health_notes || 'none'}
-Respond with only the recommendation itself, as 3-5 short bullet points. Plain text only - no markdown, no asterisks, no bold. Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. No preamble or introduction.`;
+Respond with only the recommendation itself, as 3-5 short bullet points. Plain text only - no markdown, no asterisks, no bold. Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤️ for shade/light, 🐛 for pest treatment, ✂️ for pruning, ⚠️ for when to escalate. After those care bullets, add one final additional bullet point estimating the species' typical lifespan in Singapore's climate, prefixed with ⏳. No preamble or introduction.`;
 
   let recommendation;
   try {

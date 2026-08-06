@@ -39,6 +39,10 @@ const makeLocation = (key) => ({
   uploading: false,
   uploadError: '',
   submitError: '',
+  gps_lat: null,
+  gps_lng: null,
+  gpsLoading: false,
+  gpsError: '',
 });
 
 // Small colored dot matching the same convention used in FloraList's filter
@@ -234,6 +238,32 @@ export default function AddFlora() {
     if (input) input.value = '';
   };
 
+  const handleCaptureGps = (key) => {
+    if (!navigator.geolocation) {
+      updateLocationField(key, 'gpsError', 'Geolocation is not supported by this browser');
+      return;
+    }
+
+    updateLocationField(key, 'gpsError', '');
+    updateLocationField(key, 'gpsLoading', true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        updateLocationField(key, 'gps_lat', position.coords.latitude);
+        updateLocationField(key, 'gps_lng', position.coords.longitude);
+        updateLocationField(key, 'gpsLoading', false);
+      },
+      (err) => {
+        const message = err.code === err.PERMISSION_DENIED
+          ? 'Location permission denied'
+          : err.code === err.TIMEOUT
+            ? 'Location request timed out'
+            : 'Unable to retrieve location';
+        updateLocationField(key, 'gpsError', message);
+        updateLocationField(key, 'gpsLoading', false);
+      }
+    );
+  };
+
   const formik = useFormik({
     initialValues: {
       species: '',
@@ -263,6 +293,8 @@ export default function AddFlora() {
             health_status: loc.health_status,
             health_notes: loc.health_notes,
             image_url: loc.imageUrl || null,
+            gps_lat: loc.gps_lat,
+            gps_lng: loc.gps_lng,
           })
         )
       );
@@ -474,6 +506,24 @@ export default function AddFlora() {
                     value={loc.location_zone}
                     onChange={(e) => updateLocationField(loc.key, 'location_zone', e.target.value)}
                   />
+
+                  <Box sx={{ mt: 1, mb: 1 }}>
+                    {loc.gpsError && <Alert severity="error" sx={{ mb: 1 }}>{loc.gpsError}</Alert>}
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => handleCaptureGps(loc.key)}
+                      disabled={loc.gpsLoading}
+                    >
+                      {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
+                    </Button>
+                    {loc.gps_lat !== null && loc.gps_lng !== null && (
+                      <Typography variant="body2" color="success.main" sx={{ mt: 0.5 }}>
+                        Location captured ({loc.gps_lat.toFixed(5)}, {loc.gps_lng.toFixed(5)})
+                      </Typography>
+                    )}
+                  </Box>
+
                   <TextField
                     select
                     fullWidth
