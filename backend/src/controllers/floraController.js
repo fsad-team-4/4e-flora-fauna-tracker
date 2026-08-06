@@ -9,6 +9,7 @@ const floraQueryService = require('../services/floraQueryService');
 const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
 
+
 // Postgres' LIKE is case-sensitive (unlike SQLite's), so use iLike there to
 // keep substring filters matching regardless of case on both databases.
 const CASE_INSENSITIVE_OP = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.substring;
@@ -18,7 +19,7 @@ const CASE_INSENSITIVE_OP = sequelize.getDialect() === 'postgres' ? Op.iLike : O
 // callers don't await this and the request returns without waiting on SMTP.
 async function sendHealthAlert(record) {
   const recipients = await User.findAll({
-    where: { role: { [Op.in]: ['staff', 'admin'] } },
+    where: { role: { [Op.in]: ['field_officer', 'manager'] } },
     attributes: ['email'],
   });
   if (recipients.length === 0) return;

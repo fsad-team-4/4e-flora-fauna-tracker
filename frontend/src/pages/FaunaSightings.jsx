@@ -111,7 +111,7 @@ export default function FaunaSightings() {
                     {sighting.block_number && (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
                         <LocationOnIcon fontSize="small" color="action" />
-                        <Typography>Block: {sighting.block_number}</Typography>
+                        <Typography>{sighting.block_number}</Typography>
                       </Box>
                     )}
                     {sighting.floor_level && (

@@ -87,7 +87,7 @@ export default function AllReports() {
               </Typography>
               <Typography variant="body2">By: {report.reporter?.name || 'Unknown'}</Typography>
               {report.block_number && (
-                <Typography variant="body2">Block: {report.block_number}</Typography>
+                <Typography variant="body2">{report.block_number}</Typography>
               )}
               <Typography variant="caption" color="text.secondary">
                 {new Date(report.createdAt).toLocaleString()}

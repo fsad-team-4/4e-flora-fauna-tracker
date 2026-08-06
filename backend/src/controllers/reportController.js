@@ -1,6 +1,7 @@
 const yup = require('yup');
 const { ResidentReport, CaseStatusLog, FaunaSighting } = require('../models');
 const { sendMail } = require('../config/mailer');
+const { INTERNAL_ROLES } = require('../middleware/auth');
 
 const CATEGORIES = ['flora_health', 'community_cat', 'pigeon', 'pest', 'other'];
 const STATUSES = ['open', 'in_progress', 'resolved'];
@@ -79,7 +80,7 @@ async function createReport(req, res) {
 async function listReports(req, res) {
   const where = { is_deleted: false };
 
-  if (req.user.role === 'resident') {
+  if (!INTERNAL_ROLES.includes(req.user.role)) {
     where.reported_by = req.user.user_id;
   }
   if (req.query.status) {
@@ -113,7 +114,7 @@ async function getReport(req, res) {
   if (!report) {
     return res.status(404).json({ error: 'Report not found' });
   }
-  if (req.user.role === 'resident' && report.reported_by !== req.user.user_id) {
+  if (!INTERNAL_ROLES.includes(req.user.role) && report.reported_by !== req.user.user_id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 

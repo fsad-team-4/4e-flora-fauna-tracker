@@ -5,13 +5,15 @@ const { protect, restrictTo } = require('../middleware/auth');
 const router = express.Router();
 
 // Hotspots must be registered before '/:id' so 'hotspots' is not matched as an id.
-router.get('/hotspots', protect, restrictTo('staff', 'admin'), faunaController.getHotspots);
-router.get('/hotspots/:block/summary', protect, restrictTo('staff', 'admin'), faunaController.getBlockSummary);
+router.get('/hotspots', protect, restrictTo('field_officer', 'manager'), faunaController.getHotspots);
+router.get('/hotspots/:block/summary', protect, restrictTo('field_officer', 'manager'), faunaController.getBlockSummary);
 
-router.get('/', protect, restrictTo('staff', 'admin'), faunaController.listSightings);
-router.post('/', protect, restrictTo('staff', 'admin'), faunaController.createSighting);
-router.get('/:id', protect, restrictTo('staff', 'admin'), faunaController.getSighting);
-router.patch('/:id/status', protect, restrictTo('staff', 'admin'), faunaController.updateStatus);
-router.delete('/:id', protect, restrictTo('admin'), faunaController.softDeleteSighting);
+// Welfare Partners get read + create; the controller scopes them to their
+// assigned blocks. Status updates and deletes stay internal-only.
+router.get('/', protect, restrictTo('field_officer', 'manager', 'welfare_partner'), faunaController.listSightings);
+router.post('/', protect, restrictTo('field_officer', 'manager', 'welfare_partner'), faunaController.createSighting);
+router.get('/:id', protect, restrictTo('field_officer', 'manager', 'welfare_partner'), faunaController.getSighting);
+router.patch('/:id/status', protect, restrictTo('field_officer', 'manager'), faunaController.updateStatus);
+router.delete('/:id', protect, restrictTo('manager'), faunaController.softDeleteSighting);
 
 module.exports = router;

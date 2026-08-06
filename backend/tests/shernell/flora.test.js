@@ -28,7 +28,7 @@ beforeAll(async () => {
   await sequelize.sync({ force: true });
 
   const accounts = [
-    ['staff', 'staff'],
+    ['staff', 'field_officer'],
     ['res1', 'resident'],
   ];
   for (const [key, role] of accounts) {

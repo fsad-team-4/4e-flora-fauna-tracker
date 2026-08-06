@@ -28,7 +28,7 @@ const router = express.Router();
 router.use(protect);
 
 // list past assessments
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 100);
   const where = { is_deleted: false };
   if (req.query.risk_level && ['low', 'medium', 'high', 'critical'].includes(req.query.risk_level)) {
@@ -49,7 +49,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // get one
-router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const row = await RodentAssessment.findOne({
       where: { id: req.params.id, is_deleted: false },
@@ -63,7 +63,7 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // create - runs AI assessment + saves
-router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.post('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   const { block_number, floor_level, observations } = req.body;
 
   if (!observations || !observations.trim()) {
@@ -121,7 +121,7 @@ router.post('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // update follow-up notes
-router.patch('/:id', restrictTo('admin', 'staff'), async (req, res) => {
+router.patch('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
   const { follow_up_notes } = req.body;
   if (follow_up_notes === undefined) {
     return res.status(400).json({ error: 'only follow_up_notes can be updated' });
@@ -140,8 +140,8 @@ router.patch('/:id', restrictTo('admin', 'staff'), async (req, res) => {
   }
 });
 
-// soft delete - admin only
-router.delete('/:id', restrictTo('admin'), async (req, res) => {
+// soft delete - manager only
+router.delete('/:id', restrictTo('manager'), async (req, res) => {
   try {
     const row = await RodentAssessment.findOne({
       where: { id: req.params.id, is_deleted: false },

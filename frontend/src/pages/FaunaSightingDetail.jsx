@@ -84,7 +84,7 @@ export default function FaunaSightingDetail() {
     }
   };
 
-  const canUpdate = user && (user.role === 'staff' || user.role === 'admin');
+  const canUpdate = user && (user.role === 'field_officer' || user.role === 'manager');
 
   return (
     <Box sx={{ maxWidth: 700, mx: 'auto', mt: 4 }}>
@@ -115,7 +115,7 @@ export default function FaunaSightingDetail() {
           {sighting.block_number && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <LocationOnIcon fontSize="small" color="action" />
-              <Typography>Block: {sighting.block_number}</Typography>
+              <Typography>{sighting.block_number}</Typography>
             </Box>
           )}
           {sighting.floor_level && <Typography>Floor: {sighting.floor_level}</Typography>}

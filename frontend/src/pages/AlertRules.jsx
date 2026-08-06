@@ -208,7 +208,7 @@ function RuleNameLine({ name, active }) {
 
 export default function AlertRules() {
   const { user } = useUser();
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'manager';
 
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);

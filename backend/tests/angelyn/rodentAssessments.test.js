@@ -40,8 +40,8 @@ async function createAndLogin(name, email, role) {
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  adminToken = await createAndLogin('Admin', 'admin@test.com', 'admin');
-  staffToken = await createAndLogin('Staff', 'staff@test.com', 'staff');
+  adminToken = await createAndLogin('Admin', 'admin@test.com', 'manager');
+  staffToken = await createAndLogin('Staff', 'staff@test.com', 'field_officer');
   residentToken = await registerAndLogin('Resident', 'resident@test.com', 'resident');
 });
 

@@ -2,6 +2,7 @@ const yup = require('yup');
 const { Op } = require('sequelize');
 const { FaunaSighting } = require('../models');
 const { getGeminiClient } = require('../config/gemini');
+const { INTERNAL_ROLES, getAssignedBlocks } = require('../middleware/auth');
 
 const STATUSES = ['open', 'in_progress', 'resolved'];
 const SPECIES = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
@@ -31,12 +32,16 @@ const createSchema = yup.object({
   notes: yup.string().max(500).optional(),
 });
 
-// RBAC: residents must not see the exact location of community cats. For a
-// resident viewing a cat sighting, gps_lat/gps_lng are nulled before returning.
-// Returns a plain object so the model instance is left untouched.
+// Roles trusted with the exact location of community cats. Welfare Partners are
+// included because their access is already bounded by their assigned blocks -
+// the zone filter is their control, not field-stripping.
+const FULL_GPS_ROLES = [...INTERNAL_ROLES, 'welfare_partner'];
+
+// RBAC: for any other role viewing a cat sighting, gps_lat/gps_lng are nulled
+// before returning. Returns a plain object so the model instance is untouched.
 function stripCatGps(sighting, role) {
   const data = sighting.toJSON();
-  if (role === 'resident' && data.species === 'cat') {
+  if (!FULL_GPS_ROLES.includes(role) && data.species === 'cat') {
     data.gps_lat = null;
     data.gps_lng = null;
   }
@@ -46,7 +51,11 @@ function stripCatGps(sighting, role) {
 async function listSightings(req, res) {
   const where = { is_deleted: false };
 
-  if (req.user.role === 'resident') {
+  // A Welfare Partner is scoped to their assigned blocks rather than to their
+  // own submissions - the zone is their access boundary. null means the role
+  // carries no zone restriction at all.
+  const assignedBlocks = await getAssignedBlocks(req.user);
+  if (assignedBlocks === null && !INTERNAL_ROLES.includes(req.user.role)) {
     where.reported_by = req.user.user_id;
   }
   if (req.query.species) {
@@ -57,6 +66,18 @@ async function listSightings(req, res) {
   }
   if (req.query.block_number) {
     where.block_number = req.query.block_number;
+  }
+
+  // Applied after the query filters so a block_number param can never widen the
+  // zone. No assigned blocks means no visible sightings, not unrestricted.
+  if (assignedBlocks !== null) {
+    if (req.query.block_number && !assignedBlocks.includes(req.query.block_number)) {
+      return res.status(200).json([]);
+    }
+    if (assignedBlocks.length === 0) {
+      return res.status(200).json([]);
+    }
+    where.block_number = req.query.block_number || { [Op.in]: assignedBlocks };
   }
 
   const sightings = await FaunaSighting.findAll({
@@ -77,7 +98,14 @@ async function getSighting(req, res) {
   if (!sighting) {
     return res.status(404).json({ error: 'Sighting not found' });
   }
-  if (req.user.role === 'resident' && sighting.reported_by !== req.user.user_id) {
+  // A Welfare Partner may read anything inside their zone and nothing outside
+  // it; with no assigned blocks, includes() is false and everything is denied.
+  const assignedBlocks = await getAssignedBlocks(req.user);
+  if (assignedBlocks !== null) {
+    if (!assignedBlocks.includes(sighting.block_number)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  } else if (!INTERNAL_ROLES.includes(req.user.role) && sighting.reported_by !== req.user.user_id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
@@ -90,6 +118,12 @@ async function createSighting(req, res) {
     data = await createSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
   } catch (err) {
     return res.status(400).json({ error: err.errors });
+  }
+
+  // A Welfare Partner may only log sightings for a block they cover.
+  const assignedBlocks = await getAssignedBlocks(req.user);
+  if (assignedBlocks !== null && !assignedBlocks.includes(data.block_number)) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
   const sighting = await FaunaSighting.create({
