@@ -165,11 +165,14 @@ Main flow:
 3. The backend loads the record, builds a prompt from the plant's species,
    common name, location zone, health status, and notes, and calls Gemini
    (`gemini-3.5-flash`).
-4. Gemini returns 3-5 short, emoji-prefixed actionable bullets (💧 watering,
-   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plus one
-   additional bullet estimating the species' typical lifespan in Singapore's
-   climate, prefixed with a distinct emoji (⏳) separate from the five care
-   categories, plain text only.
+4. Gemini returns the recommendation broken down by plant life stage - three
+   plain-text-headed sections in order (Seedling/Young, Establishing, Mature),
+   each with 2-3 emoji-prefixed bullets (💧 watering, 🌤️ shade/light, 🐛 pest
+   treatment, ✂️ pruning, ⚠️ escalation) covering only the topics most
+   relevant to that stage, not all five forced into every section. After all
+   three stage sections, exactly one final bullet estimates the species'
+   typical lifespan in Singapore's climate, prefixed with a distinct emoji
+   (⏳) - not repeated per stage. Plain text only, no markdown.
 5. The backend stores the text in `care_recommendation`, saves, and returns
    `200` with the updated record. The detail page renders the bullets.
 
