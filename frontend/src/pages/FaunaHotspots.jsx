@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Card, CardActionArea, CardContent, Chip, Alert,
   Stack, Collapse, Divider, ToggleButton, ToggleButtonGroup, Button, TextField,
+  IconButton,
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
 import PetsIcon from '@mui/icons-material/Pets';
 import FlutterDashIcon from '@mui/icons-material/FlutterDash';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
@@ -62,12 +65,13 @@ function HeatLayer({ points }) {
 }
 
 // Risk level -> MUI chip colour.
-const RISK_COLORS = { high: 'error', medium: 'warning', low: 'success' };
+const RISK_COLORS = { urgent: 'error', monitor: 'warning', routine: 'success' };
 
 // Default map view - central Singapore.
 const DEFAULT_CENTER = [1.3521, 103.8198];
 
 export default function FaunaHotspots() {
+  const navigate = useNavigate();
   const [sightings, setSightings] = useState([]);
   const [hotspots, setHotspots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,6 +90,13 @@ export default function FaunaHotspots() {
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState('');
   const [sendError, setSendError] = useState('');
+
+  // Drill-down list of the sightings behind the expanded block. `listOpen` is
+  // the card's own close button, independent of whether the block is expanded.
+  const [blockSightings, setBlockSightings] = useState([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [listError, setListError] = useState('');
+  const [listOpen, setListOpen] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -118,6 +129,17 @@ export default function FaunaHotspots() {
       return;
     }
     setExpandedBlock(block);
+
+    setBlockSightings([]);
+    setListError('');
+    setListOpen(true);
+    setListLoading(true);
+    http
+      .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/sightings`)
+      .then((res) => setBlockSightings(res.data))
+      .catch(() => setListError('Failed to load sightings'))
+      .finally(() => setListLoading(false));
+
     setSummary(null);
     setSummaryError('');
     setSummaryLoading(true);
@@ -263,6 +285,8 @@ export default function FaunaHotspots() {
               <Collapse in={expandedBlock === hotspot.block_number} unmountOnExit>
                 <Box sx={{ px: 2, pb: 2 }}>
                   <Divider sx={{ mb: 2 }} />
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
                   {summaryLoading && <Typography>Loading summary...</Typography>}
                   {!summaryLoading && summaryError && (
                     <Alert severity="error">{summaryError}</Alert>
@@ -273,7 +297,7 @@ export default function FaunaHotspots() {
                         <Typography variant="subtitle2">AI Summary</Typography>
                         {summary.risk_level && (
                           <Chip
-                            label={`${summary.risk_level} risk`}
+                            label={summary.risk_level}
                             size="small"
                             color={RISK_COLORS[summary.risk_level] || 'default'}
                             sx={{ textTransform: 'capitalize' }}
@@ -281,6 +305,19 @@ export default function FaunaHotspots() {
                         )}
                       </Stack>
                       <Typography sx={{ mb: 2 }}>{summary.summary}</Typography>
+                      {summary.behaviour_tags?.length > 0 && (
+                        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+                          {summary.behaviour_tags.map((tag) => (
+                            <Chip
+                              key={tag}
+                              label={tag}
+                              size="small"
+                              variant="outlined"
+                              sx={{ textTransform: 'capitalize' }}
+                            />
+                          ))}
+                        </Stack>
+                      )}
                       <Typography variant="subtitle2" sx={{ mb: 0.5 }}>Agency Recommendation</Typography>
                       <Stack spacing={0.5}>
                         {Object.entries(summary.agency_recommendation).map(([species, agency]) => (
@@ -339,6 +376,55 @@ export default function FaunaHotspots() {
                       )}
                     </>
                   )}
+                    </Box>
+
+                    {listOpen && (
+                      <Card variant="outlined" sx={{ width: { xs: '100%', md: 320 }, flexShrink: 0, bgcolor: 'action.hover' }}>
+                        <CardContent>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2">Sightings in this block</Typography>
+                            <IconButton size="small" aria-label="Hide sightings" onClick={() => setListOpen(false)}>
+                              <CloseIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+
+                          {listLoading && <Typography variant="body2">Loading sightings...</Typography>}
+                          {!listLoading && listError && <Alert severity="error">{listError}</Alert>}
+                          {!listLoading && !listError && blockSightings.length === 0 && (
+                            <Typography variant="body2">No sightings found</Typography>
+                          )}
+
+                          <Stack divider={<Divider />}>
+                            {blockSightings.map((s) => (
+                              <Box
+                                key={s.id}
+                                onClick={() => navigate(`/fauna/${s.id}`)}
+                                sx={{ py: 1, cursor: 'pointer', '&:hover': { opacity: 0.7 } }}
+                              >
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <SpeciesIcon species={s.species} fontSize="small" color="action" />
+                                  <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
+                                    {s.species}
+                                  </Typography>
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  {s.reporter?.name || 'Unknown'} - {new Date(s.createdAt).toLocaleDateString()}
+                                </Typography>
+                                {s.untagged_mentions?.length > 0 && (
+                                  <Chip
+                                    label={`Notes mention: ${s.untagged_mentions.join(', ')}`}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ mt: 0.5, textTransform: 'capitalize' }}
+                                  />
+                                )}
+                              </Box>
+                            ))}
+                          </Stack>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </Stack>
                 </Box>
               </Collapse>
             </Card>

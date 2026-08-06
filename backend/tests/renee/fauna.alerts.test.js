@@ -74,39 +74,39 @@ beforeEach(() => {
 afterAll(async () => { await sequelize.close(); });
 
 describe('risk_level in GET /hotspots/:block/summary', () => {
-  test('high when the block has 8 or more sightings', async () => {
+  test('urgent when the block has 8 or more sightings', async () => {
     const res = await summaryOf('Block High Volume');
     expect(res.status).toBe(200);
     expect(res.body.sighting_count).toBe(8);
-    expect(res.body.risk_level).toBe('high');
+    expect(res.body.risk_level).toBe('urgent');
   });
 
-  test('high when an aggressive tag is present despite low volume', async () => {
+  test('urgent when an aggressive tag is present despite low volume', async () => {
     const res = await summaryOf('Block Aggressive');
     expect(res.status).toBe(200);
     expect(res.body.sighting_count).toBe(2);
-    expect(res.body.risk_level).toBe('high');
+    expect(res.body.risk_level).toBe('urgent');
   });
 
-  test('high when a nesting tag is present despite low volume', async () => {
+  test('monitor when a nesting tag is present at low volume', async () => {
     const res = await summaryOf('Block Nesting');
     expect(res.status).toBe(200);
-    expect(res.body.risk_level).toBe('high');
+    expect(res.body.risk_level).toBe('monitor');
   });
 
-  test('medium at the lower boundary of 4 sightings', async () => {
+  test('monitor at the lower boundary of 4 sightings', async () => {
     const res = await summaryOf('Block Medium Low');
-    expect(res.body.risk_level).toBe('medium');
+    expect(res.body.risk_level).toBe('monitor');
   });
 
-  test('medium at the upper boundary of 7 sightings', async () => {
+  test('monitor at the upper boundary of 7 sightings', async () => {
     const res = await summaryOf('Block Medium High');
-    expect(res.body.risk_level).toBe('medium');
+    expect(res.body.risk_level).toBe('monitor');
   });
 
-  test('low below 4 sightings with no high-risk tag', async () => {
+  test('routine below 4 sightings with no aggressive or nesting tag', async () => {
     const res = await summaryOf('Block Low');
-    expect(res.body.risk_level).toBe('low');
+    expect(res.body.risk_level).toBe('routine');
   });
 
   test('503 fallback is unchanged when Gemini fails', async () => {
@@ -125,7 +125,7 @@ describe('POST /hotspots/:block/alert-draft', () => {
     expect(res.status).toBe(200);
     expect(res.body.subject).toBe('Fauna alert');
     expect(res.body.body).toBe('Body text here.');
-    expect(res.body.risk_level).toBe('high');
+    expect(res.body.risk_level).toBe('urgent');
   });
 
   test('503 when Gemini fails', async () => {

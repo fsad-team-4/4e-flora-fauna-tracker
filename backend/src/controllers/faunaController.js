@@ -200,8 +200,37 @@ async function getHotspots(req, res) {
   return res.status(200).json(hotspots);
 }
 
-// Behaviour tags that make a block high risk on their own, regardless of volume.
-const HIGH_RISK_TAGS = ['aggressive', 'nesting'];
+// Lists the sightings behind a block hotspot, newest first. Display-only: it
+// never mutates a sighting or its tags.
+async function getBlockSightings(req, res) {
+  const block = req.params.block;
+
+  const sightings = await FaunaSighting.findAll({
+    where: { is_deleted: false, block_number: block },
+    attributes: ['id', 'species', 'block_number', 'floor_level', 'behaviour_tags', 'notes', 'createdAt'],
+    include: [{ association: 'reporter', attributes: ['id', 'name'] }],
+    order: [['createdAt', 'DESC']],
+  });
+
+  return res.status(200).json(sightings.map((s) => ({
+    ...s.toJSON(),
+    untagged_mentions: findUntaggedMentions(s.notes, s.behaviour_tags),
+  })));
+}
+
+// Behaviour keywords named in the notes but missing from behaviour_tags. A hint
+// for staff that a sighting may be under-tagged; nothing is changed on the row.
+function findUntaggedMentions(notes, tags) {
+  if (!notes) return [];
+  const text = notes.toLowerCase();
+  const tagged = tags || [];
+  return BEHAVIOUR_TAGS.filter((tag) => text.includes(tag) && !tagged.includes(tag));
+}
+
+// Behaviour tags that carry their own severity regardless of volume. Aggression
+// escalates a block straight to urgent; nesting only warrants monitoring.
+const URGENT_TAG = 'aggressive';
+const MONITOR_TAG = 'nesting';
 
 // Shared aggregation for a block over a window. Returns null when the block has
 // no sightings in the window. Used by both the AI summary and the alert draft.
@@ -241,25 +270,48 @@ async function aggregateBlock(block, days) {
     .map(([tag, n]) => `${tag}: ${n}`)
     .join(', ') || 'none recorded';
 
-  // Volume-driven, but any aggressive or nesting behaviour escalates to high.
-  const hasHighRiskTag = HIGH_RISK_TAGS.some((tag) => tagCounts[tag] > 0);
+  // Volume-driven, escalated by behaviour severity. Alongside the level we work
+  // out WHY it was assigned, so the AI prompt can justify it instead of just
+  // restating the label back at the reader.
+  const n = sightings.length;
+  const volume = `${n} ${n === 1 ? 'sighting' : 'sightings'} in the last ${days} days`;
+  const hasAggressive = tagCounts[URGENT_TAG] > 0;
+  const hasNesting = tagCounts[MONITOR_TAG] > 0;
+
   let risk_level;
-  if (sightings.length >= 8 || hasHighRiskTag) {
-    risk_level = 'high';
-  } else if (sightings.length >= 4) {
-    risk_level = 'medium';
+  let risk_reason;
+  if (n >= 8 || hasAggressive) {
+    risk_level = 'urgent';
+    if (hasAggressive && n >= 8) {
+      risk_reason = `aggressive behaviour was reported and the block is busy with ${volume}`;
+    } else if (hasAggressive) {
+      risk_reason = `aggressive behaviour was reported, which is treated as urgent even though overall volume is modest at ${volume}`;
+    } else {
+      risk_reason = `sighting volume is high, with ${volume}`;
+    }
+  } else if (n >= 4 || hasNesting) {
+    risk_level = 'monitor';
+    if (hasNesting && n >= 4) {
+      risk_reason = `nesting activity was reported alongside a moderate ${volume}`;
+    } else if (hasNesting) {
+      risk_reason = `nesting activity was reported, which warrants monitoring despite a low overall volume of ${volume}`;
+    } else {
+      risk_reason = `sighting volume is moderate, with ${volume}, and no aggressive or nesting behaviour was reported`;
+    }
   } else {
-    risk_level = 'low';
+    risk_level = 'routine';
+    risk_reason = `activity is low, with only ${volume}, and no aggressive or nesting behaviour was reported`;
   }
 
   return {
-    count: sightings.length,
+    count: n,
     speciesCounts,
     tagCounts,
     agency_recommendation,
     speciesLine,
     tagLine,
     risk_level,
+    risk_reason,
   };
 }
 
@@ -271,7 +323,7 @@ async function getBlockSummary(req, res) {
   if (!agg) {
     return res.status(404).json({ error: 'No sightings found for this block' });
   }
-  const { agency_recommendation, speciesLine, tagLine, risk_level } = agg;
+  const { agency_recommendation, tagCounts, speciesLine, tagLine, risk_level, risk_reason } = agg;
 
   const systemInstruction =
     'You are an estate management assistant for a town council. Summarise fauna ' +
@@ -285,10 +337,12 @@ async function getBlockSummary(req, res) {
     `Total sightings: ${agg.count}\n` +
     `Species breakdown: ${speciesLine}\n` +
     `Behaviour tags: ${tagLine}\n` +
-    `Assessed risk level: ${risk_level}\n\n` +
+    `Assessed risk level: ${risk_level}\n` +
+    `Why that level was assigned: ${risk_reason}\n\n` +
     'Write a one-paragraph summary of the recent fauna activity in this block for ' +
-    'estate staff, noting the dominant species and any notable behaviours. Reflect ' +
-    'the assessed risk level in the tone and wording of the summary.';
+    'estate staff, noting the dominant species and any notable behaviours. Explain ' +
+    'the reasoning above in your own words so the reader understands what drove the ' +
+    'level. Do not justify the level by naming it; give the underlying reason.';
 
   let summary;
   try {
@@ -310,6 +364,7 @@ async function getBlockSummary(req, res) {
     block,
     summary,
     risk_level,
+    behaviour_tags: Object.keys(tagCounts),
     agency_recommendation,
     sighting_count: agg.count,
     period_days: days,
@@ -325,7 +380,7 @@ async function getBlockAlertDraft(req, res) {
   if (!agg) {
     return res.status(404).json({ error: 'No sightings found for this block' });
   }
-  const { agency_recommendation, speciesLine, tagLine, risk_level } = agg;
+  const { agency_recommendation, speciesLine, tagLine, risk_level, risk_reason } = agg;
 
   const agencyLine = Object.entries(agency_recommendation)
     .map(([sp, agency]) => `${sp}: ${agency}`)
@@ -345,9 +400,12 @@ async function getBlockAlertDraft(req, res) {
     `Species breakdown: ${speciesLine}\n` +
     `Behaviour tags: ${tagLine}\n` +
     `Assessed risk level: ${risk_level}\n` +
+    `Why that level was assigned: ${risk_reason}\n` +
     `Agency recommendation: ${agencyLine}\n\n` +
-    'Draft the alert email for estate staff, stating the risk level, the key ' +
-    'observations, and the recommended agency to contact.';
+    'Draft the alert email for estate staff, stating the risk level, the reason ' +
+    'it was assigned explained in your own words, the key observations, and the ' +
+    'recommended agency to contact. Do not justify the level by naming it; give ' +
+    'the underlying reason.';
 
   let text;
   try {
@@ -406,6 +464,7 @@ module.exports = {
   updateStatus,
   softDeleteSighting,
   getHotspots,
+  getBlockSightings,
   getBlockSummary,
   getBlockAlertDraft,
   sendBlockAlert,

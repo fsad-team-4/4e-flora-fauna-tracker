@@ -6,7 +6,18 @@ Endpoints owned by the Fauna Sightings module. Base URL is the backend server
 FaunaSighting records are created automatically by the system when a resident
 submits a ResidentReport with category `community_cat` or `pigeon`. Staff and
 field officers can also log a sighting directly via `POST /api/fauna`. There is
-no resident-facing POST endpoint. All fauna endpoints are staff/admin facing.
+no resident-facing POST endpoint. All fauna endpoints are internal facing.
+
+Roles in use (see `src/routes/faunaRoutes.js`):
+
+| Role | Fauna access |
+|------|--------------|
+| `field_officer` | everything except delete |
+| `manager` | everything, including delete |
+| `welfare_partner` | list, create, and read by id only, scoped server-side to their assigned blocks |
+
+Hotspots, summaries and the alert endpoints are internal-only (`field_officer`,
+`manager`); Welfare Partners have no access to them.
 
 ## Authentication
 
@@ -55,7 +66,7 @@ This is not an HTTP endpoint. It is a function called inside
 
 List fauna sightings. Soft-deleted sightings are always excluded.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager', 'welfare_partner')`
 - Query filters (optional):
   - `?species=` — one of `cat`, `pigeon`, `crow`, `mynah`, `other`
   - `?status=` — one of `open`, `in_progress`, `resolved`
@@ -87,7 +98,7 @@ List fauna sightings. Soft-deleted sightings are always excluded.
 
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not permitted
 
 ---
 
@@ -97,7 +108,7 @@ Log a fauna sighting directly. Intended for staff and field officers recording
 sightings in the field, in addition to the auto-mirror from resident reports.
 `reported_by` is taken from the JWT and cannot be set in the body.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager', 'welfare_partner')`
 - Request body:
 
   | Field | Type | Required | Notes |
@@ -149,7 +160,7 @@ sightings in the field, in addition to the auto-mirror from resident reports.
   - `400` — validation failure (e.g. missing species/block_number, invalid
     behaviour tag, notes over 500 chars): `{ "error": [...messages] }`
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not permitted
 
 ---
 
@@ -157,14 +168,14 @@ sightings in the field, in addition to the auto-mirror from resident reports.
 
 Get a single sighting.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
-- RBAC note: cat `gps_lat` and `gps_lng` are stripped if requester is
-  `resident` — but this endpoint is restricted to staff/admin so stripping
-  only applies if the restriction is relaxed in future
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager', 'welfare_partner')`
+- RBAC note: cat `gps_lat` and `gps_lng` are stripped for any role outside
+  `field_officer`, `manager` and `welfare_partner`. All three currently keep
+  full GPS, so stripping only applies if the route is opened up in future.
 - Success: `200` — the sighting object including `reporter: { id, name }`
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not permitted, or a Welfare Partner outside their assigned blocks
   - `404` — `{ "error": "Sighting not found" }` (missing or soft-deleted)
 
 ---
@@ -173,7 +184,7 @@ Get a single sighting.
 
 Update a sighting's case status.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Request body:
 
   | Field | Type | Required | Notes |
@@ -184,7 +195,7 @@ Update a sighting's case status.
 - Errors:
   - `400` — invalid/missing status
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not field_officer/manager
   - `404` — sighting not found or soft-deleted
 
 ---
@@ -193,12 +204,12 @@ Update a sighting's case status.
 
 Soft-delete a sighting (sets `is_deleted = true`; row is not removed).
 
-- Auth: requires JWT (`protect`) + `restrictTo('admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('manager')`
 - Request body: none
 - Success: `200` — `{ "message": "Sighting deleted" }`
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not admin
+  - `403` — role not manager
   - `404` — `{ "error": "Sighting not found" }` (missing or already deleted)
 
 ---
@@ -210,7 +221,7 @@ Soft-delete a sighting (sets `is_deleted = true`; row is not removed).
 Get sighting counts grouped by block and species, sorted by total descending.
 Used to identify high-activity zones for staff intervention decisions.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Query filters (optional):
   - `?days=` — number of days to look back (default `30`)
 - Success: `200` — array of hotspot objects
@@ -232,28 +243,78 @@ Used to identify high-activity zones for staff intervention decisions.
 
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not field_officer/manager
+
+---
+
+### GET /api/fauna/hotspots/:block/sightings
+
+List the individual sightings behind a block hotspot, newest first. Backs the
+drill-down list on the Hotspots page. Soft-deleted sightings are excluded.
+
+Each sighting carries an `untagged_mentions` array: behaviour keywords that
+appear in its `notes` text (case-insensitive) but are **not** in its
+`behaviour_tags`. It is a display-only hint that a sighting may be under-tagged.
+Nothing is written back, tags are never changed, and it has no bearing on
+`risk_level`. Only the five existing behaviour tags are scanned for, and only
+officer-entered sighting notes are read - no resident report data is involved.
+`untagged_mentions` is `[]` when `notes` is empty or every keyword found is
+already tagged.
+
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
+- URL param: `:block` — URL-encoded block string e.g. `Block%20203`
+- Success: `200` — array of sighting objects
+
+  ```json
+  [
+    {
+      "id": 7,
+      "species": "crow",
+      "block_number": "Block 203",
+      "floor_level": "roof",
+      "behaviour_tags": ["feeding"],
+      "notes": "Crows nesting on the rooftop, residents also feeding them",
+      "createdAt": "2026-07-13T09:00:00.000Z",
+      "reporter": { "id": 5, "name": "Officer Tan" },
+      "untagged_mentions": ["nesting"]
+    }
+  ]
+  ```
+
+- Errors:
+  - `401` — missing/invalid token
+  - `403` — role not field_officer/manager
+
+An unknown block returns `200` with an empty array, not a `404`.
 
 ---
 
 ### GET /api/fauna/hotspots/:block/summary
 
 Generate an AI summary of recent fauna activity for a block using Gemini API.
-Returns the summary, risk level, agency recommendation, sighting count, and period.
+Returns the summary, risk level, behaviour tags, agency recommendation, sighting
+count, and period.
 
 `risk_level` is computed from the aggregated sightings in the window (it is not
-stored on any record):
+stored on any record). The rules are severity-aware: aggression escalates a
+block on its own, nesting only warrants monitoring.
 
 | Level | Condition |
 |-------|-----------|
-| `high` | 8 or more sightings in the window, **or** any sighting tagged `aggressive` or `nesting` |
-| `medium` | 4 to 7 sightings and no high-risk tag |
-| `low` | fewer than 4 sightings and no high-risk tag |
+| `urgent` | 8 or more sightings in the window, **or** any sighting tagged `aggressive` |
+| `monitor` | 4 to 7 sightings, **or** any sighting tagged `nesting`, and not already `urgent` |
+| `routine` | otherwise |
 
-The computed level is also fed into the Gemini prompt so the summary paragraph
-reflects it.
+The level and the specific reason it was assigned (volume, aggression, or
+nesting) are both fed into the Gemini prompt, so the summary paragraph explains
+what actually drove the level rather than restating the label.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+`behaviour_tags` is the list of distinct behaviour tags recorded in the block
+during the window, drawn from the same five tags accepted by `POST /api/fauna`
+(`urinating`, `feeding`, `nesting`, `droppings`, `aggressive`). It is `[]` when
+no sighting in the window carried a tag.
+
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - URL param: `:block` — URL-encoded block string e.g. `Block%20203`
 - Query filters (optional):
   - `?days=` — number of days to look back (default `30`)
@@ -265,7 +326,8 @@ reflects it.
     "summary": "Block 203 has recorded 12 fauna sightings in the past 30 days,
       with community cats being the dominant concern (7 sightings). Four pigeon
       sightings were also reported near the playground area.",
-    "risk_level": "high",
+    "risk_level": "urgent",
+    "behaviour_tags": ["feeding", "nesting"],
     "agency_recommendation": {
       "cat": "Cat Welfare Society / SPCA",
       "pigeon": "ACRES"
@@ -277,7 +339,7 @@ reflects it.
 
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not field_officer/manager
   - `404` — `{ "error": "No sightings found for this block" }`
   - `503` — `{ "error": "AI summary unavailable. Please try again later." }`
     (Gemini API failure; fallback message returned, app does not crash)
@@ -291,7 +353,7 @@ GENERATES the draft - nothing is sent. Uses the same aggregation (species
 counts, behaviour counts, risk level, agency recommendation) as the summary
 endpoint.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - URL param: `:block` — URL-encoded block string e.g. `Block%20203`
 - Query filters (optional):
   - `?days=` — number of days to look back (default `30`)
@@ -301,15 +363,15 @@ endpoint.
 
   ```json
   {
-    "subject": "Fauna alert - Block 203 (high risk)",
+    "subject": "Fauna alert - Block 203 (urgent risk)",
     "body": "Team,\n\nBlock 203 has recorded 12 fauna sightings in the last 30 days...\n\nEstate Management",
-    "risk_level": "high"
+    "risk_level": "urgent"
   }
   ```
 
 - Errors:
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not field_officer/manager
   - `404` — `{ "error": "No sightings found for this block" }`
   - `503` — `{ "error": "AI summary unavailable. Please try again later." }`
 
@@ -321,7 +383,7 @@ Send the staff-edited alert email via the shared `sendEmail` service
 (`src/services/emailService.js`, owned by Member 3). The body sent is whatever
 the staff user submits - the draft endpoint's output is only a starting point.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - URL param: `:block` — kept for routing/audit context; the sent content comes
   entirely from the request body
 - Request body:
@@ -335,7 +397,7 @@ the staff user submits - the draft endpoint's output is only a starting point.
   ```json
   {
     "to": "estate.ops@example.com",
-    "subject": "Fauna alert - Block 203 (high risk)",
+    "subject": "Fauna alert - Block 203 (urgent risk)",
     "body": "Team,\n\nBlock 203 has recorded 12 fauna sightings...\n"
   }
   ```
@@ -344,5 +406,5 @@ the staff user submits - the draft endpoint's output is only a starting point.
 - Errors:
   - `400` — missing `to`/`subject`/`body` or invalid email: `{ "error": [...messages] }`
   - `401` — missing/invalid token
-  - `403` — role not staff/admin
+  - `403` — role not field_officer/manager
   - `500` — `{ "error": "Failed to send alert email" }` (mail transport failure)
