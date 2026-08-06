@@ -415,8 +415,25 @@ Main flow:
    ideal") even when nothing matches perfectly. The prompt only allows "no
    suitable match" as an answer when literally nothing comes reasonably
    close, not merely because no entry satisfies every criterion exactly.
-5. The backend returns `200` with `{ suggestions }` (plain text, no
-   markdown), which the card renders under the input.
+   These grounding and reasoning rules are unchanged from before - only the
+   response format described in steps 5-7 below is new.
+5. The backend asks Gemini to respond with ONLY a JSON object (no markdown,
+   no code fences) shaped as `{ recommendations: [{ species, tradeoff }],
+   notes }` - one array entry per recommended catalog species paired with
+   its honest tradeoff, plus a closing `notes` field for general context
+   (e.g. species to avoid and why, or the explanation when
+   `recommendations` is empty). The backend strips any code-fence wrapper
+   Gemini might still add, parses the result as JSON, and returns `200`
+   with that parsed `{ recommendations, notes }` object.
+6. The card renders each `recommendations` entry as a row showing the
+   tradeoff text under the species name; the species name itself is a
+   clickable element. The closing `notes` text is shown beneath the list.
+7. Clicking a recommended species name opens a dialog showing that
+   species' full botanical details - family, site suitability, colour, max
+   height at maturity, and a photo if one is on record - looked up by
+   species name from the plant catalog data this page has already loaded
+   (`GET /api/flora?include_catalog=true`, deduplicated to one entry per
+   species). No extra API call is made for this lookup.
 
 Alternate / edge flows:
 
@@ -429,11 +446,22 @@ Alternate / edge flows:
 - Gemini request fails (network, quota, upstream error) -> `502`
   `{ "error": "AI request failed: <message>" }`; the frontend shows the
   returned error message, or a generic fallback if none is present.
+- Gemini's response cannot be parsed as JSON (e.g. it added stray
+  commentary) -> the backend falls back to returning `200` with
+  `{ raw: "<the unparsed response text>" }` instead of `{ recommendations,
+  notes }` - the same fallback pattern used by `identifySpecies`. The
+  frontend detects the `raw` field and renders it as a single plain-text
+  block, with no clickable species and no details dialog.
+- A recommended species is clicked but is not found in the already-loaded
+  catalog data (shouldn't happen in practice, since Gemini is grounded to
+  the same catalog, but is handled defensively) -> the dialog opens
+  showing "Details not available." instead of erroring.
 - A resident attempting the request -> `403` (same RBAC as every other
   flora route).
 - No active greenery records exist -> the catalog sent to Gemini is empty,
   so the model has nothing grounded to recommend from.
 
 Postcondition: the staff member sees a set of catalog-grounded planting
-suggestions with tradeoffs for the described site; no data is persisted -
-each request is independent and nothing is saved to any record.
+suggestions with tradeoffs for the described site, with each suggested
+species clickable through to its full botanical details; no data is
+persisted - each request is independent and nothing is saved to any record.
