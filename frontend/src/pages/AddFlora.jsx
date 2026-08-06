@@ -190,6 +190,12 @@ export default function AddFlora() {
   const [savedCount, setSavedCount] = useState(0);
   const [locations, setLocations] = useState([makeLocation(0)]);
   const [speciesCatalog, setSpeciesCatalog] = useState([]);
+  const [autofilled, setAutofilled] = useState({
+    plant_family: false,
+    site_suitability: false,
+    color: false,
+    max_height_at_maturity: false,
+  });
   const nextKeyRef = useRef(1);
   const fileInputRefs = useRef({});
 
@@ -333,8 +339,9 @@ export default function AddFlora() {
     if (!match) return;
 
     ['plant_family', 'site_suitability', 'color', 'max_height_at_maturity'].forEach((field) => {
-      if (!formik.values[field] && match[field] != null) {
+      if ((!formik.values[field] || autofilled[field]) && match[field] != null) {
         formik.setFieldValue(field, match[field]);
+        setAutofilled((prev) => ({ ...prev, [field]: true }));
       }
     });
   };
@@ -430,7 +437,10 @@ export default function AddFlora() {
               label="Plant Family"
               name="plant_family"
               value={formik.values.plant_family}
-              onChange={formik.handleChange}
+              onChange={(e) => {
+                setAutofilled((prev) => ({ ...prev, plant_family: false }));
+                formik.handleChange(e);
+              }}
               onBlur={formik.handleBlur}
             />
             <TextField
@@ -439,7 +449,10 @@ export default function AddFlora() {
               label="Site Suitability"
               name="site_suitability"
               value={formik.values.site_suitability}
-              onChange={formik.handleChange}
+              onChange={(e) => {
+                setAutofilled((prev) => ({ ...prev, site_suitability: false }));
+                formik.handleChange(e);
+              }}
               onBlur={formik.handleBlur}
             />
             <TextField
@@ -448,7 +461,10 @@ export default function AddFlora() {
               label="Color"
               name="color"
               value={formik.values.color}
-              onChange={formik.handleChange}
+              onChange={(e) => {
+                setAutofilled((prev) => ({ ...prev, color: false }));
+                formik.handleChange(e);
+              }}
               onBlur={formik.handleBlur}
             />
             <TextField
@@ -458,7 +474,10 @@ export default function AddFlora() {
               label="Max Height at Maturity (metres)"
               name="max_height_at_maturity"
               value={formik.values.max_height_at_maturity}
-              onChange={formik.handleChange}
+              onChange={(e) => {
+                setAutofilled((prev) => ({ ...prev, max_height_at_maturity: false }));
+                formik.handleChange(e);
+              }}
               onBlur={formik.handleBlur}
               error={formik.touched.max_height_at_maturity && Boolean(formik.errors.max_height_at_maturity)}
               helperText={formik.touched.max_height_at_maturity && formik.errors.max_height_at_maturity}
