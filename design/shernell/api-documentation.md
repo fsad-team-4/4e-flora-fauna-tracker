@@ -16,8 +16,8 @@ The token is issued by `POST /api/auth/login` (Member 3's auth module); its
 payload is `{ user_id, role, name }`.
 
 - `protect` - rejects with `401` if the header is missing/malformed or the token
-  is invalid; otherwise attaches the decoded payload to `req.user`. All seven
-  flora routes use it.
+  is invalid; otherwise attaches the decoded payload to `req.user`. All eight
+  flora routes use it.  
 - `restrictTo('staff', 'admin')` - runs after `protect`; rejects with `403` if
   `req.user.role` is not staff or admin. Residents have no access to the flora
   module at all - GET, POST, PATCH, and DELETE on `/api/flora` are all
@@ -79,6 +79,57 @@ Example response (`200`):
     "createdAt": "2026-07-03T02:10:00.000Z",
     "updatedAt": "2026-07-03T02:10:00.000Z",
     "recorder": { "id": 1, "name": "staff" }
+  }
+]
+```
+
+---
+
+## GET /api/flora/species-catalog
+
+List distinct species already recorded, each with one representative set of
+botanical fields. Soft-deleted records (`is_deleted = true`) are always
+excluded. When the same species appears in multiple records, the most
+recently created record (by `createdAt`) wins.
+
+Intended use: powers the Species Autocomplete/autofill feature on the Add
+Plant and Edit Plant forms - selecting a known species auto-fills
+`plant_family`, `site_suitability`, `color`, and `max_height_at_maturity`
+(see `use-cases.md` UC-8).
+
+- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Request body: none
+- Query params: none
+- Success: `200` - array of `{ species, plant_family, site_suitability,
+  color, max_height_at_maturity }`, one entry per distinct species
+- Errors:
+  - `401` - missing/invalid token
+  - `403` - role not staff/admin
+
+Example request:
+
+```
+GET /api/flora/species-catalog
+Authorization: Bearer <token>
+```
+
+Example response (`200`):
+
+```json
+[
+  {
+    "species": "Ficus benjamina",
+    "plant_family": "Moraceae",
+    "site_suitability": "Full sun",
+    "color": "Green",
+    "max_height_at_maturity": 20
+  },
+  {
+    "species": "Palm",
+    "plant_family": null,
+    "site_suitability": null,
+    "color": null,
+    "max_height_at_maturity": null
   }
 ]
 ```

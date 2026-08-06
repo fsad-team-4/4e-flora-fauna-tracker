@@ -273,6 +273,70 @@ describe('GET /api/flora?location=', () => {
   });
 });
 
+describe('GET /api/flora/species-catalog', () => {
+  test('staff/admin access -> 200 with array of botanical fields', async () => {
+    const res = await request(app)
+      .get('/api/flora/species-catalog')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(Object.keys(res.body[0]).sort()).toEqual(
+      ['color', 'max_height_at_maturity', 'plant_family', 'site_suitability', 'species'].sort()
+    );
+  });
+
+  test('resident attempts access -> 403', async () => {
+    const res = await request(app)
+      .get('/api/flora/species-catalog')
+      .set('Authorization', tokens.res1);
+
+    expect(res.status).toBe(403);
+  });
+
+  test('duplicate species -> one entry, fields match the more recently created record', async () => {
+    await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Catalog Dedup Species', plant_family: 'OldFamily', color: 'yellow' });
+
+    await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Catalog Dedup Species', plant_family: 'NewFamily', color: 'green' });
+
+    const res = await request(app)
+      .get('/api/flora/species-catalog')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    const matches = res.body.filter((r) => r.species === 'Catalog Dedup Species');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].plant_family).toBe('NewFamily');
+    expect(matches[0].color).toBe('green');
+  });
+
+  test('species with only null botanical fields -> fields returned as null', async () => {
+    await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Catalog Null Species' });
+
+    const res = await request(app)
+      .get('/api/flora/species-catalog')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    const match = res.body.find((r) => r.species === 'Catalog Null Species');
+    expect(match).toBeDefined();
+    expect(match.plant_family).toBeNull();
+    expect(match.site_suitability).toBeNull();
+    expect(match.color).toBeNull();
+    expect(match.max_height_at_maturity).toBeNull();
+  });
+});
+
 describe('PATCH /api/flora/:id', () => {
   test('staff updates health_status -> 200 with updated value', async () => {
     const res = await request(app)

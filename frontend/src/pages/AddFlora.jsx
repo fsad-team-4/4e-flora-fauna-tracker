@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
@@ -189,8 +189,15 @@ export default function AddFlora() {
   const [submitErrors, setSubmitErrors] = useState([]);
   const [savedCount, setSavedCount] = useState(0);
   const [locations, setLocations] = useState([makeLocation(0)]);
+  const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const nextKeyRef = useRef(1);
   const fileInputRefs = useRef({});
+
+  useEffect(() => {
+    http.get('/api/flora/species-catalog')
+      .then((res) => setSpeciesCatalog(res.data))
+      .catch(() => setSpeciesCatalog([]));
+  }, []);
 
   const updateLocationField = (key, field, value) => {
     setLocations((prev) => prev.map((loc) => (loc.key === key ? { ...loc, [field]: value } : loc)));
@@ -319,6 +326,19 @@ export default function AddFlora() {
     },
   });
 
+  const handleSpeciesSelect = (_e, newValue) => {
+    formik.setFieldValue('species', newValue || '');
+
+    const match = speciesCatalog.find((entry) => entry.species === newValue);
+    if (!match) return;
+
+    ['plant_family', 'site_suitability', 'color', 'max_height_at_maturity'].forEach((field) => {
+      if (!formik.values[field] && match[field] != null) {
+        formik.setFieldValue(field, match[field]);
+      }
+    });
+  };
+
   const anyUploading = locations.some((loc) => loc.uploading);
 
   return (
@@ -367,16 +387,24 @@ export default function AddFlora() {
               subtitle="Identifies the species - applies to every location added below"
             />
 
-            <TextField
+            <Autocomplete
+              freeSolo
               fullWidth
-              margin="normal"
-              label="Species"
-              name="species"
+              options={speciesCatalog.map((entry) => entry.species)}
               value={formik.values.species}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-              error={formik.touched.species && Boolean(formik.errors.species)}
-              helperText={formik.touched.species && formik.errors.species}
+              onChange={handleSpeciesSelect}
+              onInputChange={(e, newInputValue) => formik.setFieldValue('species', newInputValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  margin="normal"
+                  label="Species"
+                  name="species"
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.species && Boolean(formik.errors.species)}
+                  helperText={formik.touched.species && formik.errors.species}
+                />
+              )}
             />
             <TextField
               fullWidth
