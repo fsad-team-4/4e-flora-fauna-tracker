@@ -424,7 +424,7 @@ Example response (`200`):
 ## POST /api/flora/planting-suggestions
 
 Recommend species for a planting site condition, grounded in the active
-catalog only. See [UC-8](use-cases.md#uc-8-staff-gets-ai-suggested-species-for-a-planting-site-condition)
+catalog only. See [UC-10](use-cases.md#uc-10-staff-gets-ai-suggested-species-for-a-planting-site-condition)
 in `use-cases.md` for the full behavior.
 
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
@@ -441,7 +441,19 @@ in `use-cases.md` for the full behavior.
   the list - and to reason comparatively, recommending the closest-fitting
   options with an honest tradeoff noted for each, rather than defaulting to
   "nothing suitable" whenever no entry matches every criterion exactly.
-- Success: `200` - `{ "suggestions": "<plain text>" }` (no markdown)
+- Success: `200` - `{ "recommendations": [{ "species", "tradeoff" }], "notes" }`
+  - `recommendations` is an array of catalog species, each with its own
+    honest tradeoff against the stated condition; `notes` is closing text
+    (e.g. species to avoid and why, or - when `recommendations` is empty -
+    why nothing in the catalog is suitable).
+  - Fallback: if Gemini's response cannot be parsed as valid JSON, the
+    endpoint instead returns `{ "raw": "<unparsed text>" }` (same pattern
+    as `identifySpecies`).
+- Frontend: the Horticulture Handbook page renders each recommended
+  species name as clickable; clicking it opens a details popup sourced
+  from the catalog data already loaded on that page (no extra API call).
+  See [UC-10](use-cases.md#uc-10-staff-gets-ai-suggested-species-for-a-planting-site-condition)
+  in `use-cases.md` for the full behavior.
 - Errors:
   - `400` - `{ "error": "condition is required" }` (missing, non-string, or
     empty/whitespace-only `condition`)
@@ -464,6 +476,20 @@ Example response (`200`):
 
 ```json
 {
-  "suggestions": "Ficus benjamina is a close fit - shade tolerant and low maintenance, though it can grow taller than ideal for a compact car park planter. Frangipani is more sun-loving than this site calls for, but its low litter and non-fruiting habit still make it a reasonable second choice with extra watering in the shade."
+  "recommendations": [
+    {
+      "species": "Ficus benjamina",
+      "tradeoff": "Close fit - shade tolerant and low maintenance, though it can grow taller than ideal for a compact car park planter."
+    },
+    {
+      "species": "Frangipani",
+      "tradeoff": "More sun-loving than this site calls for, but its low litter and non-fruiting habit still make it a reasonable second choice with extra watering in the shade."
+    },
+    {
+      "species": "Dracaena fragrans",
+      "tradeoff": "Genuinely shade-tolerant and low-maintenance, though it stays shrub-sized rather than providing canopy cover."
+    }
+  ],
+  "notes": "Avoid mango or rambutan here - both fruit heavily and would create litter/pest issues in a car park setting."
 }
 ```
