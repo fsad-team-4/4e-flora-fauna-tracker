@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
@@ -39,6 +39,10 @@ const makeLocation = (key) => ({
   uploading: false,
   uploadError: '',
   submitError: '',
+  gps_lat: null,
+  gps_lng: null,
+  gpsLoading: false,
+  gpsError: '',
 });
 
 // Small colored dot matching the same convention used in FloraList's filter
@@ -185,8 +189,15 @@ export default function AddFlora() {
   const [submitErrors, setSubmitErrors] = useState([]);
   const [savedCount, setSavedCount] = useState(0);
   const [locations, setLocations] = useState([makeLocation(0)]);
+  const [speciesCatalog, setSpeciesCatalog] = useState([]);
   const nextKeyRef = useRef(1);
   const fileInputRefs = useRef({});
+
+  useEffect(() => {
+    http.get('/api/flora/species-catalog')
+      .then((res) => setSpeciesCatalog(res.data))
+      .catch(() => setSpeciesCatalog([]));
+  }, []);
 
   const updateLocationField = (key, field, value) => {
     setLocations((prev) => prev.map((loc) => (loc.key === key ? { ...loc, [field]: value } : loc)));
@@ -227,6 +238,32 @@ export default function AddFlora() {
     if (input) input.value = '';
   };
 
+  const handleCaptureGps = (key) => {
+    if (!navigator.geolocation) {
+      updateLocationField(key, 'gpsError', 'Geolocation is not supported by this browser');
+      return;
+    }
+
+    updateLocationField(key, 'gpsError', '');
+    updateLocationField(key, 'gpsLoading', true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        updateLocationField(key, 'gps_lat', position.coords.latitude);
+        updateLocationField(key, 'gps_lng', position.coords.longitude);
+        updateLocationField(key, 'gpsLoading', false);
+      },
+      (err) => {
+        const message = err.code === err.PERMISSION_DENIED
+          ? 'Location permission denied'
+          : err.code === err.TIMEOUT
+            ? 'Location request timed out'
+            : 'Unable to retrieve location';
+        updateLocationField(key, 'gpsError', message);
+        updateLocationField(key, 'gpsLoading', false);
+      }
+    );
+  };
+
   const formik = useFormik({
     initialValues: {
       species: '',
@@ -256,6 +293,8 @@ export default function AddFlora() {
             health_status: loc.health_status,
             health_notes: loc.health_notes,
             image_url: loc.imageUrl || null,
+            gps_lat: loc.gps_lat,
+            gps_lng: loc.gps_lng,
           })
         )
       );
@@ -286,6 +325,19 @@ export default function AddFlora() {
       setLocations(remaining);
     },
   });
+
+  const handleSpeciesSelect = (_e, newValue) => {
+    formik.setFieldValue('species', newValue || '');
+
+    const match = speciesCatalog.find((entry) => entry.species === newValue);
+    if (!match) return;
+
+    ['plant_family', 'site_suitability', 'color', 'max_height_at_maturity'].forEach((field) => {
+      if (!formik.values[field] && match[field] != null) {
+        formik.setFieldValue(field, match[field]);
+      }
+    });
+  };
 
   const anyUploading = locations.some((loc) => loc.uploading);
 
@@ -335,16 +387,24 @@ export default function AddFlora() {
               subtitle="Identifies the species - applies to every location added below"
             />
 
-            <TextField
+            <Autocomplete
+              freeSolo
               fullWidth
-              margin="normal"
-              label="Species"
-              name="species"
+              options={speciesCatalog.map((entry) => entry.species)}
               value={formik.values.species}
-              onChange={formik.handleChange}
-              onBlur={formik.handleBlur}
-              error={formik.touched.species && Boolean(formik.errors.species)}
-              helperText={formik.touched.species && formik.errors.species}
+              onChange={handleSpeciesSelect}
+              onInputChange={(e, newInputValue) => formik.setFieldValue('species', newInputValue)}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  margin="normal"
+                  label="Species"
+                  name="species"
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.species && Boolean(formik.errors.species)}
+                  helperText={formik.touched.species && formik.errors.species}
+                />
+              )}
             />
             <TextField
               fullWidth
@@ -446,6 +506,24 @@ export default function AddFlora() {
                     value={loc.location_zone}
                     onChange={(e) => updateLocationField(loc.key, 'location_zone', e.target.value)}
                   />
+
+                  <Box sx={{ mt: 1, mb: 1 }}>
+                    {loc.gpsError && <Alert severity="error" sx={{ mb: 1 }}>{loc.gpsError}</Alert>}
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => handleCaptureGps(loc.key)}
+                      disabled={loc.gpsLoading}
+                    >
+                      {loc.gpsLoading ? 'Capturing...' : 'Capture GPS Location'}
+                    </Button>
+                    {loc.gps_lat !== null && loc.gps_lng !== null && (
+                      <Typography variant="body2" color="success.main" sx={{ mt: 0.5 }}>
+                        Location captured ({loc.gps_lat.toFixed(5)}, {loc.gps_lng.toFixed(5)})
+                      </Typography>
+                    )}
+                  </Box>
+
                   <TextField
                     select
                     fullWidth

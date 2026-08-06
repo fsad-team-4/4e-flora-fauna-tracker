@@ -8,7 +8,7 @@ const router = express.Router();
 router.use(protect);
 
 // list with optional status filter + pagination
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 2000);
   const offset = parseInt(req.query.offset) || 0;
   const { status, date } = req.query;
@@ -50,7 +50,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // count for the dashboard kpi
-router.get('/recent-count', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/recent-count', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const count = await NotificationLog.count({

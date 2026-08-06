@@ -29,7 +29,7 @@ beforeAll(async () => {
     name: 'Staff',
     email: 'staff@example.com',
     password_hash: await bcrypt.hash('secret1', 10),
-    role: 'staff',
+    role: 'field_officer',
   });
 
   const residentLogin = await request(app)

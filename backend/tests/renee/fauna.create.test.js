@@ -15,7 +15,7 @@ const tokens = {};
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
-  for (const [key, role] of [['staff', 'staff'], ['res1', 'resident']]) {
+  for (const [key, role] of [['staff', 'field_officer'], ['res1', 'resident']]) {
     if (role === 'resident') {
       await request(app).post('/api/auth/register')
         .send({ name: key, email: `${key}@example.com`, password: 'secret1', role });

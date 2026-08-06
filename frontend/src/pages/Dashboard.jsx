@@ -131,7 +131,7 @@ export default function Dashboard() {
             </IconButton>
           </Stack>
         </Box>
-        {user?.role === 'admin' && (
+        {user?.role === 'manager' && (
           <Button
             variant="outlined"
             color="secondary"

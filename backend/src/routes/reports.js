@@ -7,7 +7,7 @@ const router = express.Router();
 router.post('/', protect, reportController.createReport);
 router.get('/', protect, reportController.listReports);
 router.get('/:id', protect, reportController.getReport);
-router.patch('/:id/status', protect, restrictTo('staff', 'admin'), reportController.updateStatus);
-router.delete('/:id', protect, restrictTo('admin'), reportController.softDeleteReport);
+router.patch('/:id/status', protect, restrictTo('field_officer', 'manager'), reportController.updateStatus);
+router.delete('/:id', protect, restrictTo('manager'), reportController.softDeleteReport);
 
 module.exports = router;

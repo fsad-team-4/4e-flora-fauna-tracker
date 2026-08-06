@@ -48,13 +48,13 @@ function summaryOf(block) {
 beforeAll(async () => {
   await sequelize.sync({ force: true });
   await User.create({
-    name: 'staff',
-    email: 'staff@example.com',
+    name: 'field_officer',
+    email: 'field_officer@example.com',
     password_hash: await bcrypt.hash('secret1', 10),
-    role: 'staff',
+    role: 'field_officer',
   });
   const res = await request(app).post('/api/auth/login')
-    .send({ email: 'staff@example.com', password: 'secret1' });
+    .send({ email: 'field_officer@example.com', password: 'secret1' });
   staffToken = `Bearer ${res.body.token}`;
 
   await seedBlock('Block High Volume', 8);

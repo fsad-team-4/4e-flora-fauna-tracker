@@ -9,18 +9,23 @@
 // Run with:  npm run seed   (from backend/)
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { sequelize, AlertRule, NotificationLog, User, MetricSnapshot } = require('./models');
+const { sequelize, AlertRule, NotificationLog, User, MetricSnapshot, ZoneAssignment } = require('./models');
 const mock = require('./services/mockDataService');
 const { computeEstateMetrics, computeRiskScore } = require('./services/estateStats');
 
 // Demo login accounts. Alert Rules, Notification Log and the dashboard all need a
-// staff/admin JWT, so the demo needs real users to sign in with. Same password for
-// both to keep the demo simple - change before any non-demo use.
+// field_officer/manager JWT, so the demo needs real users to sign in with. Same
+// password for all to keep the demo simple - change before any non-demo use.
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'local-demo-only';
 const DEMO_USERS = [
-  { name: 'Estate Admin', email: 'admin@emservices.com.sg', role: 'admin' },
-  { name: 'Estate Officer', email: 'staff@emservices.com.sg', role: 'staff' },
+  { name: 'Estate Admin', email: 'admin@emservices.com.sg', role: 'manager' },
+  { name: 'Estate Officer', email: 'staff@emservices.com.sg', role: 'field_officer' },
+  { name: 'Welfare Volunteer', email: 'welfare@emservices.com.sg', role: 'welfare_partner' },
 ];
+
+// Blocks the demo Welfare Partner covers - both already appear in the seeded
+// flora, fauna and notification data, so the zone filter has something to show.
+const WELFARE_BLOCKS = ['Block 123', 'Block 456'];
 
 // n days ago (optionally at a set hour) as a real Date - used to spread the
 // notification log across the last two weeks so the 7-day KPI and its
@@ -100,6 +105,7 @@ async function seed() {
   // users are never touched and re-running just refreshes the demo credentials)
   const password_hash = await bcrypt.hash(DEMO_PASSWORD, 10);
   let adminId = null;
+  let welfareId = null;
   for (const u of DEMO_USERS) {
     const [user, created] = await User.findOrCreate({
       where: { email: u.email },
@@ -108,7 +114,16 @@ async function seed() {
     if (!created) {
       await user.update({ name: u.name, role: u.role, password_hash });
     }
-    if (u.role === 'admin') adminId = user.id;
+    if (u.role === 'manager') adminId = user.id;
+    if (u.role === 'welfare_partner') welfareId = user.id;
+  }
+
+  // give the demo Welfare Partner its covered blocks (findOrCreate so re-running
+  // the seed does not stack duplicate assignments)
+  for (const block_number of WELFARE_BLOCKS) {
+    await ZoneAssignment.findOrCreate({
+      where: { user_id: welfareId, block_number },
+    });
   }
 
   // attribute the rules to the demo admin (created_by is a nullable FK)

@@ -51,7 +51,7 @@ export default function ReportDetail() {
     }
   };
 
-  const canUpdate = user && (user.role === 'staff' || user.role === 'admin');
+  const canUpdate = user && (user.role === 'field_officer' || user.role === 'manager');
 
   return (
     <Box sx={{ maxWidth: 700, mx: 'auto', mt: 4 }}>
@@ -77,7 +77,7 @@ export default function ReportDetail() {
 
           <Typography sx={{ mb: 2 }}>{report.description}</Typography>
 
-          {report.block_number && <Typography>Block: {report.block_number}</Typography>}
+          {report.block_number && <Typography>{report.block_number}</Typography>}
           {report.floor_level && <Typography>Floor: {report.floor_level}</Typography>}
           {report.gps_lat != null && report.gps_lng != null && (
             <Typography>GPS: {report.gps_lat}, {report.gps_lng}</Typography>

@@ -17,8 +17,8 @@ beforeAll(async () => {
   const accounts = [
     ['res1', 'resident'],
     ['res2', 'resident'],
-    ['staff', 'staff'],
-    ['admin', 'admin'],
+    ['staff', 'field_officer'],
+    ['admin', 'manager'],
   ];
   for (const [key, role] of accounts) {
     if (role === 'resident') {

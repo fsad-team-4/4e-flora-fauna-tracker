@@ -40,42 +40,49 @@ function Home() {
         Welcome back, {user.name}
       </Typography>
       <Typography color="text.secondary">
-        Open the menu (top-left) to submit or manage reports.
+        {user.role === 'welfare_partner'
+          ? 'Use the navigation above to log and view fauna sightings in your assigned zones.'
+          : 'Open the menu (top-left) to submit or manage reports.'}
       </Typography>
     </Box>
   )
 }
 
-// Grouped so the drawer stays scannable. `any` shows for every logged-in user;
-// `staff` groups only for staff/admin.
+// EM staff roles - the two that see the full estate nav.
+const INTERNAL_ROLES = ['field_officer', 'manager']
+
+// Grouped so the drawer stays scannable. `roles` on a group lists who sees it;
+// an item can narrow that further (welfare partners get fauna, but not hotspots).
 const NAV_GROUPS = [
-  { header: null, roles: 'any', items: [
+  { header: null, roles: ['resident', ...INTERNAL_ROLES], items: [
     { to: '/submit-report', label: 'Submit Report' },
     { to: '/reports', label: 'My Reports' },
   ] },
-  { header: 'Estate', roles: 'staff', items: [
+  { header: 'Estate', roles: INTERNAL_ROLES, items: [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/all-reports', label: 'All Reports' },
     { to: '/alert-rules', label: 'Alerts' },
     { to: '/notif-log', label: 'Log' },
   ] },
-  { header: 'Flora', roles: 'staff', items: [
+  { header: 'Flora', roles: INTERNAL_ROLES, items: [
     { to: '/flora', label: 'Flora' },
     { to: '/handbook', label: 'Handbook' },
   ] },
-  { header: 'Fauna', roles: 'staff', items: [
+  { header: 'Fauna', roles: [...INTERNAL_ROLES, 'welfare_partner'], items: [
     { to: '/fauna', label: 'Fauna Sightings' },
     { to: '/fauna/log', label: 'Log Sighting' },
-    { to: '/fauna/hotspots', label: 'Fauna Hotspots' },
+    { to: '/fauna/hotspots', label: 'Fauna Hotspots', roles: INTERNAL_ROLES },
   ] },
-  { header: 'Rodent', roles: 'staff', items: [
+  { header: 'Rodent', roles: INTERNAL_ROLES, items: [
     { to: '/rodent', label: 'Rodent' },
   ] },
 ]
 
-function NavDrawer({ open, onClose, isStaff }) {
+function NavDrawer({ open, onClose, role }) {
   const location = useLocation()
-  const groups = NAV_GROUPS.filter(g => g.roles === 'any' || isStaff)
+  const groups = NAV_GROUPS
+    .filter(g => g.roles.includes(role))
+    .map(g => ({ ...g, items: g.items.filter(i => !i.roles || i.roles.includes(role)) }))
   return (
     <Drawer anchor="left" open={open} onClose={onClose}>
       {/* click anywhere in the panel closes it - link navigation still fires first */}
@@ -132,7 +139,6 @@ function NavBar() {
     localStorage.removeItem('accessToken')
     setUser(null)
   }
-  const isStaff = Boolean(user && (user.role === 'staff' || user.role === 'admin'))
   return (
     <>
       <AppBar position="sticky">
@@ -155,7 +161,8 @@ function NavBar() {
             </Typography>
           </Box>
 
-          <Box sx={{ flexGrow: 1 }} />
+        {/* spacer pushes the user block to the far right */}
+        <Box sx={{ flexGrow: 1 }} />
 
           {user && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -181,7 +188,7 @@ function NavBar() {
           )}
         </Toolbar>
       </AppBar>
-      {user && <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isStaff={isStaff} />}
+      {user && <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} role={user.role} />}
     </>
   )
 }
@@ -203,20 +210,21 @@ function App() {
             <Route path="/reports" element={<ProtectedRoute><MyReports /></ProtectedRoute>} />
             <Route path="/reports/:id" element={<ProtectedRoute><ReportDetail /></ProtectedRoute>} />
 
-            {/* staff + admin only */}
-            <Route path="/all-reports" element={<ProtectedRoute roles={['staff', 'admin']}><AllReports /></ProtectedRoute>} />
-            <Route path="/flora" element={<ProtectedRoute roles={['staff', 'admin']}><FloraList /></ProtectedRoute>} />
-            <Route path="/flora/add" element={<ProtectedRoute roles={['staff', 'admin']}><AddFlora /></ProtectedRoute>} />
-            <Route path="/flora/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FloraDetail /></ProtectedRoute>} />
-            <Route path="/handbook" element={<ProtectedRoute roles={['staff', 'admin']}><HorticultureHandbook /></ProtectedRoute>} />
-            <Route path="/dashboard" element={<ProtectedRoute roles={['staff', 'admin']}><Dashboard /></ProtectedRoute>} />
-            <Route path="/alert-rules" element={<ProtectedRoute roles={['staff', 'admin']}><AlertRules /></ProtectedRoute>} />
-            <Route path="/notif-log" element={<ProtectedRoute roles={['staff', 'admin']}><NotificationLog /></ProtectedRoute>} />
-            <Route path="/rodent" element={<ProtectedRoute roles={['staff', 'admin']}><RodentAssessment /></ProtectedRoute>} />
-            <Route path="/fauna" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightings /></ProtectedRoute>} />
-            <Route path="/fauna/log" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaLogSighting /></ProtectedRoute>} />
-            <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaHotspots /></ProtectedRoute>} />
-            <Route path="/fauna/:id" element={<ProtectedRoute roles={['staff', 'admin']}><FaunaSightingDetail /></ProtectedRoute>} />
+            {/* field_officer + manager only */}
+            <Route path="/all-reports" element={<ProtectedRoute roles={['field_officer', 'manager']}><AllReports /></ProtectedRoute>} />
+            <Route path="/flora" element={<ProtectedRoute roles={['field_officer', 'manager']}><FloraList /></ProtectedRoute>} />
+            <Route path="/flora/add" element={<ProtectedRoute roles={['field_officer', 'manager']}><AddFlora /></ProtectedRoute>} />
+            <Route path="/flora/:id" element={<ProtectedRoute roles={['field_officer', 'manager']}><FloraDetail /></ProtectedRoute>} />
+            <Route path="/handbook" element={<ProtectedRoute roles={['field_officer', 'manager']}><HorticultureHandbook /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute roles={['field_officer', 'manager']}><Dashboard /></ProtectedRoute>} />
+            <Route path="/alert-rules" element={<ProtectedRoute roles={['field_officer', 'manager']}><AlertRules /></ProtectedRoute>} />
+            <Route path="/notif-log" element={<ProtectedRoute roles={['field_officer', 'manager']}><NotificationLog /></ProtectedRoute>} />
+            <Route path="/rodent" element={<ProtectedRoute roles={['field_officer', 'manager']}><RodentAssessment /></ProtectedRoute>} />
+            {/* fauna sightings are also open to welfare_partner, zone-filtered server-side */}
+            <Route path="/fauna" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaSightings /></ProtectedRoute>} />
+            <Route path="/fauna/log" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaLogSighting /></ProtectedRoute>} />
+            <Route path="/fauna/hotspots" element={<ProtectedRoute roles={['field_officer', 'manager']}><FaunaHotspots /></ProtectedRoute>} />
+            <Route path="/fauna/:id" element={<ProtectedRoute roles={['field_officer', 'manager', 'welfare_partner']}><FaunaSightingDetail /></ProtectedRoute>} />
           </Routes>
         </Container>
       </BrowserRouter>

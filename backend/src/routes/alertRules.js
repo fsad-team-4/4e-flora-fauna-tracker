@@ -10,8 +10,8 @@ const router = express.Router();
 // all routes need a valid JWT
 router.use(protect);
 
-// list - admin and staff can read
-router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
+// list - manager and field_officer can read
+router.get('/', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rules = await AlertRule.findAll({
       where: { is_deleted: false },
@@ -25,7 +25,7 @@ router.get('/', restrictTo('admin', 'staff'), async (req, res) => {
 });
 
 // get one
-router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
+router.get('/:id', restrictTo('manager', 'field_officer'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },
@@ -38,8 +38,8 @@ router.get('/:id', restrictTo('admin', 'staff'), async (req, res) => {
   }
 });
 
-// create - admin only
-router.post('/', restrictTo('admin'), async (req, res) => {
+// create - manager only
+router.post('/', restrictTo('manager'), async (req, res) => {
   const validation = validateRuleInput(req.body);
   if (!validation.valid) {
     return res.status(400).json({ error: validation.error });
@@ -67,8 +67,8 @@ router.post('/', restrictTo('admin'), async (req, res) => {
   }
 });
 
-// update - admin only
-router.patch('/:id', restrictTo('admin'), async (req, res) => {
+// update - manager only
+router.patch('/:id', restrictTo('manager'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },
@@ -97,8 +97,8 @@ router.patch('/:id', restrictTo('admin'), async (req, res) => {
   }
 });
 
-// soft delete - admin only
-router.delete('/:id', restrictTo('admin'), async (req, res) => {
+// soft delete - manager only
+router.delete('/:id', restrictTo('manager'), async (req, res) => {
   try {
     const rule = await AlertRule.findOne({
       where: { id: req.params.id, is_deleted: false },
