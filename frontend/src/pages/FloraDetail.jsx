@@ -290,10 +290,11 @@ export default function FloraDetail() {
       {!loading && error && <Alert severity="error">{error}</Alert>}
 
       {!loading && !error && plant && (
+        <>
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: '1fr 340px' },
+            gridTemplateColumns: '1fr',
             gap: 3,
             alignItems: 'start',
           }}
@@ -598,46 +599,9 @@ export default function FloraDetail() {
                     Delete
                   </Button>
                 </Stack>
-              </CardContent>
-            </Card>
-          )}
 
-          {/* Sidebar: AI recommendation + record metadata */}
-          <Box>
-            <Card>
-              <CardContent>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                  <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
-                  <Typography variant="h6">AI Care Recommendation</Typography>
-                </Stack>
-                {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+                <Divider sx={{ my: 3 }} />
 
-                {plant.care_recommendation && (
-                  <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
-                    <CardContent>
-                      <Typography sx={{ whiteSpace: 'pre-line' }}>
-                        {plant.care_recommendation}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Button
-                  variant="outlined"
-                  onClick={handleGetRecommendation}
-                  disabled={recommending}
-                >
-                  {recommending
-                    ? 'Getting recommendation...'
-                    : plant.care_recommendation
-                      ? 'Regenerate'
-                      : 'Get AI Recommendation'}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={{ mt: 2 }}>
-              <CardContent>
                 <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
                   Record Info
                 </Typography>
@@ -662,8 +626,43 @@ export default function FloraDetail() {
                 </Stack>
               </CardContent>
             </Card>
-          </Box>
+          )}
+
         </Box>
+
+        {/* Full-width AI care recommendation section */}
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+              <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
+              <Typography variant="h6">AI Care Recommendation</Typography>
+            </Stack>
+            {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+
+            {plant.care_recommendation && (
+              <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
+                <CardContent>
+                  <Typography sx={{ whiteSpace: 'pre-line' }}>
+                    {plant.care_recommendation}
+                  </Typography>
+                </CardContent>
+              </Card>
+            )}
+
+            <Button
+              variant="outlined"
+              onClick={handleGetRecommendation}
+              disabled={recommending}
+            >
+              {recommending
+                ? 'Getting recommendation...'
+                : plant.care_recommendation
+                  ? 'Regenerate'
+                  : 'Get AI Recommendation'}
+            </Button>
+          </CardContent>
+        </Card>
+        </>
       )}
 
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
