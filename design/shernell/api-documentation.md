@@ -16,7 +16,7 @@ The token is issued by `POST /api/auth/login` (Member 3's auth module); its
 payload is `{ user_id, role, name }`.
 
 - `protect` - rejects with `401` if the header is missing/malformed or the token
-  is invalid; otherwise attaches the decoded payload to `req.user`. All six
+  is invalid; otherwise attaches the decoded payload to `req.user`. All seven
   flora routes use it.
 - `restrictTo('staff', 'admin')` - runs after `protect`; rejects with `403` if
   `req.user.role` is not staff or admin. Residents have no access to the flora
@@ -67,6 +67,8 @@ Example response (`200`):
     "common_name": null,
     "location_zone": null,
     "location": null,
+    "gps_lat": null,
+    "gps_lng": null,
     "health_status": "critical",
     "health_notes": null,
     "care_recommendation": null,
@@ -98,6 +100,8 @@ If the record is created with health_status of at_risk or critical, an alert ema
   | common_name | string | no | trimmed |
   | location_zone | string | no | trimmed |
   | location | string | no | trimmed |
+  | gps_lat | number | no | nullable |
+  | gps_lng | number | no | nullable |
   | health_status | string | no | one of `healthy`, `at_risk`, `critical`; defaults to `healthy` |
   | health_notes | string | no | trimmed |
   | plant_family | string | no | trimmed |
@@ -109,6 +113,10 @@ If the record is created with health_status of at_risk or critical, an alert ema
 
   `recorded_by` is taken from the JWT (`req.user.user_id`); any value sent in the
   body is ignored.
+
+  `gps_lat`/`gps_lng` are typically populated via the Add Plant form's
+  "Capture GPS Location" button (browser Geolocation API), but can be set
+  directly via the API too - see `use-cases.md` UC-8.
 
 - Success: `201` - the created record object (includes `id`, `recorded_by`,
   `is_deleted: false`, `care_recommendation: null`, timestamps)
@@ -141,6 +149,8 @@ Example response (`201`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "healthy",
   "health_notes": null,
   "last_inspected_at": null,
@@ -171,6 +181,8 @@ If this update causes a fresh transition to at_risk or critical (the status chan
   | common_name | string | trimmed |
   | location_zone | string | trimmed |
   | location | string | trimmed |
+  | gps_lat | number | nullable |
+  | gps_lng | number | nullable |
   | health_status | string | one of `healthy`, `at_risk`, `critical` |
   | health_notes | string | trimmed |
   | plant_family | string | trimmed |
@@ -206,6 +218,8 @@ Example response (`200`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
@@ -258,10 +272,11 @@ others fail.
 - Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
 - Request: `multipart/form-data` with a single CSV file in the field named
   `file`. The first row is the header; recognised columns are `species`,
-  `common_name`, `location_zone`, `location`, `health_status`, `health_notes`,
-  `plant_family`, `site_suitability`, `color`, `max_height_at_maturity`,
-  `last_inspected_at`. Each row is validated with the same schema as create
-  (species required, valid `health_status`); `recorded_by` is set from the JWT.
+  `common_name`, `location_zone`, `location`, `gps_lat`, `gps_lng`,
+  `health_status`, `health_notes`, `plant_family`, `site_suitability`, `color`,
+  `max_height_at_maturity`, `last_inspected_at`. Each row is validated with the
+  same schema as create (species required, valid `health_status`);
+  `recorded_by` is set from the JWT.
 - Success: `201` - `{ "created": <count>, "errors": [ { "row", "error" } ] }`,
   where `row` is the 1-based line number in the file (header is row 1, so the
   first data row is row 2) and `error` is the yup message array (or an error
@@ -337,6 +352,8 @@ Example response (`200`):
   "common_name": "Weeping fig",
   "location_zone": "Block A",
   "location": "Near Block A playground",
+  "gps_lat": 1.35208,
+  "gps_lng": 103.81984,
   "health_status": "at_risk",
   "health_notes": "Leaf drop on north side",
   "last_inspected_at": null,
