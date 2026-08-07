@@ -51,15 +51,42 @@ function HeatLayer({ points }) {
   const map = useMap();
   useEffect(() => {
     const layer = L.heatLayer(points, {
-      radius: 30,
-      blur: 20,
-      maxZoom: 17,
-      max: 1.0,
+      // Tuned to read at the default zoom of 12. `maxZoom` is the zoom at which
+      // a point reaches full intensity, so pinning it at the default is what
+      // stops the heat washing out when zoomed out.
+      //
+      // Colour tracks case volume: each sighting contributes 1.0, so `max: 8`
+      // puts a lone sighting at 1/8 intensity - the blue end of the gradient,
+      // faint but visible - and only as sightings stack in a block does it
+      // climb through lime, yellow and orange to full red at 8. That matches
+      // the urgent-by-volume threshold in the backend risk rules, so a block
+      // reading red on the map is a block the API calls urgent.
+      radius: 28,
+      blur: 22,
+      maxZoom: 12,
+      max: 8,
+      minOpacity: 0.15,
       gradient: { 0.2: 'blue', 0.4: 'lime', 0.6: 'yellow', 0.8: 'orange', 1.0: 'red' },
     }).addTo(map);
     return () => {
       map.removeLayer(layer);
     };
+  }, [map, points]);
+  return null;
+}
+
+// Moves the map onto a block's pinned sightings when one is expanded. Purely a
+// viewport change - no layer is added or removed, so every pin stays on the map.
+// A null/empty `points` leaves the current view alone.
+function MapFocus({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points || points.length === 0) return;
+    if (points.length === 1) {
+      map.flyTo(points[0], 17, { duration: 1 });
+    } else {
+      map.flyToBounds(L.latLngBounds(points), { padding: [40, 40], maxZoom: 17, duration: 1 });
+    }
   }, [map, points]);
   return null;
 }
@@ -98,6 +125,10 @@ export default function FaunaHotspots() {
   const [listError, setListError] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
+  // Coordinates the map should move to. A new array identity per block click is
+  // what re-triggers the fly, so re-expanding the same block re-focuses it.
+  const [mapFocus, setMapFocus] = useState(null);
+
   useEffect(() => {
     Promise.all([
       http.get('/api/fauna'),
@@ -129,6 +160,15 @@ export default function FaunaHotspots() {
       return;
     }
     setExpandedBlock(block);
+
+    // Focus the map on this block. Blocks with no GPS-tagged sighting leave the
+    // map untouched rather than jumping somewhere arbitrary.
+    const blockPoints = pinned
+      .filter((s) => s.block_number === block)
+      .map((s) => [s.gps_lat, s.gps_lng]);
+    if (blockPoints.length > 0) {
+      setMapFocus(blockPoints);
+    }
 
     setBlockSightings([]);
     setListError('');
@@ -250,6 +290,7 @@ export default function FaunaHotspots() {
                 </Marker>
               ))}
               {view === 'heatmap' && <HeatLayer points={heatPoints} />}
+              <MapFocus points={mapFocus} />
             </MapContainer>
           </Box>
 
