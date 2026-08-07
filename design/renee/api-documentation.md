@@ -3,10 +3,11 @@
 Endpoints owned by the Fauna Sightings module. Base URL is the backend server
 (e.g. `http://localhost:3000`).
 
-FaunaSighting records are created automatically by the system when a resident
-submits a ResidentReport with category `community_cat` or `pigeon`. Staff and
-field officers can also log a sighting directly via `POST /api/fauna`. There is
-no resident-facing POST endpoint. All fauna endpoints are internal facing.
+Sightings are created two ways: automatically by the system when a resident
+submits a ResidentReport with category `community_cat` or `pigeon`, and
+directly by an internal user through the Log Sighting form
+(`POST /api/fauna`). There is no resident-facing fauna endpoint - all fauna
+endpoints are internal facing.
 
 Roles in use (see `src/routes/faunaRoutes.js`):
 
@@ -18,6 +19,17 @@ Roles in use (see `src/routes/faunaRoutes.js`):
 
 Hotspots, summaries and the alert endpoints are internal-only (`field_officer`,
 `manager`); Welfare Partners have no access to them.
+
+Welfare Partner zone scoping is enforced in the controller via
+`getAssignedBlocks()` (reads `ZoneAssignments`), not by `restrictTo`:
+
+- list - results are restricted to their assigned blocks; a `?block_number=`
+  outside the zone, or no assigned blocks at all, returns `[]`
+- read by id - a sighting outside the zone returns `403`
+- create - a `block_number` outside the zone returns `403`
+
+For every other role `getAssignedBlocks()` returns `null`, meaning no zone
+restriction.
 
 ## Authentication
 
@@ -58,6 +70,11 @@ This is not an HTTP endpoint. It is a function called inside
 - Fires and returns without blocking the ResidentReport response
 - Failures are logged but do not affect the ResidentReport response
 
+This path writes the model directly, so the Yup rules of `POST /api/fauna` do
+not apply: `block_number` may be null (grouped under `Unknown` in hotspots).
+`notes` is still always present, because `description` is required on the
+ResidentReport itself.
+
 ---
 
 ## Fauna Sightings
@@ -71,6 +88,8 @@ List fauna sightings. Soft-deleted sightings are always excluded.
   - `?species=` — one of `cat`, `pigeon`, `crow`, `mynah`, `other`
   - `?status=` — one of `open`, `in_progress`, `resolved`
   - `?block_number=` — exact block string e.g. `Block 203`
+- RBAC note: cat `gps_lat`/`gps_lng` are stripped for any role outside
+  `field_officer`, `manager` and `welfare_partner` (see `GET /api/fauna/:id`).
 - Success: `200` — array of sighting objects newest first, each including
   `reporter: { id, name }`
 
@@ -104,9 +123,10 @@ List fauna sightings. Soft-deleted sightings are always excluded.
 
 ### POST /api/fauna
 
-Log a fauna sighting directly. Intended for staff and field officers recording
-sightings in the field, in addition to the auto-mirror from resident reports.
-`reported_by` is taken from the JWT and cannot be set in the body.
+Log a fauna sighting directly. Backs the Log Sighting form (`/fauna/log`), used
+by internal users recording sightings in the field, in addition to the
+auto-mirror from resident reports. `reported_by` is taken from the JWT and
+cannot be set in the body; `status` always starts at `open`.
 
 - Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager', 'welfare_partner')`
 - Request body:
@@ -120,7 +140,9 @@ sightings in the field, in addition to the auto-mirror from resident reports.
   | gps_lat | number | no | latitude |
   | gps_lng | number | no | longitude |
   | photo_url | string (url) | no | must be a valid URL |
-  | notes | string | no | max 500 characters |
+  | notes | string | **yes** | the sighting description; trimmed then required, so a whitespace-only value fails; max 500 characters |
+
+  Unknown fields are stripped (`stripUnknown: true`) rather than rejected.
 
   ```json
   {
@@ -157,10 +179,14 @@ sightings in the field, in addition to the auto-mirror from resident reports.
   ```
 
 - Errors:
-  - `400` — validation failure (e.g. missing species/block_number, invalid
-    behaviour tag, notes over 500 chars): `{ "error": [...messages] }`
+  - `400` — validation failure (e.g. missing species/block_number/notes,
+    invalid behaviour tag, notes over 500 chars): `{ "error": [...messages] }`
   - `401` — missing/invalid token
-  - `403` — role not permitted
+  - `403` — role not permitted, or a Welfare Partner logging a sighting for a
+    block outside their assigned blocks
+
+Note: the `201` response is the raw created row - it does not include a
+`reporter` object (unlike the list and detail responses).
 
 ---
 
@@ -182,7 +208,9 @@ Get a single sighting.
 
 ### PATCH /api/fauna/:id/status
 
-Update a sighting's case status.
+Update a sighting's case status. This is the only mutation available after
+creation - there is no endpoint to edit `behaviour_tags`, `notes` or any other
+field of an existing sighting.
 
 - Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Request body:
@@ -258,6 +286,12 @@ appear in its `notes` text (case-insensitive) but are **not** in its
 Nothing is written back, tags are never changed, and it has no bearing on
 `risk_level`. Only the five existing behaviour tags are scanned for, and only
 officer-entered sighting notes are read - no resident report data is involved.
+
+The matching is a plain case-insensitive substring test, so it can over-match:
+`nesting` is found inside "interesting", and `feeding` inside "overfeeding".
+This is acceptable because the hint is advisory only - it never changes tags or
+`risk_level`, so a false match is harmless.
+
 `untagged_mentions` is `[]` when `notes` is empty or every keyword found is
 already tagged.
 
@@ -384,8 +418,9 @@ Send the staff-edited alert email via the shared `sendEmail` service
 the staff user submits - the draft endpoint's output is only a starting point.
 
 - Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
-- URL param: `:block` — kept for routing/audit context; the sent content comes
-  entirely from the request body
+- URL param: `:block` — kept for URL consistency with the other block
+  endpoints, but not used by the handler; the sent content comes entirely from
+  the request body
 - Request body:
 
   | Field | Type | Required | Notes |
