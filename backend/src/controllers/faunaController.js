@@ -71,6 +71,16 @@ async function listSightings(req, res) {
     where.block_number = req.query.block_number;
   }
 
+  // Optional recency window, mirroring the cutoff in getHotspots so a caller can
+  // line this list up with the hotspot counts. Absent leaves the list unfiltered
+  // - the default stays "every sighting". A non-numeric or non-positive value is
+  // ignored for the same reason, so a bad param can never build a future cutoff
+  // and silently return nothing.
+  const days = parseInt(req.query.days, 10);
+  if (Number.isFinite(days) && days > 0) {
+    where.createdAt = { [Op.gte]: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+  }
+
   // Applied after the query filters so a block_number param can never widen the
   // zone. No assigned blocks means no visible sightings, not unrestricted.
   if (assignedBlocks !== null) {

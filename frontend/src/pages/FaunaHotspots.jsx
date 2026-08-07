@@ -95,6 +95,16 @@ function MapFocus({ points }) {
 // Risk level -> MUI chip colour.
 const RISK_COLORS = { urgent: 'error', monitor: 'warning', routine: 'success' };
 
+// The bucket the backend files sightings under when they carry no block_number.
+// It is not a real block, so the block endpoints cannot resolve it - the card is
+// rendered as a count only, with no expand, summary or drill-down.
+const UNKNOWN_BLOCK = 'Unknown';
+
+// The window this page reports on. Sent to every call the page makes so the map
+// pins, the heat and the block cards all describe the same period - 30 matches
+// the backend default used by the hotspot, summary and alert endpoints.
+const HOTSPOT_DAYS = 30;
+
 // Default map view - central Singapore.
 const DEFAULT_CENTER = [1.3521, 103.8198];
 
@@ -136,8 +146,8 @@ export default function FaunaHotspots() {
 
   useEffect(() => {
     Promise.all([
-      http.get('/api/fauna'),
-      http.get('/api/fauna/hotspots'),
+      http.get('/api/fauna', { params: { days: HOTSPOT_DAYS } }),
+      http.get('/api/fauna/hotspots', { params: { days: HOTSPOT_DAYS } }),
     ])
       .then(([sightingsRes, hotspotsRes]) => {
         setSightings(sightingsRes.data);
@@ -331,7 +341,9 @@ export default function FaunaHotspots() {
           >
             <Typography variant="h6">Hotspots by Block</Typography>
             <Autocomplete
-              options={hotspots.map((h) => h.block_number)}
+              options={hotspots
+                .map((h) => h.block_number)
+                .filter((b) => b !== UNKNOWN_BLOCK)}
               getOptionLabel={(option) => formatBlock(option)}
               // Acts as an action, not a selection: the value is cleared after each
               // jump so picking the same block again re-jumps to it.
@@ -345,37 +357,56 @@ export default function FaunaHotspots() {
           </Stack>
           {hotspots.length === 0 && <Typography>No hotspots found</Typography>}
 
-          {hotspots.map((hotspot) => (
+          {hotspots.map((hotspot) => {
+            // The Unknown bucket is not a real block, so the block endpoints
+            // cannot resolve it. Render it as a count only - no click target and
+            // no Collapse, so it can never fire a request that 404s.
+            const isUnknown = hotspot.block_number === UNKNOWN_BLOCK;
+
+            const cardBody = (
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <LocationOnIcon fontSize="small" color="action" />
+                    <Typography variant="h6">
+                      {isUnknown ? 'Unknown block' : formatBlock(hotspot.block_number)}
+                    </Typography>
+                  </Box>
+                  <Chip label={`${hotspot.total} total`} size="small" variant="outlined" sx={TOKEN_SX} />
+                </Box>
+                <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                  {Object.entries(hotspot.breakdown).map(([species, count]) => (
+                    <Chip
+                      key={species}
+                      icon={<SpeciesIcon species={species} />}
+                      label={`${species}: ${count}`}
+                      size="small"
+                      variant="outlined"
+                      sx={TOKEN_SX}
+                    />
+                  ))}
+                </Stack>
+                {isUnknown && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    Sightings logged without a block number. No summary or drill-down available.
+                  </Typography>
+                )}
+              </CardContent>
+            );
+
+            return (
             <Card
               key={hotspot.block_number}
               ref={(node) => { blockRefs.current[hotspot.block_number] = node; }}
               sx={{ mb: 2 }}
             >
-              <CardActionArea onClick={() => handleBlockClick(hotspot.block_number)}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <LocationOnIcon fontSize="small" color="action" />
-                      <Typography variant="h6">{hotspot.block_number}</Typography>
-                    </Box>
-                    <Chip label={`${hotspot.total} total`} size="small" variant="outlined" sx={TOKEN_SX} />
-                  </Box>
-                  <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
-                    {Object.entries(hotspot.breakdown).map(([species, count]) => (
-                      <Chip
-                        key={species}
-                        icon={<SpeciesIcon species={species} />}
-                        label={`${species}: ${count}`}
-                        size="small"
-                        variant="outlined"
-                        sx={TOKEN_SX}
-                      />
-                    ))}
-                  </Stack>
-                </CardContent>
-              </CardActionArea>
+              {isUnknown ? cardBody : (
+                <CardActionArea onClick={() => handleBlockClick(hotspot.block_number)}>
+                  {cardBody}
+                </CardActionArea>
+              )}
 
-              <Collapse in={expandedBlock === hotspot.block_number} unmountOnExit>
+              <Collapse in={!isUnknown && expandedBlock === hotspot.block_number} unmountOnExit>
                 <Box sx={{ px: 2, pb: 2 }}>
                   <Divider sx={{ mb: 2 }} />
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
@@ -522,7 +553,8 @@ export default function FaunaHotspots() {
                 </Box>
               </Collapse>
             </Card>
-          ))}
+            );
+          })}
         </>
       )}
     </Box>
