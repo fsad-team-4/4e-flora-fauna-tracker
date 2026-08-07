@@ -45,15 +45,17 @@ beforeAll(async () => {
     behaviour_tags: ['aggressive'],
     notes: 'Cat was aggressive towards a resident',
   });
-  // No notes at all.
+  // Notes that name no behaviour keyword at all.
   await request(app).post('/api/fauna').set('Authorization', officerToken).send({
     species: 'pigeon',
     block_number: 'Block 203',
+    notes: 'Single bird on the ledge, moved off on its own.',
   });
   // Different block - must not appear in the Block 203 list.
   await request(app).post('/api/fauna').set('Authorization', officerToken).send({
     species: 'mynah',
     block_number: 'Block 115',
+    notes: 'Mynah near the bin centre.',
   });
 });
 
@@ -83,7 +85,7 @@ test('a keyword already in behaviour_tags is not flagged', async () => {
   expect(cat.untagged_mentions).toEqual([]);
 });
 
-test('empty notes give an empty untagged_mentions array', async () => {
+test('notes naming no behaviour keyword give an empty untagged_mentions array', async () => {
   const res = await listBlock('Block 203');
   const pigeon = res.body.find((s) => s.species === 'pigeon');
   expect(pigeon.untagged_mentions).toEqual([]);

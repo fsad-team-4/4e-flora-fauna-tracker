@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Card, CardActionArea, CardContent, Chip, Alert,
   Stack, Collapse, Divider, ToggleButton, ToggleButtonGroup, Button, TextField,
-  IconButton,
+  IconButton, Autocomplete,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import PetsIcon from '@mui/icons-material/Pets';
@@ -15,6 +15,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 import http from '../http';
+import { formatBlock, TOKEN_SX, tokenVariant } from '../faunaDisplay';
 
 // Species -> marker colour. Change these to restyle every pin + legend dot.
 const SPECIES_COLORS = {
@@ -129,6 +130,10 @@ export default function FaunaHotspots() {
   // what re-triggers the fly, so re-expanding the same block re-focuses it.
   const [mapFocus, setMapFocus] = useState(null);
 
+  // block_number -> the card's DOM node, so the selector and marker clicks can
+  // scroll the right card into view.
+  const blockRefs = useRef({});
+
   useEffect(() => {
     Promise.all([
       http.get('/api/fauna'),
@@ -153,13 +158,16 @@ export default function FaunaHotspots() {
     setSendError('');
   };
 
-  const handleBlockClick = (block) => {
+  // Expands a block, focuses the map on it, loads its panels and scrolls its card
+  // into view. Shared by the card click, the block selector and marker clicks, so
+  // all three land the user in exactly the same state.
+  const openBlock = (block) => {
     resetDraft();
-    if (expandedBlock === block) {
-      setExpandedBlock(null);
-      return;
-    }
     setExpandedBlock(block);
+
+    // The card is already mounted, so it can be scrolled to immediately; the
+    // Collapse animates open underneath it.
+    blockRefs.current[block]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     // Focus the map on this block. Blocks with no GPS-tagged sighting leave the
     // map untouched rather than jumping somewhere arbitrary.
@@ -194,6 +202,16 @@ export default function FaunaHotspots() {
         }
       })
       .finally(() => setSummaryLoading(false));
+  };
+
+  // Card clicks toggle: clicking the open block collapses it again.
+  const handleBlockClick = (block) => {
+    if (expandedBlock === block) {
+      resetDraft();
+      setExpandedBlock(null);
+      return;
+    }
+    openBlock(block);
   };
 
   const handleDraftAlert = (block) => {
@@ -286,6 +304,18 @@ export default function FaunaHotspots() {
                     {s.floor_level && <Typography variant="body2">Floor: {s.floor_level}</Typography>}
                     {s.block_number && <Typography variant="body2">{s.block_number}</Typography>}
                     <Typography variant="caption">{new Date(s.createdAt).toLocaleString()}</Typography>
+                    {/* notes and photo only on click, never in the hover Tooltip */}
+                    {s.notes && (
+                      <Typography variant="body2" sx={{ mt: 1 }}>{s.notes}</Typography>
+                    )}
+                    {s.photo_url && (
+                      <Box
+                        component="img"
+                        src={s.photo_url}
+                        alt="Sighting"
+                        sx={{ display: 'block', mt: 1, maxWidth: 180, height: 'auto', borderRadius: 1 }}
+                      />
+                    )}
                   </Popup>
                 </Marker>
               ))}
@@ -294,11 +324,33 @@ export default function FaunaHotspots() {
             </MapContainer>
           </Box>
 
-          <Typography variant="h6" sx={{ mb: 1 }}>Hotspots by Block</Typography>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={2}
+            sx={{ mb: 1.5, justifyContent: 'space-between', alignItems: { sm: 'center' } }}
+          >
+            <Typography variant="h6">Hotspots by Block</Typography>
+            <Autocomplete
+              options={hotspots.map((h) => h.block_number)}
+              getOptionLabel={(option) => formatBlock(option)}
+              // Acts as an action, not a selection: the value is cleared after each
+              // jump so picking the same block again re-jumps to it.
+              value={null}
+              blurOnSelect
+              onChange={(_, block) => { if (block) openBlock(block); }}
+              size="small"
+              sx={{ minWidth: 240 }}
+              renderInput={(params) => <TextField {...params} label="Jump to block" />}
+            />
+          </Stack>
           {hotspots.length === 0 && <Typography>No hotspots found</Typography>}
 
           {hotspots.map((hotspot) => (
-            <Card key={hotspot.block_number} sx={{ mb: 2 }}>
+            <Card
+              key={hotspot.block_number}
+              ref={(node) => { blockRefs.current[hotspot.block_number] = node; }}
+              sx={{ mb: 2 }}
+            >
               <CardActionArea onClick={() => handleBlockClick(hotspot.block_number)}>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -306,7 +358,7 @@ export default function FaunaHotspots() {
                       <LocationOnIcon fontSize="small" color="action" />
                       <Typography variant="h6">{hotspot.block_number}</Typography>
                     </Box>
-                    <Chip label={`${hotspot.total} total`} size="small" />
+                    <Chip label={`${hotspot.total} total`} size="small" variant="outlined" sx={TOKEN_SX} />
                   </Box>
                   <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
                     {Object.entries(hotspot.breakdown).map(([species, count]) => (
@@ -316,7 +368,7 @@ export default function FaunaHotspots() {
                         label={`${species}: ${count}`}
                         size="small"
                         variant="outlined"
-                        sx={{ textTransform: 'capitalize' }}
+                        sx={TOKEN_SX}
                       />
                     ))}
                   </Stack>
@@ -341,7 +393,8 @@ export default function FaunaHotspots() {
                             label={summary.risk_level}
                             size="small"
                             color={RISK_COLORS[summary.risk_level] || 'default'}
-                            sx={{ textTransform: 'capitalize' }}
+                            variant={tokenVariant(RISK_COLORS[summary.risk_level])}
+                            sx={TOKEN_SX}
                           />
                         )}
                       </Stack>
@@ -354,7 +407,7 @@ export default function FaunaHotspots() {
                               label={tag}
                               size="small"
                               variant="outlined"
-                              sx={{ textTransform: 'capitalize' }}
+                              sx={TOKEN_SX}
                             />
                           ))}
                         </Stack>
@@ -456,7 +509,7 @@ export default function FaunaHotspots() {
                                     label={`Notes mention: ${s.untagged_mentions.join(', ')}`}
                                     size="small"
                                     variant="outlined"
-                                    sx={{ mt: 0.5, textTransform: 'capitalize' }}
+                                    sx={{ ...TOKEN_SX, mt: 0.5 }}
                                   />
                                 )}
                               </Box>

@@ -34,6 +34,9 @@ async function seedBlock(block, count, tags = []) {
         species: 'pigeon',
         block_number: block,
         behaviour_tags: i === 0 ? tags : [],
+        // deliberately free of behaviour keywords - the block names contain some,
+        // and risk level must be driven by the tags only
+        notes: `Pigeon seen near the void deck, sighting ${i + 1}.`,
       });
     expect(res.status).toBe(201);
   }

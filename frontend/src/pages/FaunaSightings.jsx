@@ -9,7 +9,8 @@ import FlutterDashIcon from '@mui/icons-material/FlutterDash';
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import http from '../http';
-import { STATUS_COLORS, STATUS_OPTIONS } from '../constants';
+import { STATUS_OPTIONS } from '../constants';
+import { severityFor, statusLabel, speciesLabel, formatBlock, TOKEN_SX, tokenVariant } from '../faunaDisplay';
 
 const SPECIES_OPTIONS = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
 
@@ -60,7 +61,7 @@ export default function FaunaSightings() {
         >
           <MenuItem value="">All</MenuItem>
           {SPECIES_OPTIONS.map((s) => (
-            <MenuItem key={s} value={s}>{s}</MenuItem>
+            <MenuItem key={s} value={s}>{speciesLabel(s)}</MenuItem>
           ))}
         </TextField>
         <TextField
@@ -73,7 +74,7 @@ export default function FaunaSightings() {
         >
           <MenuItem value="">All</MenuItem>
           {STATUS_OPTIONS.map((s) => (
-            <MenuItem key={s} value={s}>{s}</MenuItem>
+            <MenuItem key={s} value={s}>{statusLabel(s)}</MenuItem>
           ))}
         </TextField>
       </Stack>
@@ -87,9 +88,17 @@ export default function FaunaSightings() {
 
       {!loading && !error && sightings.length > 0 && (
         <Grid container spacing={2}>
-          {sightings.map((sighting) => (
+          {sightings.map((sighting) => {
+            const severity = severityFor(sighting.behaviour_tags);
+            return (
             <Grid key={sighting.id} size={{ xs: 12, sm: 6, md: 4 }}>
-              <Card sx={{ height: '100%' }}>
+              <Card
+                sx={{
+                  height: '100%',
+                  transition: (theme) => theme.transitions.create(['box-shadow', 'transform']),
+                  '&:hover': { boxShadow: 4, transform: 'translateY(-2px)' },
+                }}
+              >
                 <CardActionArea
                   onClick={() => navigate(`/fauna/${sighting.id}`)}
                   sx={{ height: '100%', alignItems: 'stretch' }}
@@ -98,20 +107,27 @@ export default function FaunaSightings() {
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Chip
                         icon={<SpeciesIcon species={sighting.species} />}
-                        label={sighting.species}
+                        label={speciesLabel(sighting.species)}
                         size="small"
-                        sx={{ textTransform: 'capitalize' }}
+                        variant="outlined"
+                        sx={TOKEN_SX}
                       />
-                      <Chip
-                        label={sighting.status}
-                        color={STATUS_COLORS[sighting.status] || 'default'}
-                        size="small"
-                      />
+                      <Stack direction="row" spacing={0.75} alignItems="center">
+                        {/* neutral by design - colour on this card belongs to severity alone */}
+                        <Chip label={statusLabel(sighting.status)} size="small" variant="outlined" sx={TOKEN_SX} />
+                        <Chip
+                          label={severity.label}
+                          color={severity.color}
+                          size="small"
+                          variant={tokenVariant(severity.color)}
+                          sx={TOKEN_SX}
+                        />
+                      </Stack>
                     </Box>
                     {sighting.block_number && (
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1 }}>
                         <LocationOnIcon fontSize="small" color="action" />
-                        <Typography>{sighting.block_number}</Typography>
+                        <Typography>{formatBlock(sighting.block_number)}</Typography>
                       </Box>
                     )}
                     {sighting.floor_level && (
@@ -125,7 +141,8 @@ export default function FaunaSightings() {
                 </CardActionArea>
               </Card>
             </Grid>
-          ))}
+            );
+          })}
         </Grid>
       )}
     </Box>

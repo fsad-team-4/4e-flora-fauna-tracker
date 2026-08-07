@@ -10,6 +10,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-lea
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import http from '../http';
+import { speciesLabel } from '../faunaDisplay';
 
 const SPECIES = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
 const BEHAVIOUR_TAGS = ['urinating', 'feeding', 'nesting', 'droppings', 'aggressive'];
@@ -47,7 +48,11 @@ const validationSchema = yup.object({
   species: yup.string().required('Species is required').oneOf(SPECIES),
   block_number: yup.string().required('Block number is required'),
   floor_level: yup.string(),
-  notes: yup.string().max(500, 'Notes must be at most 500 characters'),
+  notes: yup
+    .string()
+    .required('Description is required')
+    .trim()
+    .max(500, 'Notes must be at most 500 characters'),
 });
 
 export default function FaunaLogSighting() {
@@ -164,7 +169,7 @@ export default function FaunaLogSighting() {
         helperText={formik.touched.species && formik.errors.species}
       >
         {SPECIES.map((s) => (
-          <MenuItem key={s} value={s} sx={{ textTransform: 'capitalize' }}>{s}</MenuItem>
+          <MenuItem key={s} value={s}>{speciesLabel(s)}</MenuItem>
         ))}
       </TextField>
 
@@ -211,6 +216,7 @@ export default function FaunaLogSighting() {
 
       <TextField
         fullWidth
+        required
         multiline
         minRows={3}
         margin="normal"

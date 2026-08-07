@@ -30,7 +30,9 @@ const createSchema = yup.object({
   gps_lat: yup.number().optional(),
   gps_lng: yup.number().optional(),
   photo_url: yup.string().url().optional(),
-  notes: yup.string().max(500).optional(),
+  // Required to match the resident report convention - a sighting always needs a
+  // description. Trimmed first, so whitespace-only notes fail the required test.
+  notes: yup.string().required().trim().max(500),
 });
 
 // Roles trusted with the exact location of community cats. Welfare Partners are

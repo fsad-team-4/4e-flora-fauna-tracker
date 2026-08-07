@@ -10,7 +10,8 @@ import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import http from '../http';
 import { useUser } from '../contexts/UserContext';
-import { STATUS_COLORS, STATUS_OPTIONS } from '../constants';
+import { STATUS_OPTIONS } from '../constants';
+import { severityFor, statusLabel, speciesLabel, formatBlock, TOKEN_SX, tokenVariant } from '../faunaDisplay';
 
 // Species -> MUI icon element. Birds get a bird icon, cats a paw, anything else a
 // neutral marker. Spreads props so it works in chips and larger headers alike.
@@ -19,6 +20,10 @@ function SpeciesIcon({ species, ...props }) {
   if (species === 'other') return <HelpOutlineRoundedIcon {...props} />;
   return <FlutterDashIcon {...props} />; // pigeon, crow, mynah
 }
+
+// 5 decimal places is roughly 1 metre - enough for a pin, without showing the
+// raw float precision. Display only; the stored value is untouched.
+const formatCoord = (n) => n.toFixed(5);
 
 // Which agency handles each species (mirrors the backend AGENCY_MAP).
 const AGENCY_MAP = {
@@ -73,6 +78,7 @@ export default function FaunaSightingDetail() {
   };
 
   const canUpdate = user && (user.role === 'field_officer' || user.role === 'manager');
+  const severity = severityFor(sighting?.behaviour_tags);
 
   return (
     <Box sx={{ maxWidth: 700, mx: 'auto', mt: 4 }}>
@@ -88,12 +94,19 @@ export default function FaunaSightingDetail() {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <SpeciesIcon species={sighting.species} color="action" />
-              <Typography variant="h5" sx={{ textTransform: 'capitalize' }}>{sighting.species}</Typography>
+              <Typography variant="h5">{speciesLabel(sighting.species)}</Typography>
             </Box>
-            <Chip
-              label={sighting.status}
-              color={STATUS_COLORS[sighting.status] || 'default'}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              {/* neutral by design - colour here belongs to the severity badge alone */}
+              <Chip label={statusLabel(sighting.status)} size="small" variant="outlined" sx={TOKEN_SX} />
+              <Chip
+                label={severity.label}
+                color={severity.color}
+                size="small"
+                variant={tokenVariant(severity.color)}
+                sx={TOKEN_SX}
+              />
+            </Stack>
           </Box>
 
           <Alert severity="info" sx={{ my: 2 }}>
@@ -103,15 +116,17 @@ export default function FaunaSightingDetail() {
           {sighting.block_number && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <LocationOnIcon fontSize="small" color="action" />
-              <Typography>{sighting.block_number}</Typography>
+              <Typography>{formatBlock(sighting.block_number)}</Typography>
             </Box>
           )}
           {sighting.floor_level && <Typography>Floor: {sighting.floor_level}</Typography>}
           {sighting.gps_lat != null && sighting.gps_lng != null && (
             <>
-              <Typography>GPS: {sighting.gps_lat}, {sighting.gps_lng}</Typography>
+              <Typography>
+                GPS: {formatCoord(sighting.gps_lat)}, {formatCoord(sighting.gps_lng)}
+              </Typography>
               <Link
-                href={`https://www.google.com/maps?q=${sighting.gps_lat},${sighting.gps_lng}`}
+                href={`https://www.google.com/maps?q=${formatCoord(sighting.gps_lat)},${formatCoord(sighting.gps_lng)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 variant="body2"
@@ -128,7 +143,7 @@ export default function FaunaSightingDetail() {
           {sighting.behaviour_tags?.length > 0 && (
             <Stack direction="row" spacing={1} sx={{ mt: 2, flexWrap: 'wrap' }}>
               {sighting.behaviour_tags.map((tag) => (
-                <Chip key={tag} label={tag} size="small" />
+                <Chip key={tag} label={tag} size="small" variant="outlined" sx={TOKEN_SX} />
               ))}
             </Stack>
           )}
@@ -162,7 +177,7 @@ export default function FaunaSightingDetail() {
                   sx={{ minWidth: 160 }}
                 >
                   {STATUS_OPTIONS.map((s) => (
-                    <MenuItem key={s} value={s}>{s}</MenuItem>
+                    <MenuItem key={s} value={s}>{statusLabel(s)}</MenuItem>
                   ))}
                 </TextField>
                 <Button
