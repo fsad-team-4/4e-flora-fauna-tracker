@@ -50,11 +50,15 @@ beforeEach(() => {
   queryCatalog.mockReset();
   hasApiKey.mockReset();
   hasApiKey.mockReturnValue(true);
-  queryCatalog.mockResolvedValue({ answer: 'Two plants are at risk.', plantCount: 5 });
+  queryCatalog.mockResolvedValue({
+    answer: 'Two plants are at risk.',
+    plantCount: 5,
+    referencedPlants: [{ id: 3, species: 'Ficus benjamina', common_name: 'Weeping Fig' }],
+  });
 });
 
 describe('AI catalog query (POST /api/flora/query)', () => {
-  test('staff asks a valid question -> 200 with { question, answer, plantCount }', async () => {
+  test('staff asks a valid question -> 200 with { question, answer, plantCount, referencedPlants }', async () => {
     const res = await request(app)
       .post('/api/flora/query')
       .set('Authorization', staffToken)
@@ -65,6 +69,7 @@ describe('AI catalog query (POST /api/flora/query)', () => {
       question: 'Which plants are at risk?',
       answer: 'Two plants are at risk.',
       plantCount: 5,
+      referencedPlants: [{ id: 3, species: 'Ficus benjamina', common_name: 'Weeping Fig' }],
     });
     expect(queryCatalog).toHaveBeenCalledTimes(1);
     expect(queryCatalog).toHaveBeenCalledWith('Which plants are at risk?');
@@ -133,5 +138,71 @@ describe('AI catalog query (POST /api/flora/query)', () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('AI service not configured');
     expect(queryCatalog).not.toHaveBeenCalled();
+  });
+
+  // The raw SDK message ("429 RESOURCE_EXHAUSTED: ...") means nothing to staff,
+  // so the controller maps failures onto actionable messages and logs the cause.
+  describe('AI failures', () => {
+    let consoleError;
+
+    beforeEach(() => {
+      // keep the controller's console.error out of the test output
+      consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleError.mockRestore();
+    });
+
+    const ask = () =>
+      request(app)
+        .post('/api/flora/query')
+        .set('Authorization', staffToken)
+        .send({ question: 'Which plants are at risk?' });
+
+    test('rate limited (status 429) -> 429 busy message, original error logged', async () => {
+      const err = new Error('429 RESOURCE_EXHAUSTED: quota exceeded for gemini-3.5-flash');
+      err.status = 429;
+      queryCatalog.mockRejectedValue(err);
+
+      const res = await ask();
+
+      expect(res.status).toBe(429);
+      expect(res.body.error).toBe('The AI service is busy right now. Please try again in a moment.');
+      expect(consoleError).toHaveBeenCalled();
+    });
+
+    test('quota mentioned in the message with no status -> 429', async () => {
+      queryCatalog.mockRejectedValue(new Error('You exceeded your current quota'));
+
+      const res = await ask();
+
+      expect(res.status).toBe(429);
+      expect(res.body.error).toBe('The AI service is busy right now. Please try again in a moment.');
+    });
+
+    test('model overloaded (status 503) -> 503, not the not-configured message', async () => {
+      const err = new Error('The model is overloaded. Please try again later.');
+      err.status = 503;
+      queryCatalog.mockRejectedValue(err);
+
+      const res = await ask();
+
+      expect(res.status).toBe(503);
+      expect(res.body.error).toBe(
+        'The AI service is temporarily overloaded. Please try again in a moment.'
+      );
+      expect(res.body.error).not.toBe('AI service not configured');
+    });
+
+    test('unknown failure -> 502 generic message, raw SDK message not leaked', async () => {
+      queryCatalog.mockRejectedValue(new Error('socket hang up on generativelanguage.googleapis.com'));
+
+      const res = await ask();
+
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe('Could not get an answer from the AI service. Please try again.');
+      expect(res.body.error).not.toContain('socket hang up');
+    });
   });
 });

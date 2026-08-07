@@ -472,6 +472,49 @@ describe('POST /api/flora/planting-suggestions', () => {
   });
 });
 
+describe('POST /api/flora/identify-species', () => {
+  test('missing image_url -> 400', async () => {
+    const res = await request(app)
+      .post('/api/flora/identify-species')
+      .set('Authorization', tokens.staff)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('image_url is required');
+  });
+
+  test('empty image_url -> 400', async () => {
+    const res = await request(app)
+      .post('/api/flora/identify-species')
+      .set('Authorization', tokens.staff)
+      .send({ image_url: '   ' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('image_url is required');
+  });
+
+  test('resident attempts access -> 403', async () => {
+    const res = await request(app)
+      .post('/api/flora/identify-species')
+      .set('Authorization', tokens.res1)
+      .send({ image_url: 'https://example.com/plant.jpg' });
+
+    expect(res.status).toBe(403);
+  });
+
+  test('with GEMINI_API_KEY unset -> 503 AI service not configured', async () => {
+    delete process.env.GEMINI_API_KEY;
+
+    const res = await request(app)
+      .post('/api/flora/identify-species')
+      .set('Authorization', tokens.staff)
+      .send({ image_url: 'https://example.com/plant.jpg' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toBe('AI service not configured');
+  });
+});
+
 describe('Health-alert email', () => {
   beforeEach(() => {
     sendMail.mockClear();

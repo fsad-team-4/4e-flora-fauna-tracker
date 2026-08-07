@@ -3,7 +3,8 @@ import { Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, TextField, Card, CardActionArea, CardContent,
   Chip, Stack, InputAdornment, Skeleton, Alert, Divider, MenuItem,
-  Button, CircularProgress, IconButton,
+  Button, CircularProgress, IconButton, Dialog, DialogTitle,
+  DialogContent, DialogActions,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import SearchIcon from '@mui/icons-material/Search';
@@ -60,6 +61,44 @@ const EXAMPLE_QUESTIONS = [
   'What is the lowest-maintenance shade tree?',
 ];
 
+// klemens - the page remounts when the user follows a referenced-plant chip to
+// /flora/:id and comes back, so the last question and answer are kept in
+// sessionStorage: per-tab, and gone once the tab closes.
+const QUERY_STORAGE_KEY = 'handbook-query';
+
+// Returns null when there is nothing stored, the entry is corrupt, or storage
+// is unavailable - callers fall back to an empty query box.
+function readStoredQuery() {
+  try {
+    const raw = sessionStorage.getItem(QUERY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      question: parsed.question || '',
+      answer: parsed.answer || '',
+      referencedPlants: Array.isArray(parsed.referencedPlants) ? parsed.referencedPlants : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredQuery(entry) {
+  try {
+    sessionStorage.setItem(QUERY_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    // storage disabled or full - persisting the answer is a nicety, not required
+  }
+}
+
+function clearStoredQuery() {
+  try {
+    sessionStorage.removeItem(QUERY_STORAGE_KEY);
+  } catch {
+    // as above - nothing to do if storage is unavailable
+  }
+}
+
 export default function HorticultureHandbook() {
   const [plantFamily, setPlantFamily] = useState('');
   const [siteSuitability, setSiteSuitability] = useState('');
@@ -69,17 +108,21 @@ export default function HorticultureHandbook() {
   const [error, setError] = useState('');
   const [jumpTarget, setJumpTarget] = useState('');
 
-  // klemens - state for the AI query box
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
+  // klemens - state for the AI query box, seeded once from sessionStorage so
+  // returning from a plant detail page shows the previous answer and chips
+  const [storedQuery] = useState(readStoredQuery);
+  const [question, setQuestion] = useState(storedQuery?.question || '');
+  const [answer, setAnswer] = useState(storedQuery?.answer || '');
+  const [referencedPlants, setReferencedPlants] = useState(storedQuery?.referencedPlants || []);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState('');
 
   // state for the AI planting suggestions box
   const [condition, setCondition] = useState('');
-  const [suggestions, setSuggestions] = useState('');
+  const [suggestionResult, setSuggestionResult] = useState(null);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState('');
+  const [selectedSpecies, setSelectedSpecies] = useState(null);
 
   // Bulk Import (catalog upload)
   const [csvFile, setCsvFile] = useState(null);
@@ -145,27 +188,51 @@ export default function HorticultureHandbook() {
     setAsking(true);
     setAskError('');
     setAnswer('');
+    setReferencedPlants([]);
+    // drop the previous entry up front so a failed request cannot leave a
+    // stale answer behind, on screen or in storage
+    clearStoredQuery();
     http
       .post('/api/flora/query', { question: question.trim() })
-      .then((res) => setAnswer(res.data.answer))
+      .then((res) => {
+        const plants = res.data.referencedPlants || [];
+        setAnswer(res.data.answer);
+        setReferencedPlants(plants);
+        writeStoredQuery({
+          question: question.trim(),
+          answer: res.data.answer,
+          referencedPlants: plants,
+        });
+      })
       .catch((err) => {
-        if (err.response?.status === 503) {
+        // 503 now covers both a missing API key and a temporarily overloaded
+        // model, so match on the server's message rather than the status.
+        const serverError = err.response?.data?.error;
+        if (serverError === 'AI service not configured') {
           setAskError('AI querying is not configured (no API key set)');
         } else {
-          setAskError(err.response?.data?.error || 'Failed to get an answer.');
+          setAskError(serverError || 'Failed to get an answer.');
         }
       })
       .finally(() => setAsking(false));
+  };
+
+  // klemens - discard the current answer and the stored entry behind it
+  const handleClearAnswer = () => {
+    setQuestion('');
+    setAnswer('');
+    setReferencedPlants([]);
+    clearStoredQuery();
   };
 
   // submit a site condition to the AI planting suggestions endpoint
   const handleSuggest = () => {
     setSuggesting(true);
     setSuggestError('');
-    setSuggestions('');
+    setSuggestionResult(null);
     http
       .post('/api/flora/planting-suggestions', { condition: condition.trim() })
-      .then((res) => setSuggestions(res.data.suggestions))
+      .then((res) => setSuggestionResult(res.data))
       .catch((err) => {
         if (err.response?.status === 503) {
           setSuggestError('AI querying is not configured (no API key set)');
@@ -195,6 +262,21 @@ export default function HorticultureHandbook() {
       return a.localeCompare(b);
     });
   }, [plants]);
+
+  // Species -> botanical fields, deduped from the already-fetched catalog
+  // (this page loads /api/flora?include_catalog=true into `plants`, which
+  // already carries every field the suggestion details dialog needs - no
+  // need for a separate /api/flora/species-catalog request).
+  const speciesCatalog = useMemo(() => {
+    const map = new Map();
+    plants.forEach((plant) => {
+      if (plant.species && !map.has(plant.species)) {
+        map.set(plant.species, plant);
+      }
+    });
+    return map;
+  }, [plants]);
+  const selectedSpeciesDetails = selectedSpecies ? speciesCatalog.get(selectedSpecies) : null;
 
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
@@ -382,10 +464,35 @@ export default function HorticultureHandbook() {
           >
             {asking ? <CircularProgress size={24} color="inherit" /> : 'Ask'}
           </Button>
+          {answer && (
+            <Button size="small" onClick={handleClearAnswer} sx={{ ml: 1 }}>
+              Clear
+            </Button>
+          )}
           {askError && <Alert severity="error" sx={{ mt: 2 }}>{askError}</Alert>}
           {answer && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
               <Typography variant="body2">{answer}</Typography>
+            </Box>
+          )}
+          {referencedPlants.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Plants mentioned:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {referencedPlants.map((plant) => (
+                  <Chip
+                    key={plant.id}
+                    label={plant.common_name || plant.species}
+                    size="small"
+                    variant="outlined"
+                    clickable
+                    component={RouterLink}
+                    to={`/flora/${plant.id}`}
+                  />
+                ))}
+              </Box>
             </Box>
           )}
         </CardContent>
@@ -417,13 +524,89 @@ export default function HorticultureHandbook() {
             {suggesting ? <CircularProgress size={24} color="inherit" /> : 'Suggest'}
           </Button>
           {suggestError && <Alert severity="error" sx={{ mt: 2 }}>{suggestError}</Alert>}
-          {suggestions && (
+
+          {suggestionResult?.raw && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
-              <Typography variant="body2">{suggestions}</Typography>
+              <Typography variant="body2">{suggestionResult.raw}</Typography>
+            </Box>
+          )}
+
+          {suggestionResult?.recommendations && (
+            <Box sx={{ mt: 2 }}>
+              <Stack spacing={1.5}>
+                {suggestionResult.recommendations.map((rec, i) => (
+                  <Box key={i} sx={{ p: 1.5, bgcolor: 'action.hover', borderRadius: 1 }}>
+                    <Button
+                      variant="text"
+                      onClick={() => setSelectedSpecies(rec.species)}
+                      sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 700 }}
+                    >
+                      {toTitleCase(rec.species)}
+                    </Button>
+                    {rec.tradeoff && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {rec.tradeoff}
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Stack>
+              {suggestionResult.notes && (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, whiteSpace: 'pre-line' }}>
+                  {suggestionResult.notes}
+                </Typography>
+              )}
             </Box>
           )}
         </CardContent>
       </Card>
+
+      {/* Species details popup - opened by clicking a recommended species name */}
+      <Dialog open={Boolean(selectedSpecies)} onClose={() => setSelectedSpecies(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{selectedSpecies ? toTitleCase(selectedSpecies) : ''}</DialogTitle>
+        <DialogContent dividers>
+          {selectedSpeciesDetails ? (
+            <Stack spacing={1}>
+              {selectedSpeciesDetails.image_url && (
+                <Box
+                  component="img"
+                  src={selectedSpeciesDetails.image_url}
+                  alt={selectedSpeciesDetails.species}
+                  sx={{
+                    width: 200, height: 200, objectFit: 'cover',
+                    borderRadius: 2, display: 'block', mx: 'auto', mb: 1,
+                  }}
+                />
+              )}
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Family:</Box>{' '}
+                {selectedSpeciesDetails.plant_family || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Suitability:</Box>{' '}
+                {selectedSpeciesDetails.site_suitability || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Color:</Box>{' '}
+                {selectedSpeciesDetails.color || '-'}
+              </Typography>
+              <Typography variant="body2">
+                <Box component="span" sx={{ fontWeight: 700 }}>Max height:</Box>{' '}
+                {selectedSpeciesDetails.max_height_at_maturity != null
+                  ? `${selectedSpeciesDetails.max_height_at_maturity} m`
+                  : '-'}
+              </Typography>
+            </Stack>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Details not available.
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedSpecies(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

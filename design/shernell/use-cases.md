@@ -165,11 +165,14 @@ Main flow:
 3. The backend loads the record, builds a prompt from the plant's species,
    common name, location zone, health status, and notes, and calls Gemini
    (`gemini-3.5-flash`).
-4. Gemini returns 3-5 short, emoji-prefixed actionable bullets (💧 watering,
-   🌤️ shade/light, 🐛 pest treatment, ✂️ pruning, ⚠️ escalation), plus one
-   additional bullet estimating the species' typical lifespan in Singapore's
-   climate, prefixed with a distinct emoji (⏳) separate from the five care
-   categories, plain text only.
+4. Gemini returns the recommendation broken down by plant life stage - three
+   plain-text-headed sections in order (Seedling/Young, Establishing, Mature),
+   each with 2-3 emoji-prefixed bullets (💧 watering, 🌤️ shade/light, 🐛 pest
+   treatment, ✂️ pruning, ⚠️ escalation) covering only the topics most
+   relevant to that stage, not all five forced into every section. After all
+   three stage sections, exactly one final bullet estimates the species'
+   typical lifespan in Singapore's climate, prefixed with a distinct emoji
+   (⏳) - not repeated per stage. Plain text only, no markdown.
 5. The backend stores the text in `care_recommendation`, saves, and returns
    `200` with the updated record. The detail page renders the bullets.
 
@@ -415,8 +418,25 @@ Main flow:
    ideal") even when nothing matches perfectly. The prompt only allows "no
    suitable match" as an answer when literally nothing comes reasonably
    close, not merely because no entry satisfies every criterion exactly.
-5. The backend returns `200` with `{ suggestions }` (plain text, no
-   markdown), which the card renders under the input.
+   These grounding and reasoning rules are unchanged from before - only the
+   response format described in steps 5-7 below is new.
+5. The backend asks Gemini to respond with ONLY a JSON object (no markdown,
+   no code fences) shaped as `{ recommendations: [{ species, tradeoff }],
+   notes }` - one array entry per recommended catalog species paired with
+   its honest tradeoff, plus a closing `notes` field for general context
+   (e.g. species to avoid and why, or the explanation when
+   `recommendations` is empty). The backend strips any code-fence wrapper
+   Gemini might still add, parses the result as JSON, and returns `200`
+   with that parsed `{ recommendations, notes }` object.
+6. The card renders each `recommendations` entry as a row showing the
+   tradeoff text under the species name; the species name itself is a
+   clickable element. The closing `notes` text is shown beneath the list.
+7. Clicking a recommended species name opens a dialog showing that
+   species' full botanical details - family, site suitability, colour, max
+   height at maturity, and a photo if one is on record - looked up by
+   species name from the plant catalog data this page has already loaded
+   (`GET /api/flora?include_catalog=true`, deduplicated to one entry per
+   species). No extra API call is made for this lookup.
 
 Alternate / edge flows:
 
@@ -429,11 +449,140 @@ Alternate / edge flows:
 - Gemini request fails (network, quota, upstream error) -> `502`
   `{ "error": "AI request failed: <message>" }`; the frontend shows the
   returned error message, or a generic fallback if none is present.
+- Gemini's response cannot be parsed as JSON (e.g. it added stray
+  commentary) -> the backend falls back to returning `200` with
+  `{ raw: "<the unparsed response text>" }` instead of `{ recommendations,
+  notes }` - the same fallback pattern used by `identifySpecies`. The
+  frontend detects the `raw` field and renders it as a single plain-text
+  block, with no clickable species and no details dialog.
+- A recommended species is clicked but is not found in the already-loaded
+  catalog data (shouldn't happen in practice, since Gemini is grounded to
+  the same catalog, but is handled defensively) -> the dialog opens
+  showing "Details not available." instead of erroring.
 - A resident attempting the request -> `403` (same RBAC as every other
   flora route).
 - No active greenery records exist -> the catalog sent to Gemini is empty,
   so the model has nothing grounded to recommend from.
 
 Postcondition: the staff member sees a set of catalog-grounded planting
-suggestions with tradeoffs for the described site; no data is persisted -
-each request is independent and nothing is saved to any record.
+suggestions with tradeoffs for the described site, with each suggested
+species clickable through to its full botanical details; no data is
+persisted - each request is independent and nothing is saved to any record.
+
+## UC-11: Staff picks a location from an interactive map
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, and is on the
+  Add Plant form with at least one location entry.
+
+Main flow:
+
+1. On a location card in the Add Plant form, next to "Capture GPS Location",
+   the staff member clicks "Pick from Map".
+2. A dialog opens showing a Leaflet/OpenStreetMap map (the same mapping
+   library and pattern used by the Fauna Sightings module, per team
+   convention - no external Google Maps dependency, no API key required).
+3. The staff member clicks anywhere on the map to drop a pin; the Confirm
+   button stays disabled until a point has been picked.
+4. Clicking Confirm stores the picked point's coordinates into that
+   location's `gps_lat`/`gps_lng` fields, then reverse-geocodes the
+   coordinates via OpenStreetMap's free Nominatim API
+   (`GET https://nominatim.openstreetmap.org/reverse`) to derive a
+   descriptive place name for `location_zone`.
+5. Separately, the geocoded result's address fields are checked against the
+   existing `SINGAPORE_LOCATIONS` list (the same 55 URA planning areas used
+   by the Location Autocomplete in UC-1). If a match is found, `location` is
+   auto-filled with the matched canonical value; if no match is found,
+   `location_zone` still fills but `location` is left for the staff member
+   to pick or type manually.
+6. The dialog closes.
+
+Alternate / edge flows:
+
+- Clicking Cancel discards the pick entirely - no coordinates, location
+  zone, or location are changed on that location's card.
+- The reverse-geocoding request fails (network error) or returns no usable
+  place name (no `suburb`, `neighbourhood`, `city_district`, or
+  `display_name` in the response) -> `gps_lat`/`gps_lng` are still saved
+  from the picked point, and a note, "Couldn't auto-fill location name from
+  the map pin - please type it manually.", is shown on the location card so
+  the staff member knows to fill `location_zone` and `location` themselves.
+- The reverse-geocoding request succeeds and fills `location_zone`, but no
+  entry in `SINGAPORE_LOCATIONS` matches the geocoded address -> a lighter
+  note, "Location zone filled from map pin - please select the Location
+  area manually.", is shown, since only `location` needs manual entry in
+  this case.
+- While the reverse-geocode lookup is in progress, both Cancel and Confirm
+  are disabled and the dialog shows "Looking up location name...".
+- This feature is scoped to the Add Plant form only, same as GPS capture
+  (UC-9). The Edit Plant form (`FloraDetail.jsx`) has no "Pick from Map"
+  button.
+
+Postcondition: the location's `gps_lat`/`gps_lng` reflect the picked map
+point. `location_zone` is filled with a geocoded place name whenever
+Nominatim returns one; `location` is additionally auto-filled only when
+that place name matches an entry in `SINGAPORE_LOCATIONS`, otherwise it is
+left for the staff member to complete manually.
+
+---
+
+## UC-12: Staff identifies a plant species from a photo
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin, is on the Add
+  Plant form, and has already uploaded a photo for that location entry.
+
+Client priority served: speeding up data entry for field officers who can
+photograph a plant on-site but may not know its species offhand, while
+keeping a human in the loop so a wrong AI guess never silently corrupts the
+record.
+
+Main flow:
+
+1. After a photo is uploaded for a location entry, an "Identify Species"
+   button appears next to the photo preview (it is not rendered at all until
+   `loc.imageUrl` is set - there is no location entry without a photo to
+   disable it against).
+2. Clicking the button calls `POST /api/flora/identify-species` with
+   `{ image_url }`, the Cloudinary URL of the already-uploaded photo.
+3. The backend fetches the image server-side, converts it to base64, and
+   sends it to Gemini (`gemini-3.5-flash`) as inline image data alongside a
+   text prompt - a vision call, unlike the text-only prompts used by the
+   other AI features (UC-4, UC-10).
+4. The prompt instructs Gemini to return only a JSON object shaped
+   `{"species": "...", "confidence": "high|medium|low", "notes": "..."}`,
+   and to honestly set `species` to "Unknown" and explain why in `notes`
+   rather than guess, if the photo does not clearly show a plant.
+5. The backend strips any markdown code fences from the response and parses
+   it as JSON, returning `200` with the parsed `{ species, confidence,
+   notes }`.
+6. The frontend shows the suggestion in an info alert with two actions:
+   "Use this species" and "Dismiss". The suggestion is never auto-applied.
+7. Clicking "Use this species" calls the same species-selection/autofill
+   handler used by the Species Autocomplete (UC-8) with the suggested
+   species name, so plant_family/site_suitability/color/max_height_at_maturity
+   are filled in from the catalog only where still blank; clicking "Dismiss"
+   discards the suggestion without changing the form.
+
+Alternate / edge flows:
+
+- Missing or blank `image_url` -> `400` `{ "error": "image_url is
+  required" }`.
+- No API key configured (`GEMINI_API_KEY` unset) -> `503`
+  `{ "error": "AI service not configured" }`.
+- The image fetch or the Gemini request fails (network error, bad status,
+  quota, upstream error) -> `502` with an error message describing which
+  step failed.
+- Gemini's response is not valid JSON -> the backend falls back to `200`
+  `{ "raw": "<the raw text>" }`; the frontend renders this as plain text
+  under a "Could not be structured into a clean suggestion:" heading with
+  only a "Dismiss" action - "Use this species" is not offered since there is
+  no parsed species to apply.
+- A resident attempting the request -> `403` (same RBAC as every other
+  flora route).
+
+Postcondition: on "Use this species", the form's species field (and any
+still-blank botanical fields) reflect the suggestion, identical to a manual
+Species Autocomplete selection; on "Dismiss" or any error, the form is
+unchanged and nothing is persisted - identification is stateless and does
+not save to the record until the staff member submits the form.
