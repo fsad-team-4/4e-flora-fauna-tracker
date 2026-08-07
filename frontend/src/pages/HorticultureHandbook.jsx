@@ -61,6 +61,44 @@ const EXAMPLE_QUESTIONS = [
   'What is the lowest-maintenance shade tree?',
 ];
 
+// klemens - the page remounts when the user follows a referenced-plant chip to
+// /flora/:id and comes back, so the last question and answer are kept in
+// sessionStorage: per-tab, and gone once the tab closes.
+const QUERY_STORAGE_KEY = 'handbook-query';
+
+// Returns null when there is nothing stored, the entry is corrupt, or storage
+// is unavailable - callers fall back to an empty query box.
+function readStoredQuery() {
+  try {
+    const raw = sessionStorage.getItem(QUERY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      question: parsed.question || '',
+      answer: parsed.answer || '',
+      referencedPlants: Array.isArray(parsed.referencedPlants) ? parsed.referencedPlants : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredQuery(entry) {
+  try {
+    sessionStorage.setItem(QUERY_STORAGE_KEY, JSON.stringify(entry));
+  } catch {
+    // storage disabled or full - persisting the answer is a nicety, not required
+  }
+}
+
+function clearStoredQuery() {
+  try {
+    sessionStorage.removeItem(QUERY_STORAGE_KEY);
+  } catch {
+    // as above - nothing to do if storage is unavailable
+  }
+}
+
 export default function HorticultureHandbook() {
   const [plantFamily, setPlantFamily] = useState('');
   const [siteSuitability, setSiteSuitability] = useState('');
@@ -70,9 +108,12 @@ export default function HorticultureHandbook() {
   const [error, setError] = useState('');
   const [jumpTarget, setJumpTarget] = useState('');
 
-  // klemens - state for the AI query box
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
+  // klemens - state for the AI query box, seeded once from sessionStorage so
+  // returning from a plant detail page shows the previous answer and chips
+  const [storedQuery] = useState(readStoredQuery);
+  const [question, setQuestion] = useState(storedQuery?.question || '');
+  const [answer, setAnswer] = useState(storedQuery?.answer || '');
+  const [referencedPlants, setReferencedPlants] = useState(storedQuery?.referencedPlants || []);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState('');
 
@@ -147,17 +188,41 @@ export default function HorticultureHandbook() {
     setAsking(true);
     setAskError('');
     setAnswer('');
+    setReferencedPlants([]);
+    // drop the previous entry up front so a failed request cannot leave a
+    // stale answer behind, on screen or in storage
+    clearStoredQuery();
     http
       .post('/api/flora/query', { question: question.trim() })
-      .then((res) => setAnswer(res.data.answer))
+      .then((res) => {
+        const plants = res.data.referencedPlants || [];
+        setAnswer(res.data.answer);
+        setReferencedPlants(plants);
+        writeStoredQuery({
+          question: question.trim(),
+          answer: res.data.answer,
+          referencedPlants: plants,
+        });
+      })
       .catch((err) => {
-        if (err.response?.status === 503) {
+        // 503 now covers both a missing API key and a temporarily overloaded
+        // model, so match on the server's message rather than the status.
+        const serverError = err.response?.data?.error;
+        if (serverError === 'AI service not configured') {
           setAskError('AI querying is not configured (no API key set)');
         } else {
-          setAskError(err.response?.data?.error || 'Failed to get an answer.');
+          setAskError(serverError || 'Failed to get an answer.');
         }
       })
       .finally(() => setAsking(false));
+  };
+
+  // klemens - discard the current answer and the stored entry behind it
+  const handleClearAnswer = () => {
+    setQuestion('');
+    setAnswer('');
+    setReferencedPlants([]);
+    clearStoredQuery();
   };
 
   // submit a site condition to the AI planting suggestions endpoint
@@ -399,10 +464,35 @@ export default function HorticultureHandbook() {
           >
             {asking ? <CircularProgress size={24} color="inherit" /> : 'Ask'}
           </Button>
+          {answer && (
+            <Button size="small" onClick={handleClearAnswer} sx={{ ml: 1 }}>
+              Clear
+            </Button>
+          )}
           {askError && <Alert severity="error" sx={{ mt: 2 }}>{askError}</Alert>}
           {answer && (
             <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, whiteSpace: 'pre-line' }}>
               <Typography variant="body2">{answer}</Typography>
+            </Box>
+          )}
+          {referencedPlants.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Plants mentioned:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {referencedPlants.map((plant) => (
+                  <Chip
+                    key={plant.id}
+                    label={plant.common_name || plant.species}
+                    size="small"
+                    variant="outlined"
+                    clickable
+                    component={RouterLink}
+                    to={`/flora/${plant.id}`}
+                  />
+                ))}
+              </Box>
             </Box>
           )}
         </CardContent>

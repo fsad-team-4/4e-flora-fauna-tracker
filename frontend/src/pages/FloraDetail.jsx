@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
 import {
@@ -219,6 +219,18 @@ export default function FloraDetail() {
     }
   };
 
+  // Go back to wherever the user came from (the flora list, the Horticulture
+  // Handbook, ...). history.state.idx is the router's position in the history
+  // stack - 0 or missing means the URL was opened directly and there is nothing
+  // to go back to, so fall back to the flora list.
+  const handleBack = () => {
+    if (window.history.state?.idx > 0) {
+      navigate(-1);
+    } else {
+      navigate('/flora');
+    }
+  };
+
   const handleGetRecommendation = async () => {
     setRecError('');
     setRecommending(true);
@@ -255,12 +267,11 @@ export default function FloraDetail() {
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
       <Button
-        component={RouterLink}
-        to="/flora"
+        onClick={handleBack}
         startIcon={<ArrowBackIcon />}
         sx={{ mb: 2 }}
       >
-        Back to Flora Management
+        Back
       </Button>
 
       {/* Page header */}

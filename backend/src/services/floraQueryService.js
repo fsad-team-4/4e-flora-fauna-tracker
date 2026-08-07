@@ -49,6 +49,52 @@ Staff question: ${question}
 Answer:`;
 }
 
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Index of the first case-insensitive, whole-word occurrence of `name` in
+// `text`, or -1. Names can be multi-word, so the boundaries are lookarounds
+// rather than \b.
+function firstMentionIndex(text, name) {
+  const trimmed = (name || '').trim();
+  if (trimmed === '') return -1;
+  const pattern = new RegExp(`(?<![A-Za-z0-9])${escapeRegex(trimmed)}(?![A-Za-z0-9])`, 'i');
+  const match = pattern.exec(text);
+  return match ? match.index : -1;
+}
+
+// Which catalog plants the answer mentions, in the order they first appear.
+// Matching only ever runs against records fetched from the database, so a
+// plant the model invents can never end up here.
+function findReferencedPlants(answer, records) {
+  const mentions = [];
+  records.forEach((record) => {
+    const indexes = [
+      firstMentionIndex(answer, record.species),
+      firstMentionIndex(answer, record.common_name),
+    ].filter((index) => index !== -1);
+    if (indexes.length > 0) {
+      mentions.push({ index: Math.min(...indexes), record });
+    }
+  });
+
+  mentions.sort((a, b) => a.index - b.index);
+
+  const seen = new Set();
+  const referenced = [];
+  mentions.forEach(({ record }) => {
+    if (seen.has(record.id)) return;
+    seen.add(record.id);
+    referenced.push({
+      id: record.id,
+      species: record.species,
+      common_name: record.common_name,
+    });
+  });
+  return referenced;
+}
+
 async function queryCatalog(question) {
   const records = await GreeneryRecord.findAll({
     where: { is_deleted: false },
@@ -61,7 +107,13 @@ async function queryCatalog(question) {
     config: { maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 0 } },
   });
 
-  return { answer: (response.text || '').trim(), plantCount: records.length };
+  const answer = (response.text || '').trim();
+
+  return {
+    answer,
+    plantCount: records.length,
+    referencedPlants: findReferencedPlants(answer, records),
+  };
 }
 
 module.exports = { queryCatalog, hasApiKey };
