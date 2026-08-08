@@ -1,3 +1,9 @@
+// Render's free tier cannot route IPv6 outbound, so DNS lookups that return an
+// AAAA record (e.g. smtp.gmail.com) fail with ENETUNREACH. Force Node to prefer
+// A records over AAAA process-wide, before anything else opens a socket.
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 require('dotenv').config();
 
 const express = require('express');
