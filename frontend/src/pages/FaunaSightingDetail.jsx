@@ -3,6 +3,7 @@ import { useParams, Link as RouterLink } from 'react-router-dom';
 import {
   Box, Typography, Button, Chip, Alert, Stack, Divider,
   TextField, MenuItem, Link,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from '@mui/material';
 import PetsIcon from '@mui/icons-material/Pets';
 import FlutterDashIcon from '@mui/icons-material/FlutterDash';
@@ -44,6 +45,17 @@ export default function FaunaSightingDetail() {
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState('');
 
+  // Setting a blockless sighting's block, or correcting one that is already
+  // recorded. `editingBlock` reveals the input; `confirmOpen` gates the actual
+  // PATCH behind a confirmation, because re-attributing a sighting moves it
+  // between block summaries - it leaves the old block's totals and joins the
+  // new one's, changing the risk level both blocks report.
+  const [editingBlock, setEditingBlock] = useState(false);
+  const [blockValue, setBlockValue] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [savingBlock, setSavingBlock] = useState(false);
+  const [blockError, setBlockError] = useState('');
+
   const loadSighting = () =>
     http
       .get(`/api/fauna/${id}`)
@@ -77,7 +89,29 @@ export default function FaunaSightingDetail() {
     }
   };
 
+  const handleSetBlock = async () => {
+    setBlockError('');
+    setSavingBlock(true);
+    try {
+      await http.patch(`/api/fauna/${id}/block`, { block_number: blockValue.trim() });
+      setConfirmOpen(false);
+      setEditingBlock(false);
+      setBlockValue('');
+      await loadSighting();
+    } catch (err) {
+      const messages = err.response?.data?.error;
+      setConfirmOpen(false);
+      setBlockError(Array.isArray(messages) ? messages.join(', ') : messages || 'Failed to set block number');
+    } finally {
+      setSavingBlock(false);
+    }
+  };
+
   const canUpdate = user && (user.role === 'field_officer' || user.role === 'manager');
+  // Offered whether or not a block is already recorded: GPS puts a sighting near
+  // a boundary often enough that a recorded block may need correcting too.
+  const canSetBlock = canUpdate && sighting;
+  const currentBlock = sighting?.block_number || '';
   const severity = severityFor(sighting?.behaviour_tags);
 
   return (
@@ -119,6 +153,86 @@ export default function FaunaSightingDetail() {
               <Typography>{formatBlock(sighting.block_number)}</Typography>
             </Box>
           )}
+
+          {canSetBlock && (
+            <Box sx={{ mt: 1 }}>
+              {!currentBlock && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <LocationOnIcon fontSize="small" color="action" />
+                  <Typography color="text.secondary">No block number recorded</Typography>
+                </Box>
+              )}
+
+              {!editingBlock && (
+                <Button
+                  size="small"
+                  sx={{ mt: 0.5 }}
+                  // Pre-fill with the current block so a correction starts from a
+                  // known value instead of an empty field.
+                  onClick={() => { setBlockValue(currentBlock); setEditingBlock(true); }}
+                >
+                  {currentBlock ? 'Change block number' : 'Set block number'}
+                </Button>
+              )}
+
+              {editingBlock && (
+                <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1 }}>
+                  <TextField
+                    label="Block number"
+                    size="small"
+                    autoFocus
+                    value={blockValue}
+                    onChange={(e) => setBlockValue(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  />
+                  <Button
+                    variant="contained"
+                    size="small"
+                    // Unchanged value is a no-op - same guard the status button uses.
+                    disabled={!blockValue.trim() || blockValue.trim() === currentBlock || savingBlock}
+                    onClick={() => setConfirmOpen(true)}
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    size="small"
+                    disabled={savingBlock}
+                    onClick={() => { setEditingBlock(false); setBlockValue(''); setBlockError(''); }}
+                  >
+                    Cancel
+                  </Button>
+                </Stack>
+              )}
+
+              {blockError && <Alert severity="error" sx={{ mt: 1 }}>{blockError}</Alert>}
+            </Box>
+          )}
+
+          <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+            <DialogTitle>{currentBlock ? 'Change block number' : 'Set block number'}</DialogTitle>
+            <DialogContent>
+              <DialogContentText>
+                {currentBlock ? (
+                  <>
+                    Change block number from &quot;{currentBlock}&quot; to
+                    &quot;{blockValue.trim()}&quot;? This will move the sighting into that
+                    block&apos;s summary.
+                  </>
+                ) : (
+                  <>
+                    Set block number to &quot;{blockValue.trim()}&quot;? This will attribute the
+                    sighting to that block&apos;s summary.
+                  </>
+                )}
+              </DialogContentText>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmOpen(false)} disabled={savingBlock}>Cancel</Button>
+              <Button variant="contained" onClick={handleSetBlock} disabled={savingBlock}>
+                {savingBlock ? 'Saving...' : 'Confirm'}
+              </Button>
+            </DialogActions>
+          </Dialog>
           {sighting.floor_level && <Typography>Floor: {sighting.floor_level}</Typography>}
           {sighting.gps_lat != null && sighting.gps_lng != null && (
             <>

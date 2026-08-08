@@ -208,9 +208,10 @@ Get a single sighting.
 
 ### PATCH /api/fauna/:id/status
 
-Update a sighting's case status. This is the only mutation available after
-creation - there is no endpoint to edit `behaviour_tags`, `notes` or any other
-field of an existing sighting.
+Update a sighting's case status. Along with
+`PATCH /api/fauna/:id/block`, this is one of only two mutations available after
+creation - there is no endpoint to edit `species`, `behaviour_tags`, `notes` or
+any other field of an existing sighting.
 
 - Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Request body:
@@ -225,6 +226,76 @@ field of an existing sighting.
   - `401` — missing/invalid token
   - `403` — role not field_officer/manager
   - `404` — sighting not found or soft-deleted
+
+---
+
+### PATCH /api/fauna/:id/block
+
+Set or correct the block a sighting is attributed to, after a staff member has
+reviewed the pin. It covers two cases:
+
+- a sighting with **no** block, typically auto-created from a GPS-only resident
+  report, which lands in the `Unknown` hotspot bucket until it is attributed
+- a sighting whose recorded block turned out to be **wrong** - GPS places a
+  sighting near a block boundary more often than it appears
+
+The operation is **not one-way**: an already-set block can be changed again.
+Because hotspot counts, `risk_level`, the AI summary and the alert email are all
+derived per block, re-attributing a sighting **moves it between block summaries**
+- it leaves the old block's totals and joins the new one's. The frontend confirms
+the change with the current and new value before calling this.
+
+Welfare Partners are excluded even for sightings inside their assigned blocks:
+attributing a sighting to a block is an internal judgement call. Note the
+handler itself performs no zone check, since the route is internal-only.
+
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
+- Request body:
+
+  | Field | Type | Required | Notes |
+  |-------|------|----------|-------|
+  | block_number | string | yes | trimmed then required, so a whitespace-only value is rejected; stored trimmed |
+
+  ```json
+  { "block_number": "Block 305" }
+  ```
+
+- Success: `200` — the updated sighting object
+
+  ```json
+  {
+    "id": 23,
+    "species": "cat",
+    "block_number": "Block 305",
+    "floor_level": null,
+    "behaviour_tags": [],
+    "gps_lat": 1.38872,
+    "gps_lng": 103.90379,
+    "photo_url": null,
+    "notes": "Cat at the void deck, no block recorded",
+    "status": "open",
+    "reported_by": 3,
+    "is_deleted": false,
+    "createdAt": "2026-08-08T10:00:00.000Z",
+    "updatedAt": "2026-08-09T09:15:00.000Z"
+  }
+  ```
+
+- Errors:
+  - `400` — missing, empty or whitespace-only `block_number`:
+    `{ "error": [...messages] }`
+  - `401` — missing/invalid token
+  - `403` — role not field_officer/manager (includes `welfare_partner`)
+  - `404` — `{ "error": "Sighting not found" }` (missing or soft-deleted)
+
+**Known limitation - reassignment is unaudited.** No record is kept of who
+changed a block or what the previous value was. A sighting can be moved between
+blocks repeatedly with no history, even though doing so changes the counts and
+risk level those blocks report. The fauna module has no audit table of its own -
+`PATCH /api/fauna/:id/status` is equally unlogged - so neither mutation can be
+traced back to a user. The `CaseStatusLog` pattern that records every status
+change on a ResidentReport lives in the resident reports module and is not
+applied to fauna sightings.
 
 ---
 
@@ -284,6 +355,20 @@ Results are limited to a recency window, using the same cutoff and the same
 30-day default as `GET /api/fauna/hotspots`, so the drill-down lists exactly the
 sightings the block card counted. Sightings for the block that fall outside the
 window are not returned.
+
+**The `Unknown` bucket is a valid `:block` value here.** `GET /api/fauna/hotspots`
+groups sightings that carry no block under the literal name `Unknown`, which is
+never stored in the column. Passing it to this endpoint is translated back into
+"no block recorded" - `block_number IS NULL OR block_number = ''` - so the
+drill-down returns the blockless sightings rather than an empty array. The empty
+string is matched alongside `null` because rows written before block
+normalisation can still hold `''` (see `database-schema.md`). This backs the
+"Unknown block" card on the Hotspots page, which opens into this list only: it
+has no real block, so no risk level, AI summary or alert email is offered for it
+(see UC-F6 and UC-F8 in `use-cases.md`).
+
+The summary and alert endpoints do **not** apply this translation - they query
+`block_number` directly, so `Unknown` returns `404` there.
 
 Each sighting carries an `untagged_mentions` array: behaviour keywords that
 appear in its `notes` text (case-insensitive) but are **not** in its

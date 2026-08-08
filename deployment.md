@@ -99,30 +99,38 @@ mirrors `backend/.env.example`.
 | `CLOUDINARY_API_KEY` | Cloudinary API key. | Required for photo upload |
 | `CLOUDINARY_API_SECRET` | Cloudinary API secret. | Required for photo upload |
 | `GEMINI_API_KEY` | Google AI Studio key for AI flora care recommendations. Unset disables the feature and the endpoint returns 503. | Optional |
-| `SMTP_HOST` | SMTP server hostname for outgoing mail. | Optional |
-| `SMTP_PORT` | SMTP port. Defaults to `587` if unset. | Optional |
-| `SMTP_SECURE` | `true` for port 465, `false` for 587. | Optional |
-| `SMTP_USER` | SMTP username. For Gmail, the full address. | Optional |
-| `SMTP_PASS` | SMTP password. For Gmail, an app password, not the account password. | Optional |
+| `SMTP_HOST` | SMTP server hostname for outgoing mail. **Has no effect on the current deployment - see section 7.** | Local only |
+| `SMTP_PORT` | SMTP port. Defaults to `587` if unset. Both 587 and 465 are blocked on the Render free tier. | Local only |
+| `SMTP_SECURE` | `true` for port 465, `false` for 587. | Local only |
+| `SMTP_USER` | SMTP username. For Gmail, the full address. | Local only |
+| `SMTP_PASS` | SMTP password. For Gmail, an app password, not the account password. | Local only |
 | `EMAIL_FROM` | From address on outgoing mail. Falls back to a built-in default. | Optional |
 
 `JWT_SECRET` is a hard requirement at boot, not at first request:
 `src/index.js` logs an error and calls `process.exit(1)` if it is missing, so the
 service crash-loops on Render rather than starting in a broken state.
 
-**The SMTP variables are optional, but leaving them unset means production email
-never actually delivers.** Real SMTP is used only when `SMTP_HOST`, `SMTP_USER`,
-and `SMTP_PASS` are all three set. Otherwise:
+**The SMTP variables are marked "Local only" because setting them on Render does
+not work.** The free tier blocks the outbound SMTP ports, so the deployed
+instance is run with them deliberately unset - see section 7 for the detail. They
+are still the way to get real delivery when running locally.
+
+Real SMTP is used only when `SMTP_HOST`, `SMTP_USER`, and `SMTP_PASS` are all
+three set. Otherwise:
 
 - `src/config/mailer.js` (case-resolved emails, flora health alerts) creates an
   Ethereal test account. Ethereal accepts the message and returns a preview URL
   in the Render logs, but delivers nothing to the real recipient.
-- `src/services/emailService.js` (weekly summary) prints the message to the
-  console instead.
+- `src/services/emailService.js` (weekly summary, and the fauna block alert email
+  sent from `POST /api/fauna/hotspots/:block/alert-send`) prints the message to
+  the console instead and returns `{ ok: true, stubbed: true }`. The caller
+  cannot tell a stubbed send from a real one, so the fauna alert UI reports
+  "Alert email sent" either way.
 
 Both are deliberate developer conveniences so teammates without mail credentials
-can run the app. Neither is a production configuration. If the demo needs a real
-email to arrive in a real inbox, all three SMTP variables must be set on Render.
+can run the app. Neither is a production configuration. Getting a real email into
+a real inbox therefore has to be demonstrated **locally** - it cannot be done on
+the current Render deployment at all, whatever the variables are set to.
 
 Not in `.env.example`, but read by the code: `CRON_SCHEDULE` optionally overrides
 the weekly summary cron expression (`src/cron.js`), which is useful for testing
@@ -244,14 +252,44 @@ run the matching `ALTER TABLE` against Neon (via the Neon SQL editor) before or
 alongside the deploy. Dropping and re-syncing works too but destroys all data, so
 it is only acceptable before a demo has been seeded.
 
-**Render's free tier cannot route IPv6 outbound.** `smtp.gmail.com` resolves to
-an IPv6 address, Node picks it, and the connection dies with `ENETUNREACH` -
-which reads like a credentials or firewall problem but is neither. The fix is to
-force IPv4 on the transporter, which `src/config/mailer.js` does with
-`family: 4`. Note that `src/services/emailService.js` builds its own transporter
-and does **not** currently set `family: 4`, so the weekly summary email is still
-exposed to this on Render with an IPv6-resolving SMTP host. If that path starts
-failing with `ENETUNREACH`, add `family: 4` there as well.
+**Render's free tier blocks outbound SMTP entirely, so the deployed instance
+cannot send real mail.** There are two separate problems here, and only one of
+them has a code-level fix.
+
+*The IPv6 half, which is fixed in code.* `smtp.gmail.com` resolves to an IPv6
+address, Node picks it, and the connection dies with `ENETUNREACH` - which reads
+like a credentials or firewall problem but is neither. Two changes address this:
+
+- `family: 4` on the transporter in `src/config/mailer.js` **and** in
+  `src/services/emailService.js`. Both build their own transporter, so both need
+  it; `emailService.js` was missing it initially and timed out on Render while
+  working fine locally.
+- `dns.setDefaultResultOrder('ipv4first')` at the top of `src/index.js`, which
+  makes Node prefer IPv4 for every lookup in the process rather than per
+  transporter.
+
+*The port half, which has no code-level fix.* Even on IPv4, the free tier blocks
+the outbound SMTP ports themselves:
+
+| Port | Result on Render free tier |
+|------|----------------------------|
+| 587 | fails with `ENETUNREACH` (and resolves to IPv6, which the tier also cannot route) |
+| 465 | fails with a connection timeout |
+
+This is a platform restriction, not a configuration mistake. No combination of
+`family: 4`, DNS ordering, host, or credentials gets past it.
+
+**Consequence: the deployed instance runs with the SMTP variables unset.** It
+therefore falls back to the Ethereal test account, which accepts the message and
+logs a preview URL in the Render logs rather than delivering to the recipient.
+Real SMTP delivery has been verified working **locally**, where the ports are
+open - so the mail code itself is correct and this is purely a hosting limit.
+
+To send real mail from a deployed instance you would need either a paid Render
+tier, or an HTTP-based email API such as Resend or SendGrid, which deliver over
+HTTPS and so are not affected by the SMTP port block. Switching to one would mean
+replacing the Nodemailer transporters in `src/config/mailer.js` and
+`src/services/emailService.js`; nothing that calls them would have to change.
 
 **Render's free tier sleeps after about 15 minutes of inactivity.** The first
 request after it sleeps takes roughly 50 seconds while the instance cold-starts,
@@ -293,10 +331,11 @@ service, so a failure points at a specific place.
    `GEMINI_API_KEY`. A 503 here means the key is unset.
 9. **As staff, move a report to Resolved** - confirms the status workflow and
    triggers the resolved-case email.
-10. **Check mail delivery** - if the SMTP variables are set, the email should
-    arrive in the resident's inbox. If they are not set, check the Render logs
-    for the Ethereal preview URL instead, and remember that nothing was actually
-    delivered.
+10. **Check mail delivery** - on the Render deployment, expect the Ethereal
+    preview URL in the logs and nothing in any real inbox; the SMTP ports are
+    blocked there, so this is the correct result, not a failure (section 7). To
+    verify real delivery, run the same step locally with the SMTP variables set
+    and confirm the mail arrives in the resident's inbox.
 11. **Check the Render logs for errors** - a 500 immediately after a model change
     is almost always the missing-column issue in section 7.
 

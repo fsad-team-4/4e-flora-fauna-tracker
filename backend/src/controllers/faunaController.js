@@ -6,6 +6,28 @@ const { sendEmail } = require('../services/emailService');
 const { INTERNAL_ROLES, getAssignedBlocks } = require('../middleware/auth');
 
 const STATUSES = ['open', 'in_progress', 'resolved'];
+
+// The bucket a sighting with no block_number is filed under. Not a real block -
+// it never appears in the column, so any query for it has to be translated back
+// into "no block recorded" (see blockWhere).
+const UNKNOWN_BLOCK = 'Unknown';
+
+// Normalises a block to what should be stored: a blank or whitespace-only value
+// means "no block", which is null. Keeps the column from mixing '' and null.
+function normaliseBlock(block) {
+  const trimmed = typeof block === 'string' ? block.trim() : block;
+  return trimmed ? trimmed : null;
+}
+
+// Where-clause fragment for a block coming off the URL. The Unknown bucket maps
+// to "no block recorded"; '' is still matched alongside null so rows written
+// before normalisation are not stranded.
+function blockWhere(block) {
+  if (block === UNKNOWN_BLOCK) {
+    return { [Op.or]: [{ block_number: null }, { block_number: '' }] };
+  }
+  return { block_number: block };
+}
 const SPECIES = ['cat', 'pigeon', 'crow', 'mynah', 'other'];
 const BEHAVIOUR_TAGS = ['urinating', 'feeding', 'nesting', 'droppings', 'aggressive'];
 
@@ -22,9 +44,17 @@ const statusSchema = yup.object({
   status: yup.string().required().oneOf(STATUSES),
 });
 
+// Trimmed first, so a whitespace-only block is rejected rather than stored -
+// same treatment as block_number on createSchema.
+const blockSchema = yup.object({
+  block_number: yup.string().required().trim(),
+});
+
 const createSchema = yup.object({
   species: yup.string().required().oneOf(SPECIES),
-  block_number: yup.string().required(),
+  // Trimmed first, so a whitespace-only block is rejected here rather than
+  // passing validation and being normalised to null on the way to the database.
+  block_number: yup.string().required().trim(),
   floor_level: yup.string().optional(),
   behaviour_tags: yup.array().of(yup.string().oneOf(BEHAVIOUR_TAGS)).optional(),
   gps_lat: yup.number().optional(),
@@ -141,6 +171,7 @@ async function createSighting(req, res) {
 
   const sighting = await FaunaSighting.create({
     ...data,
+    block_number: normaliseBlock(data.block_number),
     behaviour_tags: data.behaviour_tags || [],
     reported_by: req.user.user_id,
   });
@@ -164,6 +195,33 @@ async function updateStatus(req, res) {
   }
 
   sighting.status = data.status;
+  await sighting.save();
+
+  return res.status(200).json(sighting);
+}
+
+// Sets or corrects the block a sighting is attributed to, after a staff member
+// has reviewed the pin. Covers both a blockless sighting (typically auto-created
+// from a GPS-only resident report) and one whose recorded block turned out to be
+// wrong - GPS puts a sighting near a boundary more often than it looks.
+// Re-attributing moves the sighting between block summaries, so the frontend
+// confirms the change before calling this.
+async function updateBlock(req, res) {
+  let data;
+  try {
+    data = await blockSchema.validate(req.body, { abortEarly: false, stripUnknown: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.errors });
+  }
+
+  const sighting = await FaunaSighting.findOne({
+    where: { id: req.params.id, is_deleted: false },
+  });
+  if (!sighting) {
+    return res.status(404).json({ error: 'Sighting not found' });
+  }
+
+  sighting.block_number = normaliseBlock(data.block_number);
   await sighting.save();
 
   return res.status(200).json(sighting);
@@ -202,7 +260,7 @@ async function getHotspots(req, res) {
   // no block_number is filed under 'Unknown'.
   const blocks = {};
   for (const s of sightings) {
-    const key = s.block_number || 'Unknown';
+    const key = s.block_number || UNKNOWN_BLOCK;
     const block = blocks[key] || (blocks[key] = { total: 0, breakdown: {} });
     block.total += 1;
     block.breakdown[s.species] = (block.breakdown[s.species] || 0) + 1;
@@ -230,7 +288,7 @@ async function getBlockSightings(req, res) {
   const sightings = await FaunaSighting.findAll({
     where: {
       is_deleted: false,
-      block_number: block,
+      ...blockWhere(block),
       createdAt: { [Op.gte]: cutoff },
     },
     attributes: ['id', 'species', 'block_number', 'floor_level', 'behaviour_tags', 'notes', 'createdAt'],
@@ -494,6 +552,7 @@ module.exports = {
   getSighting,
   createSighting,
   updateStatus,
+  updateBlock,
   softDeleteSighting,
   getHotspots,
   getBlockSightings,
