@@ -17,6 +17,9 @@ router.get('/', protect, restrictTo('field_officer', 'manager', 'welfare_partner
 router.post('/', protect, restrictTo('field_officer', 'manager', 'welfare_partner'), faunaController.createSighting);
 router.get('/:id', protect, restrictTo('field_officer', 'manager', 'welfare_partner'), faunaController.getSighting);
 router.patch('/:id/status', protect, restrictTo('field_officer', 'manager'), faunaController.updateStatus);
+// Attributing a blockless sighting to a block is an internal judgement call, so
+// Welfare Partners are excluded even for sightings inside their own zone.
+router.patch('/:id/block', protect, restrictTo('field_officer', 'manager'), faunaController.updateBlock);
 router.delete('/:id', protect, restrictTo('manager'), faunaController.softDeleteSighting);
 
 module.exports = router;

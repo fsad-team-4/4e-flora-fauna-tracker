@@ -19,6 +19,7 @@ Test files:
 | `fauna.create.test.js` | `POST /api/fauna` - sighting creation and validation |
 | `fauna.blockSightings.test.js` | `GET /api/fauna/hotspots/:block/sightings` - block drill-down and untagged mentions |
 | `fauna.alerts.test.js` | risk level in the block summary, alert draft, alert send |
+| `fauna.updateBlock.test.js` | `PATCH /api/fauna/:id/block` - setting and changing a sighting's block number |
 
 ---
 
@@ -99,6 +100,33 @@ alone.
 
 ---
 
+---
+
+## 6. Setting and changing a block number - `PATCH /api/fauna/:id/block`
+
+Fixtures: a `field_officer` and a `welfare_partner`, each logged in for a JWT.
+Every test builds its own sighting through a `blocklessSighting()` helper - a cat
+with GPS but, by default, no block - so no test depends on another's state. The
+helper takes an optional block, which the tests use to create a sighting that
+already has one.
+
+The endpoint sets **or** changes the block: it is not one-way, so a sighting that
+already carries a block can be re-attributed to a different one.
+
+| # | Test file | What is tested | Expected outcome |
+|---|-----------|----------------|------------------|
+| 21 | `fauna.updateBlock.test.js` | A field officer sets a block on a sighting that has none | `200`; the response carries `block_number: 'Block 305'`, and the reloaded row confirms it was persisted |
+| 22 | `fauna.updateBlock.test.js` | A padded value `'  Block 306  '` is submitted | `200`; stored trimmed as `'Block 306'` |
+| 23 | `fauna.updateBlock.test.js` | A sighting stored with `''` rather than null (a row written before block normalisation) | `200`; still treated as blockless and updated to `'Block 307'`, so legacy rows are not stranded |
+| 24 | `fauna.updateBlock.test.js` | A welfare partner attempts the update | `403`; the reloaded row still has `block_number` null, confirming nothing was written |
+| 25 | `fauna.updateBlock.test.js` | A field officer changes a block that is already set (`'Block 101'` to `'Block 999'`) | `200`; response and reloaded row both show `'Block 999'` - re-attribution is allowed |
+| 26 | `fauna.updateBlock.test.js` | The hotspot consequence of a change: a sighting moved from `'Block 201'` to `'Block 202'` | `GET /api/fauna/hotspots` no longer lists `'Block 201'` at all, and `'Block 202'` has `total: 1` - the sighting moved between summaries |
+| 27 | `fauna.updateBlock.test.js` | A whitespace-only `block_number` (`'   '`) | `400`; the reloaded row still has `block_number` null |
+| 28 | `fauna.updateBlock.test.js` | `block_number` omitted from the body entirely | `400` |
+| 29 | `fauna.updateBlock.test.js` | An id that matches no sighting (`99999`) | `404` with `error: "Sighting not found"` |
+
+---
+
 ## Totals
 
 | File | Test cases |
@@ -106,4 +134,5 @@ alone.
 | `fauna.create.test.js` | 5 |
 | `fauna.blockSightings.test.js` | 4 |
 | `fauna.alerts.test.js` | 11 |
-| **Total** | **20** |
+| `fauna.updateBlock.test.js` | 9 |
+| **Total** | **29** |

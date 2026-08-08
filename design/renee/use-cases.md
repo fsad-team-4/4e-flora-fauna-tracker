@@ -218,7 +218,11 @@ Main flow:
 Alternate / exception flows:
 
 - No sightings in the period -> "No hotspots found".
-- Sightings with no block number are grouped under `Unknown`.
+- Sightings with no block number are grouped under `Unknown`, shown as an
+  "Unknown block" card. It opens like any other card, but only into the
+  sightings list (UC-F8) - no risk chip, AI summary or alert buttons, since
+  there is no real block to assess. Its caption points staff to the detail page
+  to set a block (UC-F12).
 - `?days=` overrides the 30-day default.
 - Welfare Partner attempts access -> `403`; the nav link is not shown to them.
 
@@ -271,15 +275,18 @@ loop).
 ## UC-F8: Internal user drills down into the sightings behind a block
 
 - Actor: Field Officer or Manager
-- Precondition: a block card has been expanded on the Hotspots page.
+- Precondition: a block card has been expanded on the Hotspots page. This
+  includes the "Unknown block" card, which opens into this list only.
 
 Main flow:
 
 1. Expanding the block also calls
    `GET /api/fauna/hotspots/:block/sightings`.
-2. The backend returns every non-deleted sighting for that block, newest
-   first, and for each one computes `untagged_mentions`: behaviour keywords
-   that appear in the sighting's `notes` text but are missing from its
+2. The backend returns the non-deleted sightings for that block within the same
+   30-day window as the block card, newest first, so the list matches the count
+   on the card. For the `Unknown` bucket it returns the sightings that have no
+   block number instead. For each one it computes `untagged_mentions`: behaviour
+   keywords that appear in the sighting's `notes` text but are missing from its
    `behaviour_tags`.
 3. A side panel lists the sightings with species icon, reporter name and
    date. A sighting with untagged mentions shows a "Notes mention: ..." chip,
@@ -292,8 +299,10 @@ Alternate / exception flows:
 
 - Notes empty, or every keyword found is already tagged -> `untagged_mentions`
   is `[]` and no hint chip is shown.
-- Unknown block -> `200` with an empty array (not a `404`), shown as "No
-  sightings found".
+- The `Unknown` bucket -> `200` with the sightings that have no block number;
+  it is a real bucket, not an error case (see UC-F6).
+- A block name that matches no sighting -> `200` with an empty array (not a
+  `404`), shown as "No sightings found".
 - Request fails -> "Failed to load sightings" in the panel.
 
 Postcondition: the user has seen the individual records behind the count. This
@@ -389,3 +398,56 @@ Alternate / exception flows:
 
 Postcondition: the sighting is hidden from the API but retained in the
 database for data retention and audit.
+
+---
+
+## UC-F12: Internal user sets or corrects a sighting's block number
+
+- Actor: Field Officer or Manager
+- Precondition: the user is logged in with one of those roles and is viewing a
+  sighting's detail page. The sighting may have no block number (typically
+  auto-created from a GPS-only resident report, so it sits in the `Unknown`
+  bucket) or may already have one that turned out to be wrong.
+
+Main flow:
+
+1. The detail page shows a **Set block number** action when the sighting has no
+   block, or **Change block number** when it already has one. A blockless
+   sighting also shows "No block number recorded" in place of the usual block
+   line.
+2. The user clicks the action. A text input appears, pre-filled with the current
+   block number if there is one, so a correction starts from a known value
+   rather than an empty field. The GPS coordinates and "View on Google Maps"
+   link already on the page are what the user works from to decide the block.
+3. The user enters or edits the value and clicks Save. Save stays disabled while
+   the value is blank or unchanged.
+4. A confirmation dialog states exactly what will happen - "Set block number to
+   'X'? This will attribute the sighting to that block's summary." for a
+   blockless sighting, or "Change block number from 'X' to 'Y'? This will move
+   the sighting into that block's summary." when one already exists.
+5. On confirming, the frontend calls `PATCH /api/fauna/:id/block` with
+   `{ block_number }`. The backend validates it, trims it, and saves.
+6. The page reloads the sighting, so the block now appears on it and the action
+   switches to "Change block number".
+
+Alternate / exception flows:
+
+- Whitespace-only or empty value -> `400`; the schema trims before the required
+  check, so the sighting is not modified. The Save button also blocks this
+  client-side.
+- `block_number` missing from the request body -> `400`.
+- A Welfare Partner attempts the change -> `403`, even for a sighting inside
+  their assigned blocks: attributing a sighting to a block is an internal
+  judgement call. The action is not rendered for them.
+- Sighting id not found or soft-deleted -> `404` "Sighting not found".
+- A sighting stored with an empty string rather than null (a row predating block
+  normalisation) is treated as blockless and can be set normally.
+
+Postcondition: the sighting is attributed to the given block. Because hotspot
+counts, risk level, the AI summary and the alert email are all derived per
+block, the sighting leaves its previous bucket - `Unknown` or another block -
+and joins the new one, changing what both blocks report.
+
+Known limitation: the change is not audited. No record is kept of who
+reassigned a sighting or what the previous block was, so a re-attribution
+cannot be traced back to a user.

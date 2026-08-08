@@ -20,7 +20,11 @@ async function createFaunaSightingFromReport(report, reportedBy) {
 
     await FaunaSighting.create({
       species,
-      block_number: report.block_number,
+      // A GPS-only report carries no block. Store that as null rather than the
+      // '' the form sends, so "no block" is one value in the column.
+      block_number: report.block_number && report.block_number.trim()
+        ? report.block_number.trim()
+        : null,
       floor_level: report.floor_level,
       gps_lat: report.gps_lat,
       gps_lng: report.gps_lng,

@@ -33,7 +33,7 @@ fauna UI and no fauna endpoint.
 |--------|------|-------------|
 | id | INTEGER | PK, auto-increment |
 | species | ENUM('cat','pigeon','crow','mynah','other') | NOT NULL, `isIn` validator |
-| block_number | STRING | nullable at the DB level; **required** by `POST /api/fauna`, carried as-is from the ResidentReport on auto-creation |
+| block_number | STRING | nullable at the DB level; **required** by `POST /api/fauna`. Normalised on every write: trimmed, and a blank or whitespace-only value is stored as `null`. On auto-creation from a ResidentReport the report's block is trimmed, and a GPS-only report (no block) yields `null`. Editable afterwards via `PATCH /api/fauna/:id/block` |
 | floor_level | STRING | nullable |
 | behaviour_tags | JSON | NOT NULL, default `[]` |
 | gps_lat | FLOAT | nullable |
@@ -58,6 +58,32 @@ Yup `createSchema` in `faunaController.js`: `notes` is `required()` and
 `trim()`ed, so a whitespace-only description fails validation. The frontend
 form (`FaunaLogSighting.jsx`) mirrors the same rule with a `required` Notes
 field labelled as the description.
+
+### block_number: normalisation and editing
+
+"No block" is stored as `null`, never as an empty string. Both write paths
+normalise:
+
+- `POST /api/fauna` - the Yup schema is `.required().trim()`, so a blank or
+  whitespace-only block is rejected with `400` before it reaches the database,
+  and an accepted value is stored trimmed.
+- Auto-creation from a ResidentReport (`reportController.js`) - writes the model
+  directly and so bypasses that schema. It trims the report's block and stores
+  `null` when the report has none, which is the normal case for a GPS-only
+  resident report.
+
+**Legacy rows may still hold `''`.** Normalisation applies to new writes only; no
+migration was run, so sightings created before it can carry an empty string. Every
+read path therefore treats `''` and `null` identically:
+
+- hotspot grouping buckets both under `Unknown` (`s.block_number || 'Unknown'`)
+- the block drill-down matches both when the `Unknown` bucket is requested
+- the frontend uses truthiness checks, so neither renders as a block
+
+A sighting's block can be set or corrected afterwards with
+`PATCH /api/fauna/:id/block` (`field_officer` / `manager` only). It is not
+one-way: a block that is already set can be changed, which moves the sighting
+between hotspot summaries. The change is not audited - see the API documentation.
 
 ### RBAC and GPS
 
@@ -105,8 +131,10 @@ Rows are never physically removed. `DELETE /api/fauna/:id` (Manager only) sets
 Tags default to `[]` on auto-creation, since the resident complaint form does
 not capture structured behaviour data. They are set at logging time via the
 checkbox group on the Log Sighting form. There is no endpoint to edit
-`behaviour_tags` after creation - only `status` can be changed
-(`PATCH /api/fauna/:id/status`).
+`behaviour_tags` after creation. Only two fields are mutable once a sighting
+exists: `status` (`PATCH /api/fauna/:id/status`) and `block_number`
+(`PATCH /api/fauna/:id/block`). Everything else - `species`, `behaviour_tags`,
+`notes`, GPS, photo - is fixed at creation.
 
 ### Derived from behaviour_tags (never stored)
 

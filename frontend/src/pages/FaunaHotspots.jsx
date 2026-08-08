@@ -100,6 +100,13 @@ const RISK_COLORS = { urgent: 'error', monitor: 'warning', routine: 'success' };
 // rendered as a count only, with no expand, summary or drill-down.
 const UNKNOWN_BLOCK = 'Unknown';
 
+// How a bucket name is shown. The Unknown bucket gets its own wording because
+// formatBlock would render it as "Block Unknown". Shared by the card heading and
+// the block selector so the two can never drift apart.
+function blockLabel(block) {
+  return block === UNKNOWN_BLOCK ? 'Unknown block' : formatBlock(block);
+}
+
 // The window this page reports on. Sent to every call the page makes so the map
 // pins, the heat and the block cards all describe the same period - 30 matches
 // the backend default used by the hotspot, summary and alert endpoints.
@@ -191,9 +198,10 @@ export default function FaunaHotspots() {
     blockRefs.current[block]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
     // Focus the map on this block. Blocks with no GPS-tagged sighting leave the
-    // map untouched rather than jumping somewhere arbitrary.
+    // map untouched rather than jumping somewhere arbitrary. The Unknown bucket
+    // matches the blockless rows, which is where its own pins come from.
     const blockPoints = pinned
-      .filter((s) => s.block_number === block)
+      .filter((s) => (block === UNKNOWN_BLOCK ? !s.block_number : s.block_number === block))
       .map((s) => [s.gps_lat, s.gps_lng]);
     if (blockPoints.length > 0) {
       setMapFocus(blockPoints);
@@ -211,6 +219,14 @@ export default function FaunaHotspots() {
 
     setSummary(null);
     setSummaryError('');
+
+    // The Unknown bucket is not a real block, so a risk level, an AI summary and
+    // an alert email would all be meaningless for it - it opens as a plain list.
+    if (block === UNKNOWN_BLOCK) {
+      setSummaryLoading(false);
+      return;
+    }
+
     setSummaryLoading(true);
     http
       .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/summary`, { params: { days: HOTSPOT_DAYS } })
@@ -354,10 +370,8 @@ export default function FaunaHotspots() {
           >
             <Typography variant="h6">Hotspots by Block</Typography>
             <Autocomplete
-              options={hotspots
-                .map((h) => h.block_number)
-                .filter((b) => b !== UNKNOWN_BLOCK)}
-              getOptionLabel={(option) => formatBlock(option)}
+              options={hotspots.map((h) => h.block_number)}
+              getOptionLabel={(option) => blockLabel(option)}
               // Acts as an action, not a selection: the value is cleared after each
               // jump so picking the same block again re-jumps to it.
               value={null}
@@ -382,7 +396,7 @@ export default function FaunaHotspots() {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <LocationOnIcon fontSize="small" color="action" />
                     <Typography variant="h6">
-                      {isUnknown ? 'Unknown block' : formatBlock(hotspot.block_number)}
+                      {blockLabel(hotspot.block_number)}
                     </Typography>
                   </Box>
                   <Chip label={`${hotspot.total} total`} size="small" variant="outlined" sx={TOKEN_SX} />
@@ -401,7 +415,9 @@ export default function FaunaHotspots() {
                 </Stack>
                 {isUnknown && (
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                    Sightings logged without a block number. No summary or drill-down available.
+                    Sightings logged without a block number. Click to review individually - no
+                    summary or alert available since these aren&apos;t attributed to a specific block.
+                    Open a sighting&apos;s detail page to set its block number.
                   </Typography>
                 )}
               </CardContent>
@@ -413,16 +429,17 @@ export default function FaunaHotspots() {
               ref={(node) => { blockRefs.current[hotspot.block_number] = node; }}
               sx={{ mb: 2 }}
             >
-              {isUnknown ? cardBody : (
-                <CardActionArea onClick={() => handleBlockClick(hotspot.block_number)}>
-                  {cardBody}
-                </CardActionArea>
-              )}
+              <CardActionArea onClick={() => handleBlockClick(hotspot.block_number)}>
+                {cardBody}
+              </CardActionArea>
 
-              <Collapse in={!isUnknown && expandedBlock === hotspot.block_number} unmountOnExit>
+              <Collapse in={expandedBlock === hotspot.block_number} unmountOnExit>
                 <Box sx={{ px: 2, pb: 2 }}>
                   <Divider sx={{ mb: 2 }} />
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="flex-start">
+                    {/* The Unknown bucket has no block to summarise, so its panel is
+                        the sightings list alone - no risk chip, summary or alert. */}
+                    {!isUnknown && (
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                   {summaryLoading && <Typography>Loading summary...</Typography>}
                   {!summaryLoading && summaryError && (
@@ -515,12 +532,15 @@ export default function FaunaHotspots() {
                     </>
                   )}
                     </Box>
+                    )}
 
                     {listOpen && (
                       <Card variant="outlined" sx={{ width: { xs: '100%', md: 320 }, flexShrink: 0, bgcolor: 'action.hover' }}>
                         <CardContent>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Typography variant="subtitle2">Sightings in this block</Typography>
+                            <Typography variant="subtitle2">
+                              {isUnknown ? 'Sightings without a block' : 'Sightings in this block'}
+                            </Typography>
                             <IconButton size="small" aria-label="Hide sightings" onClick={() => setListOpen(false)}>
                               <CloseIcon fontSize="small" />
                             </IconButton>
