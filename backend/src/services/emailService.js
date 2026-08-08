@@ -16,6 +16,7 @@ if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
+    family: 4,   // force IPv4 - Render free tier can't route IPv6 outbound
   });
 }
 

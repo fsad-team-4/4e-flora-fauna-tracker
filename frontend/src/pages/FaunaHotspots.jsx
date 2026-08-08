@@ -105,6 +105,17 @@ const UNKNOWN_BLOCK = 'Unknown';
 // the backend default used by the hotspot, summary and alert endpoints.
 const HOTSPOT_DAYS = 30;
 
+// True only for a pointer that can genuinely hover (a mouse or trackpad).
+//
+// Leaflet binds a non-permanent tooltip to click and focus as well as mouseover,
+// but its only close paths are mouseout and blur - neither of which a touch tap
+// produces - and it never closes a tooltip when a popup opens. On touch the
+// tooltip therefore stays open behind the popup as a stray box. Not rendering it
+// at all means those handlers are never bound, so the artifact cannot occur.
+// Touch loses nothing: the Popup already carries everything the Tooltip showed,
+// plus notes and photo.
+const HAS_HOVER = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches;
+
 // Default map view - central Singapore.
 const DEFAULT_CENTER = [1.3521, 103.8198];
 
@@ -297,15 +308,17 @@ export default function FaunaHotspots() {
               />
               {view === 'pins' && pinned.map((s) => (
                 <Marker key={s.id} position={[s.gps_lat, s.gps_lng]} icon={speciesIcon(s.species)}>
-                  <Tooltip direction="top" offset={[0, -13]}>
-                    <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>{s.species}</Typography>
-                    {s.behaviour_tags?.length > 0 && (
-                      <Typography variant="body2">Behaviour: {s.behaviour_tags.join(', ')}</Typography>
-                    )}
-                    {s.floor_level && <Typography variant="body2">Floor: {s.floor_level}</Typography>}
-                    {s.block_number && <Typography variant="body2">{s.block_number}</Typography>}
-                    <Typography variant="caption">{new Date(s.createdAt).toLocaleString()}</Typography>
-                  </Tooltip>
+                  {HAS_HOVER && (
+                    <Tooltip direction="top" offset={[0, -13]}>
+                      <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>{s.species}</Typography>
+                      {s.behaviour_tags?.length > 0 && (
+                        <Typography variant="body2">Behaviour: {s.behaviour_tags.join(', ')}</Typography>
+                      )}
+                      {s.floor_level && <Typography variant="body2">Floor: {s.floor_level}</Typography>}
+                      {s.block_number && <Typography variant="body2">{s.block_number}</Typography>}
+                      <Typography variant="caption">{new Date(s.createdAt).toLocaleString()}</Typography>
+                    </Tooltip>
+                  )}
                   <Popup>
                     <Typography variant="subtitle2" sx={{ textTransform: 'capitalize' }}>{s.species}</Typography>
                     {s.behaviour_tags?.length > 0 && (
