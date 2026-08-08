@@ -214,9 +214,12 @@ export default function FaunaLogSighting() {
         </FormGroup>
       </FormControl>
 
+      {/* No `required` prop: it renders a native required attribute, whose
+          constraint validation blocks submit before formik runs and shows a
+          browser tooltip instead of the schema message. Species and block
+          number have none either, so yup owns all three consistently. */}
       <TextField
         fullWidth
-        required
         multiline
         minRows={3}
         margin="normal"

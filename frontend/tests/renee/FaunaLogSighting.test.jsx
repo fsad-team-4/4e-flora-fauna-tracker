@@ -44,18 +44,10 @@ async function fillRequiredFields({
   await act(async () => {});
 }
 
-// The real user path. Note the Notes field carries MUI's `required` prop, so it
-// renders a native `required` textarea: when Notes is empty the browser's own
-// constraint validation blocks the submit and formik never runs. Tests that need
-// to reach the yup schema with an empty Notes must use submitFormDirectly().
+// No field carries a native `required` attribute, so a click always reaches
+// formik and yup owns every error message.
 function submitForm() {
   fireEvent.click(screen.getByRole('button', { name: 'Log Sighting' }));
-}
-
-// Submits the form element itself, bypassing native constraint validation, so
-// the yup schema is what decides the outcome.
-function submitFormDirectly(container) {
-  fireEvent.submit(container.querySelector('form'));
 }
 
 describe('FaunaLogSighting - submitting', () => {
@@ -119,22 +111,10 @@ describe('FaunaLogSighting - validation', () => {
     delete navigator.geolocation;
   });
 
-  it('sends nothing when the empty form is submitted by clicking', async () => {
-    // The native `required` on Notes stops this before formik runs, so no yup
-    // message is rendered - the browser's own validation is what blocks it.
+  it('shows every field error and sends nothing when the form is empty', async () => {
     renderPage();
 
     submitForm();
-    await act(async () => {});
-
-    expect(http.post).not.toHaveBeenCalled();
-    expect(screen.queryByText('Species is required')).not.toBeInTheDocument();
-  });
-
-  it('shows every field error when the empty form reaches the yup schema', async () => {
-    const { container } = renderPage();
-
-    submitFormDirectly(container);
 
     expect(await screen.findByText('Species is required')).toBeInTheDocument();
     expect(screen.getByText('Block number is required')).toBeInTheDocument();
@@ -163,16 +143,10 @@ describe('FaunaLogSighting - validation', () => {
   });
 
   it('blocks submit when the description is missing', async () => {
-    const { container } = renderPage();
+    renderPage();
     await fillRequiredFields({ notes: null });
 
-    // Clicking is stopped by the native required attribute...
     submitForm();
-    await act(async () => {});
-    expect(http.post).not.toHaveBeenCalled();
-
-    // ...and the yup schema rejects it too, with its own message.
-    submitFormDirectly(container);
 
     expect(await screen.findByText('Description is required')).toBeInTheDocument();
     expect(http.post).not.toHaveBeenCalled();

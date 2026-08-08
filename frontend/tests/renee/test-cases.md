@@ -6,7 +6,7 @@ Tested with Vitest + React Testing Library in a jsdom environment
 `src/http.js` is replaced with `vi.mock` in the page test, so no real network
 request is made. Components that navigate are wrapped in `MemoryRouter`.
 
-Files: `faunaDisplay.test.js`, `FaunaLogSighting.test.jsx` (33 cases total).
+Files: `faunaDisplay.test.js`, `FaunaLogSighting.test.jsx` (32 cases total).
 
 ## Display helpers (`faunaDisplay.test.js`)
 
@@ -45,41 +45,36 @@ fills the three yup-required fields (species `Cat`, block number, description);
 each can be omitted to leave that field blank, which is how the validation tests
 isolate one rule at a time.
 
-Two submit paths are used deliberately - see the note below on the native
-`required` attribute:
-
-- `submitForm()` clicks the "Log Sighting" button, the real user path.
-- `submitFormDirectly()` fires `submit` on the form element, bypassing native
-  constraint validation so the yup schema decides the outcome.
+Every case submits the same way a user would, by clicking the "Log Sighting"
+button. No field carries a native `required` attribute, so the click always
+reaches formik and yup owns validation and error display for all three required
+fields consistently.
 
 | # | Component | Scenario | Setup / Action | Expected |
 |---|-----------|----------|----------------|----------|
 | 19 | FaunaLogSighting | Happy path | Species "Cat", block "Block 203", description filled; click submit | `http.post` called once with `/api/fauna`; payload has `species: 'cat'`, `block_number: 'Block 203'`, the notes and `behaviour_tags: []`; NO `photo_url` and NO `gps_lat` keys |
 | 20 | FaunaLogSighting | Behaviour tags are optional | Required fields only, no checkbox ticked; submit | The "nesting" checkbox is unchecked; `http.post` called with `behaviour_tags: []` |
 | 21 | FaunaLogSighting | Behaviour tags are sent when ticked | Tick "nesting" and "aggressive"; submit | `http.post` called with `behaviour_tags: ['nesting','aggressive']` |
-| 22 | FaunaLogSighting | Empty form, clicked | Every field blank; click submit | `http.post` NOT called, and no yup message is rendered - the native `required` on Notes blocks it before formik runs |
-| 23 | FaunaLogSighting | Empty form, reaching the schema | Every field blank; submit the form directly | All three messages shown: "Species is required", "Block number is required", "Description is required"; `http.post` NOT called |
-| 24 | FaunaLogSighting | Species missing | Block and description filled, species left blank; click submit | "Species is required"; `http.post` NOT called |
-| 25 | FaunaLogSighting | Block number missing | Species and description filled, block left blank; click submit | "Block number is required"; `http.post` NOT called |
-| 26 | FaunaLogSighting | Description missing | Species and block filled, description left blank | Clicking submits nothing (native block); submitting the form directly shows "Description is required"; `http.post` NOT called either way |
-| 27 | FaunaLogSighting | Whitespace-only description | Description set to "   "; click submit | "Description is required" - yup trims before the required test, mirroring the backend; `http.post` NOT called |
-| 28 | FaunaLogSighting | Browser without geolocation | No `navigator.geolocation`; click "Use My Location" | Warning "Geolocation is not supported by this browser"; the "Log Sighting" button stays enabled |
-| 29 | FaunaLogSighting | Submitting after geolocation failed | Click "Use My Location" with no geolocation, then fill and submit | `http.post` called once; payload has no `gps_lat` or `gps_lng` - GPS is optional and its absence does not block the sighting |
-| 30 | FaunaLogSighting | GPS captured | Geolocation stubbed to 1.3521 / 103.8198; click "Use My Location"; submit | Coordinates shown as "1.35210, 103.81980"; `http.post` called with `gps_lat: 1.3521`, `gps_lng: 103.8198` |
-| 31 | FaunaLogSighting | API rejects with a message | `http.post` rejects with `{ error: 'Forbidden' }` | "Forbidden" shown in an error alert |
-| 32 | FaunaLogSighting | API rejects with a message array | `http.post` rejects with `{ error: [msg1, msg2] }`, the shape yup errors take on the backend | Both messages shown, comma-joined |
-| 33 | FaunaLogSighting | Request fails with no response body | `http.post` rejects with a bare `Error` | Falls back to "Failed to log sighting" |
+| 22 | FaunaLogSighting | Empty form validation | Submit with every field blank | All three messages shown: "Species is required", "Block number is required", "Description is required"; `http.post` NOT called |
+| 23 | FaunaLogSighting | Species missing | Block and description filled, species left blank; submit | "Species is required"; `http.post` NOT called |
+| 24 | FaunaLogSighting | Block number missing | Species and description filled, block left blank; submit | "Block number is required"; `http.post` NOT called |
+| 25 | FaunaLogSighting | Description missing | Species and block filled, description left blank; submit | "Description is required"; `http.post` NOT called |
+| 26 | FaunaLogSighting | Whitespace-only description | Description set to "   "; submit | "Description is required" - yup trims before the required test, mirroring the backend; `http.post` NOT called |
+| 27 | FaunaLogSighting | Browser without geolocation | No `navigator.geolocation`; click "Use My Location" | Warning "Geolocation is not supported by this browser"; the "Log Sighting" button stays enabled |
+| 28 | FaunaLogSighting | Submitting after geolocation failed | Click "Use My Location" with no geolocation, then fill and submit | `http.post` called once; payload has no `gps_lat` or `gps_lng` - GPS is optional and its absence does not block the sighting |
+| 29 | FaunaLogSighting | GPS captured | Geolocation stubbed to 1.3521 / 103.8198; click "Use My Location"; submit | Coordinates shown as "1.35210, 103.81980"; `http.post` called with `gps_lat: 1.3521`, `gps_lng: 103.8198` |
+| 30 | FaunaLogSighting | API rejects with a message | `http.post` rejects with `{ error: 'Forbidden' }` | "Forbidden" shown in an error alert |
+| 31 | FaunaLogSighting | API rejects with a message array | `http.post` rejects with `{ error: [msg1, msg2] }`, the shape yup errors take on the backend | Both messages shown, comma-joined |
+| 32 | FaunaLogSighting | Request fails with no response body | `http.post` rejects with a bare `Error` | Falls back to "Failed to log sighting" |
 
 ## Notes
 
-- **The Notes field carries MUI's `required` prop**, so it renders a native
-  `required` textarea. Clicking submit with Notes empty triggers the browser's
-  own constraint validation, which blocks the submit before formik runs - so the
-  yup message never appears and the user sees the browser tooltip instead. This
-  is why cases 22, 23 and 26 exist as a pair: one for what a click actually does,
-  one for what the schema says. Species and block number have no `required`
-  attribute, so their yup messages do render on a click (cases 24, 25) as long as
-  Notes is filled.
+- **No field uses MUI's `required` prop.** It renders a native `required`
+  attribute whose constraint validation blocks the submit before formik runs,
+  showing a browser tooltip instead of the schema message. Leaving it off all
+  three required fields keeps validation consistent: every error comes from yup
+  and renders as field helper text, so cases 22-26 can all use the plain button
+  click.
 - `behaviour_tags` is an array in formik state toggled by checkboxes, so the
   checkbox is found by role and accessible name rather than a label lookup.
 - `@testing-library/user-event` is not a dependency, so interactions use
