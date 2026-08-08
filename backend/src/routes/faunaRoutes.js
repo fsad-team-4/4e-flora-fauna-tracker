@@ -6,7 +6,10 @@ const router = express.Router();
 
 // Hotspots must be registered before '/:id' so 'hotspots' is not matched as an id.
 router.get('/hotspots', protect, restrictTo('field_officer', 'manager'), faunaController.getHotspots);
+router.get('/hotspots/:block/sightings', protect, restrictTo('field_officer', 'manager'), faunaController.getBlockSightings);
 router.get('/hotspots/:block/summary', protect, restrictTo('field_officer', 'manager'), faunaController.getBlockSummary);
+router.post('/hotspots/:block/alert-draft', protect, restrictTo('field_officer', 'manager'), faunaController.getBlockAlertDraft);
+router.post('/hotspots/:block/alert-send', protect, restrictTo('field_officer', 'manager'), faunaController.sendBlockAlert);
 
 // Welfare Partners get read + create; the controller scopes them to their
 // assigned blocks. Status updates and deletes stay internal-only.

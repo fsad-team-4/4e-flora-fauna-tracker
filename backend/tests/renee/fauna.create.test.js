@@ -62,13 +62,27 @@ test('staff can POST a sighting with behaviour_tags', async () => {
 test('resident is forbidden', async () => {
   const res = await request(app).post('/api/fauna')
     .set('Authorization', tokens.res1)
-    .send({ species: 'cat', block_number: 'Block 1' });
+    .send({ species: 'cat', block_number: 'Block 1', notes: 'Cat at the void deck' });
   expect(res.status).toBe(403);
 });
 
 test('invalid behaviour tag rejected 400', async () => {
   const res = await request(app).post('/api/fauna')
     .set('Authorization', tokens.staff)
-    .send({ species: 'cat', block_number: 'Block 1', behaviour_tags: ['flying'] });
+    .send({ species: 'cat', block_number: 'Block 1', behaviour_tags: ['flying'], notes: 'Cat at the void deck' });
+  expect(res.status).toBe(400);
+});
+
+test('missing notes rejected 400', async () => {
+  const res = await request(app).post('/api/fauna')
+    .set('Authorization', tokens.staff)
+    .send({ species: 'cat', block_number: 'Block 1' });
+  expect(res.status).toBe(400);
+});
+
+test('whitespace-only notes rejected 400', async () => {
+  const res = await request(app).post('/api/fauna')
+    .set('Authorization', tokens.staff)
+    .send({ species: 'cat', block_number: 'Block 1', notes: '   ' });
   expect(res.status).toBe(400);
 });
