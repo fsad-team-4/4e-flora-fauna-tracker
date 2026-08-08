@@ -356,6 +356,20 @@ Results are limited to a recency window, using the same cutoff and the same
 sightings the block card counted. Sightings for the block that fall outside the
 window are not returned.
 
+**The `Unknown` bucket is a valid `:block` value here.** `GET /api/fauna/hotspots`
+groups sightings that carry no block under the literal name `Unknown`, which is
+never stored in the column. Passing it to this endpoint is translated back into
+"no block recorded" - `block_number IS NULL OR block_number = ''` - so the
+drill-down returns the blockless sightings rather than an empty array. The empty
+string is matched alongside `null` because rows written before block
+normalisation can still hold `''` (see `database-schema.md`). This backs the
+"Unknown block" card on the Hotspots page, which opens into this list only: it
+has no real block, so no risk level, AI summary or alert email is offered for it
+(see UC-F6 and UC-F8 in `use-cases.md`).
+
+The summary and alert endpoints do **not** apply this translation - they query
+`block_number` directly, so `Unknown` returns `404` there.
+
 Each sighting carries an `untagged_mentions` array: behaviour keywords that
 appear in its `notes` text (case-insensitive) but are **not** in its
 `behaviour_tags`. It is a display-only hint that a sighting may be under-tagged.

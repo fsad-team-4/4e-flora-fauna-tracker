@@ -6,7 +6,8 @@ Tested with Vitest + React Testing Library in a jsdom environment
 `src/http.js` is replaced with `vi.mock` in the page test, so no real network
 request is made. Components that navigate are wrapped in `MemoryRouter`.
 
-Files: `faunaDisplay.test.js`, `FaunaLogSighting.test.jsx` (32 cases total).
+Files: `faunaDisplay.test.js`, `FaunaLogSighting.test.jsx`,
+`FaunaSightingDetail.test.jsx` (50 cases total).
 
 ## Display helpers (`faunaDisplay.test.js`)
 
@@ -67,6 +68,41 @@ fields consistently.
 | 31 | FaunaLogSighting | API rejects with a message array | `http.post` rejects with `{ error: [msg1, msg2] }`, the shape yup errors take on the backend | Both messages shown, comma-joined |
 | 32 | FaunaLogSighting | Request fails with no response body | `http.post` rejects with a bare `Error` | Falls back to "Failed to log sighting" |
 
+## Sighting Detail (`FaunaSightingDetail.test.jsx`)
+
+Setup: `http` is mocked; `get` resolves to a crow sighting fixture (status
+`open`, block "Block 203", tagged `nesting`, with GPS and a reporter) unless a
+test overrides it, and `patch` resolves by default. The page is rendered at a
+real `/fauna/:id` route inside `MemoryRouter` + `Routes`, so `useParams` gives
+the component an id and the asserted URLs are the real ones (`/api/fauna/7`).
+
+The role comes from `useUser()`. The real `UserProvider` derives it from a JWT
+in localStorage, but **localStorage has no working methods in this jsdom setup**,
+so the token-seeding approach used in Member 3's `ProtectedRoute.test.jsx` is not
+usable here. The hook is mocked instead and a `mockUser` holder is swapped per
+test - see the note below.
+
+| # | Component | Scenario | Setup / Action | Expected |
+|---|-----------|----------|----------------|----------|
+| 33 | FaunaSightingDetail | Renders the sighting (happy path) | Fixture resolves | `http.get` called with `/api/fauna/7`; species heading "Crow", status "Open", severity "Monitor" (derived from the `nesting` tag), "Block 203", the notes, "Recommended agency: ACRES", the `nesting` chip and "Reported by: Officer Tan" |
+| 34 | FaunaSightingDetail | Severity from an aggressive tag | Fixture with `behaviour_tags: ['aggressive']` | Severity badge reads "Urgent" |
+| 35 | FaunaSightingDetail | Load failure | `http.get` rejects with status 403 | "You do not have access to this sighting." shown |
+| 36 | FaunaSightingDetail | Controls visible to field_officer | `useUser` returns `field_officer` | Both "Update Status" and "Change block number" are present |
+| 37 | FaunaSightingDetail | Controls visible to manager | `useUser` returns `manager` | Both controls present |
+| 38 | FaunaSightingDetail | Controls hidden from welfare_partner | `useUser` returns `welfare_partner` | The sighting still renders, but "Update Status", "Change block number" and "Set block number" are all absent |
+| 39 | FaunaSightingDetail | Status update (happy path) | Select "Resolved", click Update Status; reload returns the resolved sighting | Button starts disabled (value unchanged) and enables after the selection; `http.patch` called once with `/api/fauna/7/status` and `{ status: 'resolved' }`; the chip then reads "Resolved" |
+| 40 | FaunaSightingDetail | Status update fails | `http.patch` rejects with `{ error: 'Forbidden' }` | "Forbidden" shown in an error alert |
+| 41 | FaunaSightingDetail | Blockless sighting offers "Set" | Fixture with `block_number: null`; click "Set block number" | "No block number recorded" shown; the revealed input is empty |
+| 42 | FaunaSightingDetail | Set flow (happy path) | Blockless fixture; type "Block 305", Save, Confirm; reload returns the attributed sighting | Dialog reads `Set block number to "Block 305"?` and "attribute the sighting to that block's summary"; `http.patch` called with `/api/fauna/7/block` and `{ block_number: 'Block 305' }`; afterwards the action becomes "Change block number" and "Block 305" is displayed |
+| 43 | FaunaSightingDetail | Value is trimmed | Blockless fixture; type "  Block 305  "; Save, Confirm | `http.patch` sent `{ block_number: 'Block 305' }` |
+| 44 | FaunaSightingDetail | Empty / whitespace-only block | Blockless fixture; leave empty, then type "   " | Save is disabled in both states; no confirmation dialog opens; `http.patch` NOT called |
+| 45 | FaunaSightingDetail | Block patch fails | `http.patch` rejects with `{ error: 'Sighting not found' }` | "Sighting not found" shown in an error alert |
+| 46 | FaunaSightingDetail | Block patch fails with a message array | `http.patch` rejects with `{ error: [msg] }` | The message is shown (array joined) |
+| 47 | FaunaSightingDetail | Change flow pre-fills | Sighting already has "Block 203"; click "Change block number" | The input is pre-filled with "Block 203", so a correction starts from a known value |
+| 48 | FaunaSightingDetail | Change confirmation wording | Change "Block 203" to "Block 999"; Save | Dialog reads `Change block number from "Block 203" to "Block 999"?` and "move the sighting into that block's summary" - different wording from the set case |
+| 49 | FaunaSightingDetail | Unchanged value is a no-op | Open the editor and leave the pre-filled value alone | Save is disabled; it enables only once the value differs |
+| 50 | FaunaSightingDetail | Cancelling the editor | Open the editor, click Cancel | The input disappears, the "Change block number" action returns, `http.patch` NOT called |
+
 ## Notes
 
 - **No field uses MUI's `required` prop.** It renders a native `required`
@@ -87,9 +123,22 @@ fields consistently.
 - The page renders a Leaflet `MapContainer` for dropping a GPS pin. It mounts
   cleanly in jsdom, so react-leaflet is not mocked; the map itself is not
   asserted on, only the coordinates it produces via the "Use My Location" button.
+- **`localStorage` has no working methods in this jsdom setup** - it is an object
+  whose `getItem`/`setItem`/`clear` are all `undefined`. `FaunaSightingDetail`
+  reads the role through `useUser()`, so rather than seeding a JWT the way
+  Member 3's `ProtectedRoute.test.jsx` does, the context module is mocked and a
+  `vi.hoisted` holder swaps the role per test. (The same environment gap is why
+  the `ProtectedRoute` suite currently fails - that is a separate, pre-existing
+  issue in another member's file.)
+- A status value renders twice for a staff user: once in the header chip and once
+  as the select's current value. Those assertions use `getAllByText` and check
+  presence rather than uniqueness.
+- After confirming a block change, the assertion waits on the "Change block
+  number" button rather than the block text, because the new value also appears
+  inside the confirmation dialog and would match before the reload lands.
 - Still verified manually (no automated tests yet): `FaunaHotspots.jsx` (map
   pins, heatmap, block drill-down, AI summary, alert draft and send),
-  `FaunaSightingDetail.jsx` (status update, set/change block number), photo
+  `FaunaSightings.jsx` (list rendering and the species/status filters), photo
   upload on `FaunaLogSighting.jsx` (Cloudinary is an external service), and the
   map click-to-pin interaction.
 - Backend coverage for the same module lives in `backend/tests/renee/`

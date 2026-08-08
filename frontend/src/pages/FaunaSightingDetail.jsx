@@ -45,9 +45,11 @@ export default function FaunaSightingDetail() {
   const [updating, setUpdating] = useState(false);
   const [updateError, setUpdateError] = useState('');
 
-  // Attributing a blockless sighting to a block. `editingBlock` reveals the
-  // input; `confirmOpen` gates the actual PATCH behind a confirmation, since the
-  // change is one-way and feeds that block's summary.
+  // Setting a blockless sighting's block, or correcting one that is already
+  // recorded. `editingBlock` reveals the input; `confirmOpen` gates the actual
+  // PATCH behind a confirmation, because re-attributing a sighting moves it
+  // between block summaries - it leaves the old block's totals and joins the
+  // new one's, changing the risk level both blocks report.
   const [editingBlock, setEditingBlock] = useState(false);
   const [blockValue, setBlockValue] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
