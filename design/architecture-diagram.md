@@ -1,64 +1,66 @@
 # System Architecture Diagram - 4E Flora, Fauna & Estate Biodiversity Tracker
 
 Group system architecture diagram showing the main components and how they
-connect. Reflects what is built today (Member 3 - auth, resident reports,
-uploads) plus the planned cloud services. Teammate modules (M1 Flora, M2 Fauna,
-M4 Alerts) are additional routes/controllers within the same backend - marked as
-placeholders.
-
+connect. All four modules (M1 Flora, M2 Fauna, M3 Resident Reports &
+Authentication, M4 Alerts) have shipped, and they are not separate services -
+they are feature routes inside the same Express backend, sharing one auth
+middleware, one Sequelize setup and one database.
 
 ```mermaid
 graph TD
     User([User Browser])
 
     subgraph Frontend["Frontend - React + Vite + MUI (Vercel)"]
-        UI["React App<br/>pages / components / contexts"]
+        UI["React App<br/>pages / components / contexts / hooks"]
         Axios["Axios instance (http.js)<br/>attaches Bearer JWT"]
         UI --> Axios
     end
 
     subgraph Backend["Backend - Node + Express (Render)"]
-        Routes["Routes<br/>/api/auth, /api/reports, /api/uploads"]
-        Middleware["Auth Middleware<br/>protect / restrictTo"]
-        Controllers["Controllers<br/>request handling / logic"]
+        Routes["Routes<br/>/api/auth, /api/reports, /api/uploads,<br/>/api/flora, /api/fauna, /api/alert-rules,<br/>/api/notifications, /api/dashboard,<br/>/api/rodent-assessments"]
+        Middleware["Auth Middleware<br/>protect / restrictTo / getAssignedBlocks"]
+        Controllers["Controllers<br/>auth, reports, uploads, flora, fauna<br/>(the M4 routers handle requests inline)"]
+        Services["Services<br/>AI querying, weekly summary, rodent risk,<br/>estate stats, metric snapshots, email"]
         Models["Models<br/>Sequelize ORM"]
+        Cron["cron.js - node-cron<br/>weekly summary + daily snapshot"]
         Routes --> Middleware
         Middleware --> Controllers
+        Controllers --> Services
         Controllers --> Models
-        %% M1 Flora (Shernell): add flora routes -> controllers -> models
-        %% M2 Fauna (Renee): add fauna routes -> controllers -> models
-        %% M4 Alerts (Angelyn): add alerts routes -> controllers -> models
+        Services --> Models
+        Cron --> Services
     end
 
     DB[("SQLite (dev) /<br/>PostgreSQL - Neon (prod)")]
     Cloudinary["Cloudinary<br/>image storage"]
-    Mailer["Nodemailer / Ethereal<br/>resolve notifications"]
+    Mailer["Nodemailer<br/>real SMTP when configured,<br/>Ethereal preview account otherwise"]
+    Gemini["Gemini - Google AI Studio<br/>@google/genai"]
+    Maps["Leaflet<br/>OpenStreetMap tiles"]
 
     User --> UI
     Axios -->|"HTTPS REST - Bearer JWT"| Routes
+    UI -->|"map tiles - no API key"| Maps
     Models --> DB
     Controllers -->|"upload image"| Cloudinary
     Controllers -->|"send email"| Mailer
-
-    %% Planned teammate services:
-    %% M2 Fauna (Renee): Map API (e.g. Leaflet) for sighting locations
-    %% M1 Flora / M4 Alerts: Generative AI provider (Gemini or Claude - TBC)
+    Services -->|"send email"| Mailer
+    Controllers -->|"AI prompt"| Gemini
+    Services -->|"AI prompt"| Gemini
 ```
-
-<!-- M1 Flora (Shernell): add flora feature routes/controllers/models in the backend; note any extra services -->
-<!-- M2 Fauna (Renee): add fauna routes/controllers/models; add Map API (e.g. Leaflet) node + connection -->
-<!-- M4 Alerts (Angelyn): add alerts routes/controllers/models; note GenAI service for weekly summary -->
-<!-- Pending: confirm Generative AI provider (Gemini vs Claude) and add it as a service node once decided -->
 
 ## Notes
 
 - The exported image (`architecture-diagram.png`) is generated from the Mermaid
   source above via [mermaid.live](https://mermaid.live). Re-export the PNG after
-  adding teammate components so it stays in sync.
-- Teammate modules (M1 Flora, M2 Fauna, M4 Alerts) are not separate services -
-  they are additional feature routes -> controllers -> models inside the same
-  Express backend, reusing the shared auth middleware and Sequelize/DB setup.
-  Any new third-party services they introduce (e.g. a Map API for M2, a GenAI
-  provider for M1/M4) should be added as nodes here.
+  changing the source so it stays in sync.
+- The diagram is deliberately coarse: one node per layer, not one per file. The
+  Controllers node also stands in for the M4 routers (alert rules, notifications,
+  dashboard, rodent assessments), which keep their handlers inline in the router
+  file instead of a separate controller.
+- Gemini is reached from both layers: the AI services (`floraQueryService`,
+  `geminiService`, `rodentService`) and directly from the flora and fauna
+  controllers. Leaflet is the one third-party dependency the browser talks to
+  itself - tiles are fetched by the frontend, not proxied through the backend.
 - See `design/architecture.md` for the detailed folder-by-folder breakdown of
-  the backend and frontend.
+  the backend and frontend, and `deployment.md` at the repo root for how the
+  hosted services are configured.

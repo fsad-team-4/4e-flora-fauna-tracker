@@ -301,3 +301,18 @@ service, so a failure points at a specific place.
     is almost always the missing-column issue in section 7.
 
 ---
+
+## 9. Demo Accounts
+
+Seeded via `npm run seed` (see section 6). All three use the same password.
+
+| Role | Email | Password |
+|------|-------|----------|
+| Estate Admin / Manager | `admin@emservices.com.sg` | `local-demo-only` (or `DEMO_PASSWORD` if set — see section 6) |
+| Estate Officer / Field Officer | `staff@emservices.com.sg` | same as above |
+| Welfare Partner | `welfare@emservices.com.sg` | same as above — scoped to assigned blocks, sightings view only |
+
+**Residents have no seeded account.** Register one via the app's Register page.
+Use a real, working email address — the app sends a notification email when a
+submitted report is marked Resolved (see section 3, mailer), so a fake or
+unreachable address means that notification is never delivered.
