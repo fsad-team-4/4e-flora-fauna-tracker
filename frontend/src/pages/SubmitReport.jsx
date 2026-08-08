@@ -7,6 +7,7 @@ import {
   Paper, CircularProgress,
 } from '@mui/material';
 import PhotoCameraOutlinedIcon from '@mui/icons-material/PhotoCameraOutlined';
+import MyLocationIcon from '@mui/icons-material/MyLocation';
 import http from '../http';
 import { CATEGORIES } from '../constants';
 import { BRAND } from '../theme';
@@ -57,6 +58,10 @@ export default function SubmitReport() {
   const [photoUrls, setPhotoUrls] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [coords, setCoords] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  const [locationRuleChecked, setLocationRuleChecked] = useState(false);
   const fileInputRef = useRef(null);
 
   const formik = useFormik({
@@ -70,8 +75,19 @@ export default function SubmitReport() {
     validationSchema,
     onSubmit: async (values) => {
       setApiError('');
+
+      // Cross-field rule, mirroring the backend: either a block number or GPS,
+      // but neither field is required on its own.
+      setLocationRuleChecked(true);
+      if (!values.block_number.trim() && !coords) return;
+
       try {
-        await http.post('/api/reports', { ...values, photo_urls: photoUrls });
+        const payload = { ...values, photo_urls: photoUrls };
+        if (coords) {
+          payload.gps_lat = coords.lat;
+          payload.gps_lng = coords.lng;
+        }
+        await http.post('/api/reports', payload);
         navigate('/reports');
       } catch (err) {
         const data = err.response?.data?.error;
@@ -105,7 +121,38 @@ export default function SubmitReport() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleUseLocation = () => {
+    setLocationError('');
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by this browser');
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCoords({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLocating(false);
+      },
+      (err) => {
+        setLocationError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied. You can still submit without GPS.'
+            : 'Could not get your location. Please try again.'
+        );
+        setLocating(false);
+      }
+    );
+  };
+
   const hasPhoto = photoUrls.length > 0;
+
+  // Shown only after a submit attempt, and clears itself as soon as the
+  // resident supplies either half of the rule.
+  const showLocationRule =
+    locationRuleChecked && !formik.values.block_number.trim() && !coords;
 
   return (
     <Box
@@ -256,6 +303,19 @@ export default function SubmitReport() {
           />
         </Box>
 
+        {/* States the either/or rule up front, so it is not first discovered as a
+            blocked submit. Each field on its own stays optional. */}
+        <Typography sx={{ mb: 1.5, fontSize: 13, color: BRAND.textLight }}>
+          Fill in either a block number or a GPS location so staff can find the issue.
+        </Typography>
+
+        {showLocationRule && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            Add a block number or capture your GPS location - staff need at least one
+            to find the issue. Either one is enough.
+          </Alert>
+        )}
+
         <Box sx={{ mb: 2.5 }}>
           <FieldLabel hint="(optional)">Block / Location</FieldLabel>
           <TextField
@@ -270,7 +330,7 @@ export default function SubmitReport() {
           />
         </Box>
 
-        <Box>
+        <Box sx={{ mb: 2.5 }}>
           <FieldLabel hint="(if applicable)">Floor Level</FieldLabel>
           <TextField
             fullWidth
@@ -282,6 +342,42 @@ export default function SubmitReport() {
             onBlur={formik.handleBlur}
             sx={inputSx}
           />
+        </Box>
+
+        {/* GPS is optional - a resident reporting from home should still be able
+            to submit, so failures here are shown inline and never block submit. */}
+        <Box>
+          <FieldLabel hint="(optional)">GPS Location</FieldLabel>
+          {locationError && <Alert severity="warning" sx={{ mb: 1 }}>{locationError}</Alert>}
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={handleUseLocation}
+              disabled={locating}
+              startIcon={locating
+                ? <CircularProgress size={16} sx={{ color: 'inherit' }} />
+                : <MyLocationIcon />}
+              sx={{ borderRadius: 2, borderColor: BRAND.border, color: BRAND.text }}
+            >
+              {locating ? 'Locating...' : 'Use My Location'}
+            </Button>
+            {coords && (
+              <>
+                <Typography sx={{ fontSize: 13, color: BRAND.textLight }}>
+                  {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                </Typography>
+                <Button
+                  size="small"
+                  color="error"
+                  onClick={() => { setCoords(null); setLocationError(''); }}
+                  sx={{ px: 0, minWidth: 0 }}
+                >
+                  Clear
+                </Button>
+              </>
+            )}
+          </Stack>
         </Box>
       </Paper>
 

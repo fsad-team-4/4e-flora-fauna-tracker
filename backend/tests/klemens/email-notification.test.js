@@ -43,7 +43,12 @@ beforeAll(async () => {
   const created = await request(app)
     .post('/api/reports')
     .set('Authorization', `Bearer ${residentLogin.body.token}`)
-    .send({ category: 'pest', title: 'Ant infestation', description: 'Kitchen area' });
+    .send({
+      category: 'pest',
+      title: 'Ant infestation',
+      description: 'Kitchen area',
+      block_number: 'Blk 123',
+    });
   reportId = created.body.id;
 });
 

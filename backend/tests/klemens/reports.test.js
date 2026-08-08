@@ -55,6 +55,7 @@ describe('POST /api/reports', () => {
         category: 'pigeon',
         title: 'Pigeons nesting',
         description: 'Corridor ledge',
+        block_number: 'Blk 123',
         reported_by: 999,
       });
 
@@ -67,7 +68,7 @@ describe('POST /api/reports', () => {
     const res = await request(app)
       .post('/api/reports')
       .set('Authorization', tokens.res1)
-      .send({ category: 'bogus', title: 'x', description: 'y' });
+      .send({ category: 'bogus', title: 'x', description: 'y', block_number: 'Blk 123' });
 
     expect(res.status).toBe(400);
   });
@@ -79,7 +80,7 @@ describe('GET /api/reports', () => {
     await request(app)
       .post('/api/reports')
       .set('Authorization', tokens.res2)
-      .send({ category: 'pest', title: 'Ants', description: 'Void deck' });
+      .send({ category: 'pest', title: 'Ants', description: 'Void deck', block_number: 'Blk 456' });
   });
 
   test('resident sees only own reports', async () => {
@@ -151,5 +152,42 @@ describe('DELETE /api/reports/:id', () => {
       .get(`/api/reports/${reportId}`)
       .set('Authorization', tokens.admin);
     expect(get.status).toBe(404);
+  });
+});
+
+// Kept last: two of these create reports, and the GET tests above assert exact
+// list lengths.
+describe('POST /api/reports location rule', () => {
+  const base = { category: 'pest', title: 'Rats', description: 'Bin chute' };
+
+  test('no block and no GPS -> 400', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', tokens.res1)
+      .send(base);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.join(' ')).toMatch(/block number or a GPS location/i);
+  });
+
+  test('block_number only -> 201', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', tokens.res1)
+      .send({ ...base, block_number: 'Blk 789' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.block_number).toBe('Blk 789');
+  });
+
+  test('GPS only -> 201', async () => {
+    const res = await request(app)
+      .post('/api/reports')
+      .set('Authorization', tokens.res1)
+      .send({ ...base, gps_lat: 1.3521, gps_lng: 103.8198 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.gps_lat).toBe(1.3521);
+    expect(res.body.block_number).toBeFalsy();
   });
 });
