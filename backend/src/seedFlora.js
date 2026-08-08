@@ -17,11 +17,14 @@ const { sequelize, User, GreeneryRecord } = require('./models');
 
 // recorded_by is a required FK, so the seed guarantees a field_officer account exists.
 // Keyed on email: if the account already exists it is reused untouched.
+// Same env var and fallback as seed.js, so both seeds produce the same password
+// and it can be set from the environment when seeding a deployed database.
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'local-demo-only';
 const SEED_USER = {
   email: 'staff@emservices.com.sg',
   name: 'Estate Officer',
   role: 'field_officer',
-  password: 'demo1234',
+  password: DEMO_PASSWORD,
 };
 
 // n days ago as a real Date - spreads last_inspected_at across the last ~60 days

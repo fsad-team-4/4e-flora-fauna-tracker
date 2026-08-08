@@ -48,12 +48,26 @@ const statusSchema = yup.object({
   status: yup.string().required().oneOf(STATUSES),
 });
 
+// Cross-field rule: a report with neither a block nor coordinates cannot be
+// dispatched to anyone. Each field stays optional on its own - only the pair
+// being empty is rejected. Both gps values are needed to count as a location.
+function hasLocation(data) {
+  const block = data.block_number && data.block_number.trim();
+  return Boolean(block) || (data.gps_lat != null && data.gps_lng != null);
+}
+
 async function createReport(req, res) {
   let data;
   try {
     data = await createSchema.validate(req.body, { abortEarly: false });
   } catch (err) {
     return res.status(400).json({ error: err.errors });
+  }
+
+  if (!hasLocation(data)) {
+    return res.status(400).json({
+      error: ['A block number or a GPS location is required'],
+    });
   }
 
   const report = await ResidentReport.create({

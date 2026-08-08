@@ -51,7 +51,12 @@ Create a new user account.
   | name | string | yes | min 2 characters |
   | email | string | yes | valid email format |
   | password | string | yes | min 6 characters |
-  | role | string | no | one of `resident`, `staff`, `admin`; defaults to `resident` |
+
+  Public registration always creates a `resident`. `role` is not accepted: the
+  register schema does not define it and the controller hardcodes
+  `role: 'resident'` on create, so a `role` sent in the body is ignored and can
+  never produce a privileged account. Welfare partner, field officer and manager
+  accounts are created by the seed script (`npm run seed`) instead.
 
 - Success: `201`
 
@@ -109,10 +114,18 @@ Create a resident report.
   `reported_by` is taken from the JWT (`req.user.user_id`); any value sent in the
   body is ignored.
 
+  Location rule (cross-field): a report must carry either a non-empty
+  `block_number` or both `gps_lat` and `gps_lng`. Neither field is required on
+  its own - the check runs after schema validation and rejects only the case
+  where both halves are missing. A `block_number` of whitespace does not count,
+  and one coordinate without the other does not count.
+
 - Success: `201` - the created report object (includes `id`, `status` defaulting
   to `open`, `is_deleted: false`, `reported_by`, timestamps)
 - Errors:
   - `400` - validation failure
+  - `400` - `{ "error": ["A block number or a GPS location is required"] }`
+    (neither a block number nor a complete GPS pair was supplied)
   - `401` - missing/invalid token
 
 ### GET /api/reports
@@ -120,9 +133,16 @@ Create a resident report.
 List reports. Soft-deleted reports (`is_deleted = true`) are always excluded.
 
 - Auth: requires JWT (`protect`)
-- Role-based scoping:
-  - `resident` - only their own reports (`reported_by = req.user.user_id`)
-  - `staff` / `admin` - all reports
+- Role-based scoping, by membership of `INTERNAL_ROLES`
+  (`['field_officer', 'manager']`, exported from the auth middleware):
+  - role in `INTERNAL_ROLES` - all reports
+  - any other role - only their own reports (`reported_by = req.user.user_id`)
+
+  The controller tests membership of `INTERNAL_ROLES` rather than testing for
+  `resident`, so a role added to the enum later is scoped to its own reports
+  until it is deliberately added to that list. `welfare_partner` is therefore
+  limited to its own reports here - its zone-based access applies to fauna
+  sightings, not to resident reports.
 - Query filters (optional):
   - `?status=` - one of `open`, `in_progress`, `resolved`
   - `?category=` - one of the 5 category values
@@ -136,7 +156,8 @@ List reports. Soft-deleted reports (`is_deleted = true`) are always excluded.
 
 Get a single report with its status history.
 
-- Auth: requires JWT (`protect`); residents may only view their own report
+- Auth: requires JWT (`protect`); a caller whose role is not in `INTERNAL_ROLES`
+  may only view their own report
 - Request body: none
 - Success: `200` - the report object including:
   - `reporter` association (`{ id, name }`)
@@ -144,14 +165,15 @@ Get a single report with its status history.
     and a `changer` association (`{ id, name }`)
 - Errors:
   - `401` - missing/invalid token
-  - `403` - `{ "error": "Forbidden" }` (resident requesting another user's report)
+  - `403` - `{ "error": "Forbidden" }` (a caller outside `INTERNAL_ROLES`
+    requesting another user's report)
   - `404` - `{ "error": "Report not found" }` (missing or soft-deleted)
 
 ### PATCH /api/reports/:id/status
 
 Update a report's case status.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Request body:
 
   | Field | Type | Required | Notes |
@@ -166,19 +188,19 @@ Update a report's case status.
 - Errors:
   - `400` - validation failure (invalid/missing status)
   - `401` - missing/invalid token
-  - `403` - role not staff/admin
+  - `403` - role not `field_officer` or `manager`
   - `404` - `{ "error": "Report not found" }` (missing or soft-deleted)
 
 ### DELETE /api/reports/:id
 
 Soft-delete a report (sets `is_deleted = true`; the row is not removed).
 
-- Auth: requires JWT (`protect`) + `restrictTo('admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('manager')`
 - Request body: none
 - Success: `200` - `{ "message": "Report deleted" }`
 - Errors:
   - `401` - missing/invalid token
-  - `403` - role not admin
+  - `403` - role not `manager` (a `field_officer` cannot delete)
   - `404` - `{ "error": "Report not found" }` (missing or already deleted)
 
 ---
@@ -216,7 +238,7 @@ Shernell's `GreeneryRecord` catalog as its only knowledge source.
 Ask a natural-language question about the greenery catalog and get an
 AI-generated answer grounded only in the stored `GreeneryRecord` data.
 
-- Auth: requires JWT (`protect`) + `restrictTo('staff', 'admin')`
+- Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - Request body:
 
   | Field | Type | Required | Notes |
@@ -258,7 +280,8 @@ AI-generated answer grounded only in the stored `GreeneryRecord` data.
     empty/whitespace-only)
   - `400` - `{ "error": "question must be 500 characters or fewer" }`
   - `401` - missing/invalid token
-  - `403` - role not staff/admin (residents cannot query the catalog)
+  - `403` - role not `field_officer` or `manager` (residents and welfare
+    partners cannot query the catalog)
   - `429` - `{ "error": "The AI service is busy right now. Please try again in
     a moment." }` (Gemini rate limit or quota exhausted - the SDK error carried
     status 429, or its message mentioned a quota or rate limit)
