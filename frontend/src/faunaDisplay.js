@@ -57,7 +57,12 @@ export function speciesLabel(species) {
 
 // Blocks are stored inconsistently ("605" vs "Block 123"), so prefix bare ones
 // for display. Never write the result back.
+//
+// The check looks for "block" ANYWHERE in the value, not just at the start, so a
+// free-text location like "Near Block 126" is left alone instead of becoming
+// "Block Near Block 126". The \b boundaries keep it to the whole word, so
+// "Blockade 5" is still treated as unprefixed.
 export function formatBlock(block) {
   if (!block) return '';
-  return /^block\b/i.test(block.trim()) ? block : `Block ${block}`;
+  return /\bblock\b/i.test(block.trim()) ? block : `Block ${block}`;
 }
