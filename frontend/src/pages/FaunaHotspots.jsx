@@ -140,8 +140,8 @@ export default function FaunaHotspots() {
   // what re-triggers the fly, so re-expanding the same block re-focuses it.
   const [mapFocus, setMapFocus] = useState(null);
 
-  // block_number -> the card's DOM node, so the selector and marker clicks can
-  // scroll the right card into view.
+  // block_number -> the card's DOM node, so the block selector can scroll the
+  // right card into view.
   const blockRefs = useRef({});
 
   useEffect(() => {
@@ -169,8 +169,8 @@ export default function FaunaHotspots() {
   };
 
   // Expands a block, focuses the map on it, loads its panels and scrolls its card
-  // into view. Shared by the card click, the block selector and marker clicks, so
-  // all three land the user in exactly the same state.
+  // into view. Shared by the card click and the block selector, so both land the
+  // user in exactly the same state.
   const openBlock = (block) => {
     resetDraft();
     setExpandedBlock(block);
@@ -193,7 +193,7 @@ export default function FaunaHotspots() {
     setListOpen(true);
     setListLoading(true);
     http
-      .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/sightings`)
+      .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/sightings`, { params: { days: HOTSPOT_DAYS } })
       .then((res) => setBlockSightings(res.data))
       .catch(() => setListError('Failed to load sightings'))
       .finally(() => setListLoading(false));
@@ -202,7 +202,7 @@ export default function FaunaHotspots() {
     setSummaryError('');
     setSummaryLoading(true);
     http
-      .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/summary`)
+      .get(`/api/fauna/hotspots/${encodeURIComponent(block)}/summary`, { params: { days: HOTSPOT_DAYS } })
       .then((res) => setSummary(res.data))
       .catch((err) => {
         if (err.response?.status === 503) {
@@ -228,7 +228,7 @@ export default function FaunaHotspots() {
     resetDraft();
     setDraftLoading(true);
     http
-      .post(`/api/fauna/hotspots/${encodeURIComponent(block)}/alert-draft`)
+      .post(`/api/fauna/hotspots/${encodeURIComponent(block)}/alert-draft`, null, { params: { days: HOTSPOT_DAYS } })
       .then((res) => setDraft({ to: '', subject: res.data.subject, body: res.data.body }))
       .catch((err) => {
         if (err.response?.status === 503) {

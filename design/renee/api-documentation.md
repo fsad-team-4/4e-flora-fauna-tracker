@@ -280,6 +280,11 @@ Used to identify high-activity zones for staff intervention decisions.
 List the individual sightings behind a block hotspot, newest first. Backs the
 drill-down list on the Hotspots page. Soft-deleted sightings are excluded.
 
+Results are limited to a recency window, using the same cutoff and the same
+30-day default as `GET /api/fauna/hotspots`, so the drill-down lists exactly the
+sightings the block card counted. Sightings for the block that fall outside the
+window are not returned.
+
 Each sighting carries an `untagged_mentions` array: behaviour keywords that
 appear in its `notes` text (case-insensitive) but are **not** in its
 `behaviour_tags`. It is a display-only hint that a sighting may be under-tagged.
@@ -297,6 +302,12 @@ already tagged.
 
 - Auth: requires JWT (`protect`) + `restrictTo('field_officer', 'manager')`
 - URL param: `:block` — URL-encoded block string e.g. `Block%20203`
+- Query filters (optional):
+  - `?days=` — number of days to look back (default `30`). Absent, non-numeric,
+    zero or negative values fall back to the default rather than producing a
+    future cutoff. All five fauna endpoints that accept `days` handle it this
+    way; only `GET /api/fauna` differs, where an absent value means no window
+    at all.
 - Success: `200` — array of sighting objects
 
   ```json

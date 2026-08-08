@@ -184,7 +184,10 @@ async function softDeleteSighting(req, res) {
 }
 
 async function getHotspots(req, res) {
-  const days = parseInt(req.query.days, 10) || 30;
+  // Absent, non-numeric, zero or negative falls back to the default rather than
+  // building a future cutoff that matches nothing.
+  const requested = parseInt(req.query.days, 10);
+  const days = Number.isFinite(requested) && requested > 0 ? requested : 30;
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
   const sightings = await FaunaSighting.findAll({
@@ -217,8 +220,19 @@ async function getHotspots(req, res) {
 async function getBlockSightings(req, res) {
   const block = req.params.block;
 
+  // Same window as getHotspots, and the same 30-day default, so the drill-down
+  // lists exactly the sightings the block card counted. A non-numeric, negative
+  // or zero value falls back to the default rather than building a future cutoff.
+  const requested = parseInt(req.query.days, 10);
+  const days = Number.isFinite(requested) && requested > 0 ? requested : 30;
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
   const sightings = await FaunaSighting.findAll({
-    where: { is_deleted: false, block_number: block },
+    where: {
+      is_deleted: false,
+      block_number: block,
+      createdAt: { [Op.gte]: cutoff },
+    },
     attributes: ['id', 'species', 'block_number', 'floor_level', 'behaviour_tags', 'notes', 'createdAt'],
     include: [{ association: 'reporter', attributes: ['id', 'name'] }],
     order: [['createdAt', 'DESC']],
@@ -329,7 +343,10 @@ async function aggregateBlock(block, days) {
 
 async function getBlockSummary(req, res) {
   const block = req.params.block;
-  const days = parseInt(req.query.days, 10) || 30;
+  // Absent, non-numeric, zero or negative falls back to the default rather than
+  // building a future cutoff that matches nothing.
+  const requested = parseInt(req.query.days, 10);
+  const days = Number.isFinite(requested) && requested > 0 ? requested : 30;
 
   const agg = await aggregateBlock(block, days);
   if (!agg) {
@@ -386,7 +403,10 @@ async function getBlockSummary(req, res) {
 // Generates an editable email draft for a block. Does not send anything.
 async function getBlockAlertDraft(req, res) {
   const block = req.params.block;
-  const days = parseInt(req.query.days, 10) || 30;
+  // Absent, non-numeric, zero or negative falls back to the default rather than
+  // building a future cutoff that matches nothing.
+  const requested = parseInt(req.query.days, 10);
+  const days = Number.isFinite(requested) && requested > 0 ? requested : 30;
 
   const agg = await aggregateBlock(block, days);
   if (!agg) {
