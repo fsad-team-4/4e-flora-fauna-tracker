@@ -1,7 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link as RouterLink, useLocation } from 'react-router-dom'
-import { AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer, List, ListItemButton, ListItemText, ListSubheader } from '@mui/material'
+import {
+  AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer,
+  List, ListItemButton, ListItemText, ListSubheader, ListItemIcon, Card, CardActionArea,
+  CardContent, Chip, Skeleton, Stack,
+} from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
+import WavingHandOutlinedIcon from '@mui/icons-material/WavingHandOutlined'
+import AddCircleOutlineOutlinedIcon from '@mui/icons-material/AddCircleOutlineOutlined'
+import ListAltOutlinedIcon from '@mui/icons-material/ListAltOutlined'
+import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined'
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined'
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined'
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined'
+import LocalFloristOutlinedIcon from '@mui/icons-material/LocalFloristOutlined'
+import MenuBookOutlinedIcon from '@mui/icons-material/MenuBookOutlined'
+import PetsOutlinedIcon from '@mui/icons-material/PetsOutlined'
+import AddLocationAltOutlinedIcon from '@mui/icons-material/AddLocationAltOutlined'
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
+import PestControlRodentOutlinedIcon from '@mui/icons-material/PestControlRodentOutlined'
+import ImageNotSupportedOutlinedIcon from '@mui/icons-material/ImageNotSupportedOutlined'
 import { UserProvider, useUser } from './contexts/UserContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -22,6 +40,261 @@ import FaunaSightings from './pages/FaunaSightings'
 import FaunaLogSighting from './pages/FaunaLogSighting'
 import FaunaSightingDetail from './pages/FaunaSightingDetail'
 import FaunaHotspots from './pages/FaunaHotspots'
+import { useDashboardMetrics } from './hooks/useDashboardMetrics'
+import { alpha } from '@mui/material/styles'
+import { BRAND, STATUS_META, HEALTH_META } from './theme'
+import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from './constants'
+import { toTitleCase } from './utils/formatters'
+import http from './http'
+import EstateHealthHero from './components/dashboard/EstateHealthHero'
+
+// Same elevated-card shadow used across FloraDetail/HorticultureHandbook, so the
+// Home summary cards share the same look.
+const CARD_SHADOW = '0 4px 16px rgba(0,0,0,.05)'
+const CARD_SHADOW_HOVER = '0 6px 20px rgba(0,0,0,.08)'
+
+const SUMMARY_GRID_SX = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+  gap: 2,
+}
+
+// Colored top-border, icon-badge card - shared shape for both the quick-link
+// cards (resident / welfare partner) and the stat cards (field officer / manager).
+function SummaryCard({ to, icon, color, bg, title, value, loading, description }) {
+  return (
+    <Card
+      sx={{
+        height: '100%',
+        borderTop: 4,
+        borderTopColor: color,
+        boxShadow: CARD_SHADOW,
+        transition: 'box-shadow 0.2s ease',
+        '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+      }}
+    >
+      <CardActionArea component={RouterLink} to={to} sx={{ height: '100%' }}>
+        <CardContent sx={{ p: 2.5 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box
+              sx={{
+                width: 40, height: 40, borderRadius: '10px', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                bgcolor: bg, color,
+              }}
+            >
+              {icon}
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                {title}
+              </Typography>
+              {value !== undefined ? (
+                loading
+                  ? <Skeleton width={36} height={32} />
+                  : <Typography variant="h5" sx={{ fontWeight: 800, lineHeight: 1.3 }}>{value}</Typography>
+              ) : (
+                <Typography variant="body2" color="text.secondary">{description}</Typography>
+              )}
+            </Box>
+          </Stack>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+// Field Officer / Manager - quick-glance counts, reusing the same
+// /api/dashboard/metrics call the Command Centre already polls.
+function InternalSummaryCards({ metrics, loading }) {
+  return (
+    <Box sx={SUMMARY_GRID_SX}>
+      <SummaryCard
+        to="/all-reports"
+        icon={<FolderOpenOutlinedIcon fontSize="small" />}
+        color={STATUS_META.open.color}
+        bg={STATUS_META.open.bg}
+        title="Open Reports"
+        value={metrics?.openCases ?? 0}
+        loading={loading}
+      />
+      <SummaryCard
+        to="/notif-log"
+        icon={<NotificationsActiveOutlinedIcon fontSize="small" />}
+        color={HEALTH_META.watch.color}
+        bg={HEALTH_META.watch.bg}
+        title="Alerts Sent (7d)"
+        value={metrics?.notificationsLast7Days ?? 0}
+        loading={loading}
+      />
+      <SummaryCard
+        to="/flora"
+        icon={<LocalFloristOutlinedIcon fontSize="small" />}
+        color={HEALTH_META.critical.color}
+        bg={HEALTH_META.critical.bg}
+        title="Flora Needing Attention"
+        value={metrics?.criticalFlora ?? 0}
+        loading={loading}
+      />
+    </Box>
+  )
+}
+
+// Resident - quick links to the two actions residents care about.
+function ResidentSummaryCards() {
+  return (
+    <Box sx={SUMMARY_GRID_SX}>
+      <SummaryCard
+        to="/submit-report"
+        icon={<AddCircleOutlineOutlinedIcon fontSize="small" />}
+        color={STATUS_META.open.color}
+        bg={STATUS_META.open.bg}
+        title="Submit Report"
+        description="Report an issue in the estate"
+      />
+      <SummaryCard
+        to="/reports"
+        icon={<ListAltOutlinedIcon fontSize="small" />}
+        color={HEALTH_META.watch.color}
+        bg={HEALTH_META.watch.bg}
+        title="My Reports"
+        description="Track the status of your reports"
+      />
+    </Box>
+  )
+}
+
+// Welfare Partner - quick links to fauna sighting logging and browsing.
+function WelfarePartnerSummaryCards() {
+  return (
+    <Box sx={SUMMARY_GRID_SX}>
+      <SummaryCard
+        to="/fauna/log"
+        icon={<AddLocationAltOutlinedIcon fontSize="small" />}
+        color={STATUS_META.open.color}
+        bg={STATUS_META.open.bg}
+        title="Log Sighting"
+        description="Record a new fauna sighting"
+      />
+      <SummaryCard
+        to="/fauna"
+        icon={<PetsOutlinedIcon fontSize="small" />}
+        color={HEALTH_META.watch.color}
+        bg={HEALTH_META.watch.bg}
+        title="Fauna Sightings"
+        description="View sightings in your zones"
+      />
+    </Box>
+  )
+}
+
+const RECENT_FLORA_COUNT = 6
+
+// One photo card in the recently-logged strip. Falls back to a placeholder
+// icon (rather than a broken <img>) if image_url is missing.
+function RecentFloraCard({ plant }) {
+  return (
+    <Card
+      sx={{
+        flex: '0 0 200px',
+        boxShadow: CARD_SHADOW,
+        overflow: 'hidden',
+        transition: 'box-shadow 0.2s ease',
+        '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+      }}
+    >
+      <CardActionArea component={RouterLink} to={`/flora/${plant.id}`}>
+        <Box sx={{ width: '100%', aspectRatio: '4 / 3', bgcolor: 'action.hover' }}>
+          {plant.image_url ? (
+            <Box
+              component="img"
+              src={plant.image_url}
+              alt={plant.species}
+              sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+          ) : (
+            <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ImageNotSupportedOutlinedIcon sx={{ fontSize: 32, color: 'text.disabled' }} />
+            </Box>
+          )}
+        </Box>
+        <CardContent sx={{ p: 1.5 }}>
+          <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+            {plant.common_name || toTitleCase(plant.species)}
+          </Typography>
+          {plant.common_name && (
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+              {toTitleCase(plant.species)}
+            </Typography>
+          )}
+          <Chip
+            label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+            color={HEALTH_STATUS_COLORS[plant.health_status] || 'default'}
+            size="small"
+            sx={{ mt: 1 }}
+          />
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+// Field Officer / Manager - horizontal strip of the most recently inspected
+// flora. Reuses the same GET /api/flora call FloraList.jsx uses, just
+// sorted and sliced to the most recent few client-side.
+function RecentFloraStrip() {
+  const [plants, setPlants] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    http.get('/api/flora')
+      .then((res) => { if (active) setPlants(res.data) })
+      .catch(() => { if (active) setPlants([]) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const recent = [...plants]
+    .sort((a, b) => new Date(b.last_inspected_at || 0) - new Date(a.last_inspected_at || 0))
+    .slice(0, RECENT_FLORA_COUNT)
+
+  if (!loading && recent.length === 0) return null
+
+  return (
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="h6" sx={{ mb: 1.5 }}>Recently Logged Flora</Typography>
+      <Stack direction="row" spacing={2} sx={{ overflowX: 'auto', pb: 1 }}>
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="rounded" sx={{ flex: '0 0 200px', height: 220, borderRadius: '14px' }} />
+          ))
+          : recent.map((plant) => <RecentFloraCard key={plant.id} plant={plant} />)}
+      </Stack>
+    </Box>
+  )
+}
+
+// Field Officer / Manager - estate health hero + KPI cards + recently logged
+// flora, all sharing the one useDashboardMetrics() poll (hero and cards read
+// the same metrics object, no duplicate fetch).
+function InternalHomeSections() {
+  const { metrics, loading } = useDashboardMetrics()
+  return (
+    <>
+      <EstateHealthHero
+        estateHealth={metrics?.estateHealth}
+        history={metrics?.history || []}
+        tiedBlocks={(metrics?.sightingsByBlock || [])
+          .filter(b => b.count === metrics?.sightingsByBlock?.[0]?.count)
+          .map(b => b.block_number)}
+        loading={loading}
+      />
+      <InternalSummaryCards metrics={metrics} loading={loading} />
+      <RecentFloraStrip />
+    </>
+  )
+}
 
 function Home() {
   const { user } = useUser()
@@ -35,15 +308,26 @@ function Home() {
     )
   }
   return (
-    <Box sx={{ mt: 4 }}>
-      <Typography variant="h5" sx={{ fontWeight: 700, mb: 0.5 }}>
-        Welcome back, {user.name}
-      </Typography>
-      <Typography color="text.secondary">
-        {user.role === 'welfare_partner'
-          ? 'Use the navigation above to log and view fauna sightings in your assigned zones.'
-          : 'Open the menu (top-left) to submit or manage reports.'}
-      </Typography>
+    <Box sx={{ mt: 4, mb: 6 }}>
+      <Box sx={{ mb: 3 }}>
+        <Stack direction="row" spacing={1.25} alignItems="center">
+          <WavingHandOutlinedIcon sx={{ color: 'primary.main', fontSize: 28 }} />
+          <Typography variant="h4">Welcome back, {user.name}</Typography>
+        </Stack>
+        <Typography color="text.secondary" sx={{ mt: 0.5 }}>
+          {user.role === 'welfare_partner'
+            ? 'Use the navigation above to log and view fauna sightings in your assigned zones.'
+            : 'Open the menu (top-left) to submit or manage reports.'}
+        </Typography>
+      </Box>
+
+      {user.role === 'welfare_partner' ? (
+        <WelfarePartnerSummaryCards />
+      ) : user.role === 'field_officer' || user.role === 'manager' ? (
+        <InternalHomeSections />
+      ) : (
+        <ResidentSummaryCards />
+      )}
     </Box>
   )
 }
@@ -55,26 +339,26 @@ const INTERNAL_ROLES = ['field_officer', 'manager']
 // an item can narrow that further (welfare partners get fauna, but not hotspots).
 const NAV_GROUPS = [
   { header: null, roles: ['resident', ...INTERNAL_ROLES], items: [
-    { to: '/submit-report', label: 'Submit Report' },
-    { to: '/reports', label: 'My Reports' },
+    { to: '/submit-report', label: 'Submit Report', icon: AddCircleOutlineOutlinedIcon },
+    { to: '/reports', label: 'My Reports', icon: ListAltOutlinedIcon },
   ] },
   { header: 'Estate', roles: INTERNAL_ROLES, items: [
-    { to: '/dashboard', label: 'Dashboard' },
-    { to: '/all-reports', label: 'All Reports' },
-    { to: '/alert-rules', label: 'Alerts' },
-    { to: '/notif-log', label: 'Log' },
+    { to: '/dashboard', label: 'Dashboard', icon: DashboardOutlinedIcon },
+    { to: '/all-reports', label: 'All Reports', icon: FolderOpenOutlinedIcon },
+    { to: '/alert-rules', label: 'Alerts', icon: NotificationsActiveOutlinedIcon },
+    { to: '/notif-log', label: 'Log', icon: HistoryOutlinedIcon },
   ] },
   { header: 'Flora', roles: INTERNAL_ROLES, items: [
-    { to: '/flora', label: 'Flora' },
-    { to: '/handbook', label: 'Handbook' },
+    { to: '/flora', label: 'Flora', icon: LocalFloristOutlinedIcon },
+    { to: '/handbook', label: 'Handbook', icon: MenuBookOutlinedIcon },
   ] },
   { header: 'Fauna', roles: [...INTERNAL_ROLES, 'welfare_partner'], items: [
-    { to: '/fauna', label: 'Fauna Sightings' },
-    { to: '/fauna/log', label: 'Log Sighting' },
-    { to: '/fauna/hotspots', label: 'Fauna Hotspots', roles: INTERNAL_ROLES },
+    { to: '/fauna', label: 'Fauna Sightings', icon: PetsOutlinedIcon },
+    { to: '/fauna/log', label: 'Log Sighting', icon: AddLocationAltOutlinedIcon },
+    { to: '/fauna/hotspots', label: 'Fauna Hotspots', icon: PlaceOutlinedIcon, roles: INTERNAL_ROLES },
   ] },
   { header: 'Rodent', roles: INTERNAL_ROLES, items: [
-    { to: '/rodent', label: 'Rodent' },
+    { to: '/rodent', label: 'Rodent', icon: PestControlRodentOutlinedIcon },
   ] },
 ]
 
@@ -99,7 +383,13 @@ function NavDrawer({ open, onClose, role }) {
             key={gi}
             dense
             subheader={g.header ? (
-              <ListSubheader disableSticky sx={{ fontWeight: 700, fontSize: 12, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'text.secondary', lineHeight: 2.4, bgcolor: 'transparent' }}>
+              <ListSubheader
+                disableSticky
+                sx={{
+                  fontWeight: 700, fontSize: 11, letterSpacing: '1px', textTransform: 'uppercase',
+                  color: BRAND.textLight, lineHeight: 2.4, bgcolor: 'transparent', px: 2.5, mt: 0.5,
+                }}
+              >
                 {g.header}
               </ListSubheader>
             ) : undefined}
@@ -107,6 +397,7 @@ function NavDrawer({ open, onClose, role }) {
           >
             {g.items.map(item => {
               const active = location.pathname === item.to
+              const Icon = item.icon
               return (
                 <ListItemButton
                   key={item.to}
@@ -114,10 +405,20 @@ function NavDrawer({ open, onClose, role }) {
                   to={item.to}
                   selected={active}
                   sx={{
-                    mx: 1, my: 0.25, borderRadius: 2,
-                    '&.Mui-selected': { bgcolor: 'rgba(193,39,45,.08)', '&:hover': { bgcolor: 'rgba(193,39,45,.12)' } },
+                    mx: 1, my: 0.25, pl: 1.5, borderRadius: 2,
+                    borderLeft: '3px solid',
+                    borderLeftColor: active ? BRAND.primary : 'transparent',
+                    '&.Mui-selected': {
+                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                      '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.12) },
+                    },
                   }}
                 >
+                  {Icon && (
+                    <ListItemIcon sx={{ minWidth: 36, color: active ? 'primary.main' : 'text.secondary' }}>
+                      <Icon fontSize="small" />
+                    </ListItemIcon>
+                  )}
                   <ListItemText
                     primary={item.label}
                     sx={{ '& .MuiListItemText-primary': { fontWeight: active ? 700 : 500, color: active ? 'primary.main' : 'text.primary' } }}
