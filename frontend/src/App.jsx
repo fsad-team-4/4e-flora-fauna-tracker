@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Link as RouterLink, useLocation } from 'react-router-dom'
 import {
   AppBar, Toolbar, Typography, Button, Container, Box, Divider, IconButton, Drawer,
   List, ListItemButton, ListItemText, ListSubheader, ListItemIcon, Card, CardActionArea,
-  CardContent, Skeleton, Stack,
+  CardContent, Chip, Skeleton, Stack,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import WavingHandOutlinedIcon from '@mui/icons-material/WavingHandOutlined'
@@ -19,6 +19,7 @@ import PetsOutlinedIcon from '@mui/icons-material/PetsOutlined'
 import AddLocationAltOutlinedIcon from '@mui/icons-material/AddLocationAltOutlined'
 import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined'
 import PestControlRodentOutlinedIcon from '@mui/icons-material/PestControlRodentOutlined'
+import ImageNotSupportedOutlinedIcon from '@mui/icons-material/ImageNotSupportedOutlined'
 import { UserProvider, useUser } from './contexts/UserContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
@@ -42,6 +43,10 @@ import FaunaHotspots from './pages/FaunaHotspots'
 import { useDashboardMetrics } from './hooks/useDashboardMetrics'
 import { alpha } from '@mui/material/styles'
 import { BRAND, STATUS_META, HEALTH_META } from './theme'
+import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from './constants'
+import { toTitleCase } from './utils/formatters'
+import http from './http'
+import EstateHealthHero from './components/dashboard/EstateHealthHero'
 
 // Same elevated-card shadow used across FloraDetail/HorticultureHandbook, so the
 // Home summary cards share the same look.
@@ -101,8 +106,7 @@ function SummaryCard({ to, icon, color, bg, title, value, loading, description }
 
 // Field Officer / Manager - quick-glance counts, reusing the same
 // /api/dashboard/metrics call the Command Centre already polls.
-function InternalSummaryCards() {
-  const { metrics, loading } = useDashboardMetrics()
+function InternalSummaryCards({ metrics, loading }) {
   return (
     <Box sx={SUMMARY_GRID_SX}>
       <SummaryCard
@@ -184,6 +188,114 @@ function WelfarePartnerSummaryCards() {
   )
 }
 
+const RECENT_FLORA_COUNT = 6
+
+// One photo card in the recently-logged strip. Falls back to a placeholder
+// icon (rather than a broken <img>) if image_url is missing.
+function RecentFloraCard({ plant }) {
+  return (
+    <Card
+      sx={{
+        flex: '0 0 200px',
+        boxShadow: CARD_SHADOW,
+        overflow: 'hidden',
+        transition: 'box-shadow 0.2s ease',
+        '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+      }}
+    >
+      <CardActionArea component={RouterLink} to={`/flora/${plant.id}`}>
+        <Box sx={{ width: '100%', aspectRatio: '4 / 3', bgcolor: 'action.hover' }}>
+          {plant.image_url ? (
+            <Box
+              component="img"
+              src={plant.image_url}
+              alt={plant.species}
+              sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+          ) : (
+            <Box sx={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ImageNotSupportedOutlinedIcon sx={{ fontSize: 32, color: 'text.disabled' }} />
+            </Box>
+          )}
+        </Box>
+        <CardContent sx={{ p: 1.5 }}>
+          <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+            {plant.common_name || toTitleCase(plant.species)}
+          </Typography>
+          {plant.common_name && (
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+              {toTitleCase(plant.species)}
+            </Typography>
+          )}
+          <Chip
+            label={HEALTH_STATUS_LABELS[plant.health_status] || plant.health_status}
+            color={HEALTH_STATUS_COLORS[plant.health_status] || 'default'}
+            size="small"
+            sx={{ mt: 1 }}
+          />
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+// Field Officer / Manager - horizontal strip of the most recently inspected
+// flora. Reuses the same GET /api/flora call FloraList.jsx uses, just
+// sorted and sliced to the most recent few client-side.
+function RecentFloraStrip() {
+  const [plants, setPlants] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    http.get('/api/flora')
+      .then((res) => { if (active) setPlants(res.data) })
+      .catch(() => { if (active) setPlants([]) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const recent = [...plants]
+    .sort((a, b) => new Date(b.last_inspected_at || 0) - new Date(a.last_inspected_at || 0))
+    .slice(0, RECENT_FLORA_COUNT)
+
+  if (!loading && recent.length === 0) return null
+
+  return (
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="h6" sx={{ mb: 1.5 }}>Recently Logged Flora</Typography>
+      <Stack direction="row" spacing={2} sx={{ overflowX: 'auto', pb: 1 }}>
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} variant="rounded" sx={{ flex: '0 0 200px', height: 220, borderRadius: '14px' }} />
+          ))
+          : recent.map((plant) => <RecentFloraCard key={plant.id} plant={plant} />)}
+      </Stack>
+    </Box>
+  )
+}
+
+// Field Officer / Manager - estate health hero + KPI cards + recently logged
+// flora, all sharing the one useDashboardMetrics() poll (hero and cards read
+// the same metrics object, no duplicate fetch).
+function InternalHomeSections() {
+  const { metrics, loading } = useDashboardMetrics()
+  return (
+    <>
+      <EstateHealthHero
+        estateHealth={metrics?.estateHealth}
+        history={metrics?.history || []}
+        tiedBlocks={(metrics?.sightingsByBlock || [])
+          .filter(b => b.count === metrics?.sightingsByBlock?.[0]?.count)
+          .map(b => b.block_number)}
+        loading={loading}
+      />
+      <InternalSummaryCards metrics={metrics} loading={loading} />
+      <RecentFloraStrip />
+    </>
+  )
+}
+
 function Home() {
   const { user } = useUser()
   if (!user) {
@@ -212,7 +324,7 @@ function Home() {
       {user.role === 'welfare_partner' ? (
         <WelfarePartnerSummaryCards />
       ) : user.role === 'field_officer' || user.role === 'manager' ? (
-        <InternalSummaryCards />
+        <InternalHomeSections />
       ) : (
         <ResidentSummaryCards />
       )}
