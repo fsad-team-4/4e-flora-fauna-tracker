@@ -198,7 +198,7 @@ export default function FloraList() {
   const filtersActive = Boolean(searchQuery || healthFilter || locationFilter);
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
+    <Box sx={{ maxWidth: 1600, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
       {/* Page header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mb: 3, gap: 2, flexWrap: 'wrap' }}>
         <Box>
