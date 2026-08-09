@@ -489,7 +489,7 @@ const openMapPicker = (key) => {
   const anyUploading = locations.some((loc) => loc.uploading);
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
+    <Box sx={{ maxWidth: 1600, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
       {/* Page header */}
       <Stack direction="row" spacing={1.25} alignItems="center" sx={{ mb: 0.5 }}>
         <AddIcon sx={{ color: 'primary.main', fontSize: 28 }} />

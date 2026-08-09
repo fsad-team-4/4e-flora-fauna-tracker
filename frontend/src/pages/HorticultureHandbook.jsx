@@ -17,13 +17,28 @@ import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from '../constants';
 import { getPlantIcon } from '../utils/plantIcons';
 import { toTitleCase } from '../utils/formatters';
+import { CATEGORY_COLORS } from '../theme';
 
 // Plain CSS grid instead of MUI's <Grid> component - guarantees equal-width
 // cards regardless of MUI version differences in the Grid API.
 const CARD_GRID_SX = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 340px))',
   gap: 2,
+};
+
+// Same shadow used for the section cards in AddFlora.jsx/FloraDetail.jsx, so
+// the top-of-page cards share the same elevated-card look.
+const CARD_SHADOW = '0 4px 16px rgba(0,0,0,.05)';
+// Slightly deeper version of CARD_SHADOW for the hover state.
+const CARD_SHADOW_HOVER = '0 6px 20px rgba(0,0,0,.08)';
+
+// Pairs up the tool cards two-per-row on desktop, same responsive grid
+// pattern as the form/sidebar layout in AddFlora.jsx.
+const TOOL_ROW_SX = {
+  display: 'grid',
+  gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+  gap: 3,
 };
 
 // Sanitize a family name into a safe DOM id for the jump-to-family scroll targets.
@@ -279,7 +294,7 @@ export default function HorticultureHandbook() {
   const selectedSpeciesDetails = selectedSpecies ? speciesCatalog.get(selectedSpecies) : null;
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
+    <Box sx={{ maxWidth: 1600, mx: 'auto', mt: 4, mb: 6, px: 2 }}>
       {/* Page header */}
       <Box sx={{ mb: 3 }}>
         <Stack direction="row" spacing={1.25} alignItems="center">
@@ -291,9 +306,20 @@ export default function HorticultureHandbook() {
         </Typography>
       </Box>
 
+      {/* Bulk Import + Ask the Handbook - paired side by side on desktop */}
+      <Box sx={TOOL_ROW_SX}>
       {/* Bulk Import - upload the client's handbook/catalog document (species and
           botanical fields), as opposed to logging physically-planted greenery. */}
-      <Card sx={{ mb: 3 }}>
+      <Card
+        sx={{
+          height: '100%',
+          borderTop: 4,
+          borderTopColor: 'secondary.main',
+          boxShadow: CARD_SHADOW,
+          transition: 'box-shadow 0.2s ease',
+          '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+        }}
+      >
         <CardContent>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
             <UploadFileOutlinedIcon fontSize="small" color="action" />
@@ -374,62 +400,17 @@ export default function HorticultureHandbook() {
         </CardContent>
       </Card>
 
-      {/* Filter toolbar */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-            <SearchIcon fontSize="small" color="action" />
-            <Typography variant="h6">Search &amp; Filter</Typography>
-          </Stack>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Plant Family"
-              value={plantFamily}
-              onChange={(e) => setPlantFamily(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="Site Suitability"
-              value={siteSuitability}
-              onChange={(e) => setSiteSuitability(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <TerrainOutlinedIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="Color"
-              value={color}
-              onChange={(e) => setColor(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <PaletteOutlinedIcon fontSize="small" color="action" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Stack>
-        </CardContent>
-      </Card>
-
       {/* klemens - "Ask the Handbook" AI query section */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
+      <Card
+        sx={{
+          height: '100%',
+          borderTop: 4,
+          borderTopColor: CATEGORY_COLORS.pigeon,
+          boxShadow: CARD_SHADOW,
+          transition: 'box-shadow 0.2s ease',
+          '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+        }}
+      >
         <CardContent>
           <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
             Ask the Handbook
@@ -497,10 +478,85 @@ export default function HorticultureHandbook() {
           )}
         </CardContent>
       </Card>
+      </Box>
+
+      {/* Search & Filter + Planting Suggestions - paired side by side on desktop */}
+      <Box sx={{ ...TOOL_ROW_SX, mt: 3, mb: 3 }}>
+      {/* Filter toolbar */}
+      <Card
+        sx={{
+          height: '100%',
+          borderTop: 4,
+          borderTopColor: 'secondary.main',
+          boxShadow: CARD_SHADOW,
+          transition: 'box-shadow 0.2s ease',
+          '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+        }}
+      >
+        <CardContent>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+            <SearchIcon fontSize="small" color="action" />
+            <Typography variant="h6">Search &amp; Filter</Typography>
+          </Stack>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Plant Family"
+              value={plantFamily}
+              onChange={(e) => setPlantFamily(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Site Suitability"
+              value={siteSuitability}
+              onChange={(e) => setSiteSuitability(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <TerrainOutlinedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Color"
+              value={color}
+              onChange={(e) => setColor(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <PaletteOutlinedIcon fontSize="small" color="action" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </Stack>
+        </CardContent>
+      </Card>
 
       {/* Planting Suggestions - AI recommendations for a given site condition,
           grounded in the actual catalog (as opposed to open-ended Q&A above). */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
+      <Card
+        sx={{
+          height: '100%',
+          borderTop: 4,
+          borderTopColor: CATEGORY_COLORS.pigeon,
+          boxShadow: CARD_SHADOW,
+          transition: 'box-shadow 0.2s ease',
+          '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+        }}
+      >
         <CardContent>
           <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
             Planting Suggestions
@@ -560,6 +616,7 @@ export default function HorticultureHandbook() {
           )}
         </CardContent>
       </Card>
+      </Box>
 
       {/* Species details popup - opened by clicking a recommended species name */}
       <Dialog open={Boolean(selectedSpecies)} onClose={() => setSelectedSpecies(null)} maxWidth="sm" fullWidth>
