@@ -42,7 +42,7 @@ import FaunaSightingDetail from './pages/FaunaSightingDetail'
 import FaunaHotspots from './pages/FaunaHotspots'
 import { useDashboardMetrics } from './hooks/useDashboardMetrics'
 import { alpha } from '@mui/material/styles'
-import { BRAND, STATUS_META, HEALTH_META } from './theme'
+import { BRAND, STATUS_META, HEALTH_META, NAVBAR_HEIGHT } from './theme'
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, CATEGORY_LABELS, STATUS_COLORS } from './constants'
 import { toTitleCase } from './utils/formatters'
 import http from './http'
@@ -395,10 +395,38 @@ function Home() {
   const { user } = useUser()
   if (!user) {
     return (
-      <Box sx={{ mt: 4 }}>
-        <Typography>You are not logged in.</Typography>
-        <Button component={RouterLink} to="/login">Login</Button>
-        <Button component={RouterLink} to="/register">Register</Button>
+      <Box
+        sx={{
+          minHeight: { xs: `calc(100vh - ${NAVBAR_HEIGHT.xs}px)`, sm: `calc(100vh - ${NAVBAR_HEIGHT.sm}px)` },
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: `radial-gradient(ellipse at 50% 40%, #ffffff 0%, ${BRAND.section} 75%)`,
+          px: 2,
+          py: 6,
+        }}
+      >
+        <Card sx={{ maxWidth: 480, width: '100%', borderTop: 4, borderTopColor: 'primary.main', boxShadow: CARD_SHADOW }}>
+          <CardContent sx={{ p: { xs: 4, sm: 6 }, textAlign: 'center' }}>
+            <Box
+              sx={{
+                width: 72, height: 72, borderRadius: '18px', mx: 'auto', mb: 3,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                bgcolor: 'primary.main', color: '#fff', fontWeight: 800, fontSize: 28,
+              }}
+            >
+              EM
+            </Box>
+            <Typography variant="h5" sx={{ mb: 1.5 }}>Biodiversity Tracker</Typography>
+            <Typography color="text.secondary" sx={{ mb: 4 }}>
+              Estate flora, fauna and biodiversity tracking for EM Services staff and residents.
+            </Typography>
+            <Stack direction="row" spacing={2} justifyContent="center">
+              <Button component={RouterLink} to="/login" variant="contained">Login</Button>
+              <Button component={RouterLink} to="/register" variant="outlined">Register</Button>
+            </Stack>
+          </CardContent>
+        </Card>
       </Box>
     )
   }
@@ -473,7 +501,7 @@ function NavDrawer({ open, onClose, role }) {
           <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: 'primary.main', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>
             EM
           </Box>
-          <Typography sx={{ fontWeight: 800, letterSpacing: '-0.3px', fontSize: 17 }}>4E Biodiversity Tracker</Typography>
+          <Typography sx={{ fontWeight: 800, letterSpacing: '-0.3px', fontSize: 17 }}>Biodiversity Tracker</Typography>
         </Box>
         <Divider />
         {groups.map((g, gi) => (
@@ -556,7 +584,7 @@ function NavBar() {
               EM
             </Box>
             <Typography variant="h6" sx={{ color: 'text.primary', fontWeight: 800, letterSpacing: '-0.3px', fontSize: 18 }}>
-              4E Biodiversity Tracker
+              Biodiversity Tracker
             </Typography>
           </Box>
 

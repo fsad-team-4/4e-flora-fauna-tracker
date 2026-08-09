@@ -15,6 +15,10 @@ export const BRAND = {
   section: '#F6F7F9',
 };
 
+// Sticky AppBar height (Toolbar min-height + its py:0.5 padding), used by
+// full-viewport-height page layouts (logged-out Home, Login, Register).
+export const NAVBAR_HEIGHT = { xs: 64, sm: 72 };
+
 // Semantic status tokens shared by StatusPill and any status UI.
 export const STATUS_META = {
   open: { bg: '#FDECEA', color: '#C1272D', label: 'Open' },
