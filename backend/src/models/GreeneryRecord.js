@@ -65,7 +65,7 @@ const GreeneryRecord = sequelize.define('GreeneryRecord', {
     allowNull: true,
   },
   image_url: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT,
     allowNull: true,
   },
   is_catalog_only: {
