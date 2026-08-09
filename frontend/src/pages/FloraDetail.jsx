@@ -27,6 +27,13 @@ import http from '../http';
 import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, HEALTH_STATUS_OPTIONS } from '../constants';
 import { SINGAPORE_LOCATIONS } from '../constants/singaporeLocations';
 import { toTitleCase } from '../utils/formatters';
+import { CATEGORY_COLORS } from '../theme';
+
+// Same shadow used for the section cards in AddFlora.jsx, so the two pages
+// share the same elevated-card look.
+const CARD_SHADOW = '0 4px 16px rgba(0,0,0,.05)';
+// Slightly deeper version of CARD_SHADOW for the hover state.
+const CARD_SHADOW_HOVER = '0 6px 20px rgba(0,0,0,.08)';
 
 const validationSchema = yup.object({
   species: yup.string().required('Species is required'),
@@ -496,154 +503,184 @@ export default function FloraDetail() {
               </CardContent>
             </Card>
           ) : (
-            <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main` }}>
-              <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
-                {plant.image_url ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Box
-                      component="img"
-                      src={plant.image_url}
-                      alt={plant.species}
-                      sx={{
-                        width: 200, height: 200, objectFit: 'cover',
-                        borderRadius: 2, display: 'block', flexShrink: 0,
-                      }}
-                    />
-                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                      {detailsHeader}
+            <Stack spacing={3}>
+              <Card sx={{ borderLeft: 4, borderLeftColor: `${statusColor}.main`, boxShadow: CARD_SHADOW }}>
+                <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                  {plant.image_url ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Box
+                        component="img"
+                        src={plant.image_url}
+                        alt={plant.species}
+                        sx={{
+                          width: 200, height: 200, objectFit: 'cover',
+                          borderRadius: 2, display: 'block', flexShrink: 0,
+                        }}
+                      />
+                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                        {detailsHeader}
+                      </Box>
                     </Box>
+                  ) : (
+                    detailsHeader
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card
+                sx={{
+                  borderTop: 4,
+                  borderTopColor: 'success.main',
+                  boxShadow: CARD_SHADOW,
+                  transition: 'box-shadow 0.2s ease',
+                  '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                  <SectionHeading
+                    icon={<ParkOutlinedIcon color="success" />}
+                    title="Basic Information"
+                    subtitle="Current condition and where to find it"
+                  />
+
+                  <Stack spacing={2.5}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                      {plant.location && (
+                        <Box sx={{ flex: 1 }}>
+                          <DetailRow
+                            icon={<LocationOnOutlinedIcon fontSize="small" />}
+                            label="Location"
+                            value={plant.location}
+                          />
+                        </Box>
+                      )}
+                      {plant.location_zone && (
+                        <Box sx={{ flex: 1 }}>
+                          <DetailRow
+                            icon={<LocationOnOutlinedIcon fontSize="small" />}
+                            label="Location Zone"
+                            value={plant.location_zone}
+                          />
+                        </Box>
+                      )}
+                    </Stack>
+                    <DetailRow
+                      icon={<NotesOutlinedIcon fontSize="small" />}
+                      label="Health Notes"
+                      value={plant.health_notes || '-'}
+                    />
+                    <DetailRow
+                      icon={<EventOutlinedIcon fontSize="small" />}
+                      label="Last Inspected"
+                      value={plant.last_inspected_at
+                        ? new Date(plant.last_inspected_at).toLocaleDateString()
+                        : '-'}
+                    />
+                  </Stack>
+                </CardContent>
+              </Card>
+
+              <Card
+                sx={{
+                  borderTop: 4,
+                  borderTopColor: 'primary.main',
+                  boxShadow: CARD_SHADOW,
+                  transition: 'box-shadow 0.2s ease',
+                  '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+                }}
+              >
+                <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
+                  <SectionHeading
+                    icon={<LocalFloristOutlinedIcon color="primary" />}
+                    title="Botanical Catalog Details"
+                    subtitle="Catalog attributes shown in the Horticulture Handbook"
+                  />
+
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                      gap: 2,
+                    }}
+                  >
+                    <DetailRow
+                      icon={<CategoryOutlinedIcon fontSize="small" />}
+                      label="Plant Family"
+                      value={plant.plant_family || '-'}
+                    />
+                    <DetailRow
+                      icon={<TerrainOutlinedIcon fontSize="small" />}
+                      label="Site Suitability"
+                      value={plant.site_suitability || '-'}
+                    />
+                    <DetailRow
+                      icon={<PaletteOutlinedIcon fontSize="small" />}
+                      label="Color"
+                      value={plant.color || '-'}
+                    />
+                    <DetailRow
+                      icon={<HeightOutlinedIcon fontSize="small" />}
+                      label="Max Height at Maturity"
+                      value={plant.max_height_at_maturity != null
+                        ? `${plant.max_height_at_maturity} m`
+                        : '-'}
+                    />
                   </Box>
-                ) : (
-                  detailsHeader
-                )}
+                </CardContent>
+              </Card>
 
-                <Divider sx={{ my: 3 }} />
-
-                <SectionHeading
-                  icon={<ParkOutlinedIcon color="success" />}
-                  title="Basic Information"
-                  subtitle="Current condition and where to find it"
-                />
-
-                <Stack spacing={2}>
-                  {plant.location && (
-                    <DetailRow
-                      icon={<LocationOnOutlinedIcon fontSize="small" />}
-                      label="Location"
-                      value={plant.location}
-                    />
-                  )}
-                  {plant.location_zone && (
-                    <DetailRow
-                      icon={<LocationOnOutlinedIcon fontSize="small" />}
-                      label="Location Zone"
-                      value={plant.location_zone}
-                    />
-                  )}
-                  <DetailRow
-                    icon={<NotesOutlinedIcon fontSize="small" />}
-                    label="Health Notes"
-                    value={plant.health_notes || '-'}
-                  />
-                  <DetailRow
-                    icon={<EventOutlinedIcon fontSize="small" />}
-                    label="Last Inspected"
-                    value={plant.last_inspected_at
-                      ? new Date(plant.last_inspected_at).toLocaleDateString()
-                      : '-'}
-                  />
-                </Stack>
-
-                <Divider sx={{ my: 3 }} />
-
-                <SectionHeading
-                  icon={<LocalFloristOutlinedIcon color="primary" />}
-                  title="Botanical Catalog Details"
-                  subtitle="Catalog attributes shown in the Horticulture Handbook"
-                />
-
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                    gap: 2,
-                  }}
+              <Stack direction="row" spacing={2}>
+                <Button
+                  variant="contained"
+                  startIcon={<EditOutlinedIcon />}
+                  onClick={() => setEditing(true)}
                 >
-                  <DetailRow
-                    icon={<CategoryOutlinedIcon fontSize="small" />}
-                    label="Plant Family"
-                    value={plant.plant_family || '-'}
-                  />
-                  <DetailRow
-                    icon={<TerrainOutlinedIcon fontSize="small" />}
-                    label="Site Suitability"
-                    value={plant.site_suitability || '-'}
-                  />
-                  <DetailRow
-                    icon={<PaletteOutlinedIcon fontSize="small" />}
-                    label="Color"
-                    value={plant.color || '-'}
-                  />
-                  <DetailRow
-                    icon={<HeightOutlinedIcon fontSize="small" />}
-                    label="Max Height at Maturity"
-                    value={plant.max_height_at_maturity != null
-                      ? `${plant.max_height_at_maturity} m`
-                      : '-'}
-                  />
-                </Box>
+                  Edit
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  startIcon={<DeleteOutlinedIcon />}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete
+                </Button>
+              </Stack>
 
-                <Stack direction="row" spacing={2} sx={{ mt: 4 }}>
-                  <Button
-                    variant="contained"
-                    startIcon={<EditOutlinedIcon />}
-                    onClick={() => setEditing(true)}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    startIcon={<DeleteOutlinedIcon />}
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    Delete
-                  </Button>
-                </Stack>
-
-                <Divider sx={{ my: 3 }} />
-
-                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  Record Info
-                </Typography>
-                <Stack spacing={1.5}>
-                  {plant.recorder?.name && (
+              <Card variant="outlined">
+                <CardContent sx={{ p: { xs: 2.5, sm: 3 } }}>
+                  <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    Record Info
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    {plant.recorder?.name && (
+                      <DetailRow
+                        icon={<PersonOutlinedIcon fontSize="small" />}
+                        label="Recorded by"
+                        value={plant.recorder.name}
+                      />
+                    )}
                     <DetailRow
-                      icon={<PersonOutlinedIcon fontSize="small" />}
-                      label="Recorded by"
-                      value={plant.recorder.name}
+                      icon={<AccessTimeOutlinedIcon fontSize="small" />}
+                      label="Created"
+                      value={new Date(plant.createdAt).toLocaleString()}
                     />
-                  )}
-                  <DetailRow
-                    icon={<AccessTimeOutlinedIcon fontSize="small" />}
-                    label="Created"
-                    value={new Date(plant.createdAt).toLocaleString()}
-                  />
-                  <DetailRow
-                    icon={<AccessTimeOutlinedIcon fontSize="small" />}
-                    label="Updated"
-                    value={new Date(plant.updatedAt).toLocaleString()}
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
+                    <DetailRow
+                      icon={<AccessTimeOutlinedIcon fontSize="small" />}
+                      label="Updated"
+                      value={new Date(plant.updatedAt).toLocaleString()}
+                    />
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Stack>
           )}
 
         </Box>
 
         {/* Full-width AI care recommendation section */}
-        <Card sx={{ mt: 3 }}>
-          <CardContent>
+        <Card sx={{ mt: 3, borderTop: 4, borderTopColor: CATEGORY_COLORS.pigeon, boxShadow: CARD_SHADOW }}>
+          <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
               <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
               <Typography variant="h6">AI Care Recommendation</Typography>
