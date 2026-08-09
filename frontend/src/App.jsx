@@ -43,7 +43,7 @@ import FaunaHotspots from './pages/FaunaHotspots'
 import { useDashboardMetrics } from './hooks/useDashboardMetrics'
 import { alpha } from '@mui/material/styles'
 import { BRAND, STATUS_META, HEALTH_META, NAVBAR_HEIGHT } from './theme'
-import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS } from './constants'
+import { HEALTH_STATUS_LABELS, HEALTH_STATUS_COLORS, CATEGORY_LABELS, STATUS_COLORS } from './constants'
 import { toTitleCase } from './utils/formatters'
 import http from './http'
 import EstateHealthHero from './components/dashboard/EstateHealthHero'
@@ -164,6 +164,100 @@ function ResidentSummaryCards() {
   )
 }
 
+// Resident - one report card in the recent-reports strip. Top border colour
+// follows case status, same STATUS_META tokens used by the status pill
+// elsewhere on Home() - no new colours introduced.
+function RecentReportCard({ report }) {
+  return (
+    <Card
+      sx={{
+        flex: '0 0 220px',
+        borderTop: 4,
+        borderTopColor: STATUS_META[report.status]?.color || BRAND.border,
+        boxShadow: CARD_SHADOW,
+        transition: 'box-shadow 0.2s ease',
+        '&:hover': { boxShadow: CARD_SHADOW_HOVER },
+      }}
+    >
+      <CardActionArea component={RouterLink} to={`/reports/${report.id}`} sx={{ height: '100%' }}>
+        <CardContent sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+              {report.title}
+            </Typography>
+            <Chip
+              label={report.status}
+              color={STATUS_COLORS[report.status] || 'default'}
+              size="small"
+            />
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            {CATEGORY_LABELS[report.category] || report.category}
+          </Typography>
+          {report.block_number && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              {report.block_number}
+            </Typography>
+          )}
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            {new Date(report.createdAt).toLocaleDateString()}
+          </Typography>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+// Resident - horizontal strip of the resident's most recently submitted
+// reports. Reuses the same GET /api/reports call MyReports.jsx uses (already
+// scoped server-side to the logged-in resident), sorted and sliced to the
+// most recent few client-side.
+function RecentReportsStrip() {
+  const [reports, setReports] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    http.get('/api/reports')
+      .then((res) => { if (active) setReports(res.data) })
+      .catch(() => { if (active) setReports([]) })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const recent = [...reports]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, RECENT_REPORTS_COUNT)
+
+  return (
+    <Box sx={{ mt: 3 }}>
+      <Typography variant="h6" sx={{ mb: 1.5 }}>Recent Reports</Typography>
+      {loading ? (
+        <Stack direction="row" spacing={2} sx={{ overflowX: 'auto', pb: 1 }}>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} variant="rounded" sx={{ flex: '0 0 220px', height: 132, borderRadius: '14px' }} />
+          ))}
+        </Stack>
+      ) : recent.length === 0 ? (
+        <Card sx={{ boxShadow: CARD_SHADOW }}>
+          <CardContent sx={{ p: 3, textAlign: 'center' }}>
+            <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+              You haven&apos;t submitted any reports yet.
+            </Typography>
+            <Button component={RouterLink} to="/submit-report" variant="contained" size="small">
+              Submit Report
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Stack direction="row" spacing={2} sx={{ overflowX: 'auto', pb: 1 }}>
+          {recent.map((report) => <RecentReportCard key={report.id} report={report} />)}
+        </Stack>
+      )}
+    </Box>
+  )
+}
+
 // Welfare Partner - quick links to fauna sighting logging and browsing.
 function WelfarePartnerSummaryCards() {
   return (
@@ -189,6 +283,7 @@ function WelfarePartnerSummaryCards() {
 }
 
 const RECENT_FLORA_COUNT = 6
+const RECENT_REPORTS_COUNT = 5
 
 // One photo card in the recently-logged strip. Falls back to a placeholder
 // icon (rather than a broken <img>) if image_url is missing.
@@ -354,7 +449,10 @@ function Home() {
       ) : user.role === 'field_officer' || user.role === 'manager' ? (
         <InternalHomeSections />
       ) : (
-        <ResidentSummaryCards />
+        <>
+          <ResidentSummaryCards />
+          <RecentReportsStrip />
+        </>
       )}
     </Box>
   )
