@@ -196,15 +196,26 @@ describe('Horticulture Handbook - botanical catalog fields', () => {
     expect(res.body.every((r) => (r.plant_family || '').includes('Rubi'))).toBe(true);
   });
 
-  test('?color= exact match returns only matching records', async () => {
+  test('?color= case-insensitive partial match returns only matching records', async () => {
+    const pinkRed = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Catharanthus roseus', color: 'Pink-red flowers' });
+
+    const yellow = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Allamanda cathartica', color: 'Yellow' });
+
     const res = await request(app)
-      .get('/api/flora?color=red')
+      .get('/api/flora?color=pink')
       .set('Authorization', tokens.staff);
 
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
-    expect(res.body.every((r) => r.color === 'red')).toBe(true);
-    expect(res.body.some((r) => r.id === bougainvilleaId)).toBe(false);
+    expect(res.body.every((r) => (r.color || '').toLowerCase().includes('pink'))).toBe(true);
+    expect(res.body.some((r) => r.id === pinkRed.body.id)).toBe(true);
+    expect(res.body.some((r) => r.id === yellow.body.id)).toBe(false);
   });
 
   test('create with location and location_zone set to different values -> both saved', async () => {
