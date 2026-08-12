@@ -120,7 +120,7 @@ async function getAllGreenery(req, res) {
     where.location = { [CASE_INSENSITIVE_OP]: req.query.location };
   }
   if (req.query.color) {
-    where.color = req.query.color;
+    where.color = { [CASE_INSENSITIVE_OP]: req.query.color };
   }
 
   const records = await GreeneryRecord.findAll({
