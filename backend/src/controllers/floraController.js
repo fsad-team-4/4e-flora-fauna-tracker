@@ -10,9 +10,12 @@ const HEALTH_STATUSES = ['healthy', 'at_risk', 'critical'];
 const ALERT_STATUSES = ['at_risk', 'critical'];
 
 
-// Postgres' LIKE is case-sensitive (unlike SQLite's), so use iLike there to
-// keep substring filters matching regardless of case on both databases.
-const CASE_INSENSITIVE_OP = sequelize.getDialect() === 'postgres' ? Op.iLike : Op.substring;
+// Case-insensitive substring match on both dialects.
+// Op.substring auto-wraps with %...%; Op.iLike does not, so wrap manually.
+const insensitiveContains = (value) =>
+  sequelize.getDialect() === 'postgres'
+    ? { [Op.iLike]: `%${value}%` }
+    : { [Op.substring]: value };
 
 // Rule-based notification: email all staff/admin when a plant's health becomes
 // at_risk or critical. Fire-and-forget - sendMail swallows its own errors, so
@@ -78,10 +81,10 @@ const updateSchema = yup.object({
   site_suitability: yup.string().trim(),
   color: yup.string().trim(),
   max_height_at_maturity: yup
-  .number()
-  .transform((value) => (isNaN(value) ? null : value))
-  .positive('Max height must be a positive number')
-  .nullable(),
+    .number()
+    .transform((value) => (isNaN(value) ? null : value))
+    .positive('Max height must be a positive number')
+    .nullable(),
   image_url: yup.string().trim().url().nullable(),
 });
 
@@ -111,16 +114,16 @@ async function getAllGreenery(req, res) {
     where.health_status = req.query.health_status;
   }
   if (req.query.plant_family) {
-    where.plant_family = { [CASE_INSENSITIVE_OP]: req.query.plant_family };
+    where.plant_family = insensitiveContains(req.query.plant_family);
   }
   if (req.query.site_suitability) {
-    where.site_suitability = { [CASE_INSENSITIVE_OP]: req.query.site_suitability };
+    where.site_suitability = insensitiveContains(req.query.site_suitability);
   }
   if (req.query.location) {
-    where.location = { [CASE_INSENSITIVE_OP]: req.query.location };
+    where.location = insensitiveContains(req.query.location);
   }
   if (req.query.color) {
-    where.color = { [CASE_INSENSITIVE_OP]: req.query.color };
+    where.color = insensitiveContains(req.query.color);
   }
 
   const records = await GreeneryRecord.findAll({
