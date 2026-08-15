@@ -112,6 +112,10 @@ export default function FloraDetail() {
   const [deleting, setDeleting] = useState(false);
   const [recommending, setRecommending] = useState(false);
   const [recError, setRecError] = useState('');
+  const [editingRecommendation, setEditingRecommendation] = useState(false);
+  const [recommendationDraft, setRecommendationDraft] = useState('');
+  const [savingRecommendation, setSavingRecommendation] = useState(false);
+  const [saveRecError, setSaveRecError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -248,6 +252,32 @@ export default function FloraDetail() {
       setRecError(err.response?.data?.error || 'Failed to get AI recommendation');
     } finally {
       setRecommending(false);
+    }
+  };
+
+  const handleEditRecommendation = () => {
+    setRecommendationDraft(plant.care_recommendation || '');
+    setSaveRecError('');
+    setEditingRecommendation(true);
+  };
+
+  const handleCancelEditRecommendation = () => {
+    setEditingRecommendation(false);
+    setRecommendationDraft('');
+    setSaveRecError('');
+  };
+
+  const handleSaveRecommendation = async () => {
+    setSaveRecError('');
+    setSavingRecommendation(true);
+    try {
+      const res = await http.patch(`/api/flora/${id}`, { care_recommendation: recommendationDraft });
+      setPlant(res.data);
+      setEditingRecommendation(false);
+    } catch (err) {
+      setSaveRecError(err.response?.data?.error || 'Failed to save recommendation');
+    } finally {
+      setSavingRecommendation(false);
     }
   };
 
@@ -681,33 +711,73 @@ export default function FloraDetail() {
         {/* Full-width AI care recommendation section */}
         <Card sx={{ mt: 3, borderTop: 4, borderTopColor: CATEGORY_COLORS.pigeon, boxShadow: CARD_SHADOW }}>
           <CardContent sx={{ p: { xs: 2.5, sm: 4 } }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-              <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
-              <Typography variant="h6">AI Care Recommendation</Typography>
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
+                <Typography variant="h6">AI Care Recommendation</Typography>
+              </Stack>
+              {plant.care_recommendation && !editingRecommendation && (
+                <Button variant="outlined" size="small" startIcon={<EditOutlinedIcon fontSize="small" />} onClick={handleEditRecommendation}>
+                  Edit
+                </Button>
+              )}
             </Stack>
             {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
+            {saveRecError && <Alert severity="error" sx={{ mb: 2 }}>{saveRecError}</Alert>}
 
-            {plant.care_recommendation && (
-              <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
-                <CardContent>
-                  <Typography sx={{ whiteSpace: 'pre-line' }}>
-                    {plant.care_recommendation}
-                  </Typography>
-                </CardContent>
-              </Card>
+            {editingRecommendation ? (
+              <>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={8}
+                  value={recommendationDraft}
+                  onChange={(e) => setRecommendationDraft(e.target.value)}
+                  sx={{ mb: 2 }}
+                />
+                <Stack direction="row" spacing={2}>
+                  <Button
+                    variant="outlined"
+                    color="secondary"
+                    onClick={handleCancelEditRecommendation}
+                    disabled={savingRecommendation}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleSaveRecommendation}
+                    disabled={savingRecommendation}
+                  >
+                    {savingRecommendation ? 'Saving...' : 'Save'}
+                  </Button>
+                </Stack>
+              </>
+            ) : (
+              <>
+                {plant.care_recommendation && (
+                  <Card variant="outlined" sx={{ mb: 2, bgcolor: 'action.hover' }}>
+                    <CardContent>
+                      <Typography sx={{ whiteSpace: 'pre-line' }}>
+                        {plant.care_recommendation}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Button
+                  variant="outlined"
+                  onClick={handleGetRecommendation}
+                  disabled={recommending}
+                >
+                  {recommending
+                    ? 'Getting recommendation...'
+                    : plant.care_recommendation
+                      ? 'Regenerate'
+                      : 'Get AI Recommendation'}
+                </Button>
+              </>
             )}
-
-            <Button
-              variant="outlined"
-              onClick={handleGetRecommendation}
-              disabled={recommending}
-            >
-              {recommending
-                ? 'Getting recommendation...'
-                : plant.care_recommendation
-                  ? 'Regenerate'
-                  : 'Get AI Recommendation'}
-            </Button>
           </CardContent>
         </Card>
         </>

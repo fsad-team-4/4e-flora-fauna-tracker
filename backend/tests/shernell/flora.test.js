@@ -359,6 +359,27 @@ describe('PATCH /api/flora/:id', () => {
     expect(res.body.health_status).toBe('at_risk');
   });
 
+  test('update care_recommendation -> 200, new value replaces old one', async () => {
+    const created = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Plant with recommendation' });
+
+    await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'Old recommendation' });
+
+    const res = await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'New recommendation' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.care_recommendation).toBe('New recommendation');
+    expect(res.body.care_recommendation).not.toBe('Old recommendation');
+  });
+
   test('non-existent id -> 404', async () => {
     const res = await request(app)
       .patch('/api/flora/999')
