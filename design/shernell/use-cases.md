@@ -176,6 +176,20 @@ Main flow:
 5. The backend stores the text in `care_recommendation`, saves, and returns
    `200` with the updated record. The detail page renders the bullets.
 
+Staff can also manually edit an existing recommendation, so an AI mistake
+does not have to be fixed by discarding and regenerating the whole thing.
+An "Edit" button appears next to the "AI Care Recommendation" title, but
+only once a recommendation already exists. Clicking it replaces the
+read-only bullets with an editable, pre-filled text area and hides the
+Regenerate button while editing is in progress. "Save" sends a
+`PATCH /api/flora/:id` with the edited `care_recommendation` text; "Cancel"
+discards the draft and returns to the read-only view without calling the
+API. If the save request fails, the error is shown inline and the text
+area stays open with the edited text intact, so the in-progress edit is
+not lost. This serves the same client priority as the main flow: it lets
+staff correct details the AI occasionally gets wrong, so the guidance
+shown to maintenance staff stays accurate.
+
 Alternate / edge flows:
 
 - Non-existent (or soft-deleted) plant -> `404`. The record lookup happens

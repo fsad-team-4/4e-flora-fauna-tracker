@@ -86,6 +86,7 @@ const updateSchema = yup.object({
     .positive('Max height must be a positive number')
     .nullable(),
   image_url: yup.string().trim().url().nullable(),
+  care_recommendation: yup.string().trim().nullable(),
 });
 
 // Splits a CSV buffer into row objects keyed by the header row.
