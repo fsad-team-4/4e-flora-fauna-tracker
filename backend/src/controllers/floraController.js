@@ -327,7 +327,26 @@ Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤�
     });
     recommendation = response.text;
   } catch (err) {
-    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+    // The raw SDK message is meaningless to staff, so log it for the Render
+    // logs and hand the client something they can act on instead.
+    console.error('Care recommendation failed:', err);
+
+    const status = err.status;
+    const message = (err.message || '').toLowerCase();
+
+    if (status === 429 || message.includes('quota') || message.includes('rate limit')) {
+      return res.status(429).json({
+        error: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (status === 503 || message.includes('overloaded') || message.includes('unavailable')) {
+      return res.status(503).json({
+        error: 'The AI service is temporarily overloaded. Please try again in a moment.',
+      });
+    }
+    return res.status(502).json({
+      error: 'Could not get a care recommendation from the AI service. Please try again.',
+    });
   }
 
   record.care_recommendation = recommendation;
@@ -443,7 +462,26 @@ If literally nothing in the catalog is suitable, "recommendations" must be an em
     });
     responseText = response.text;
   } catch (err) {
-    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+    // The raw SDK message is meaningless to staff, so log it for the Render
+    // logs and hand the client something they can act on instead.
+    console.error('Planting suggestions failed:', err);
+
+    const status = err.status;
+    const message = (err.message || '').toLowerCase();
+
+    if (status === 429 || message.includes('quota') || message.includes('rate limit')) {
+      return res.status(429).json({
+        error: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (status === 503 || message.includes('overloaded') || message.includes('unavailable')) {
+      return res.status(503).json({
+        error: 'The AI service is temporarily overloaded. Please try again in a moment.',
+      });
+    }
+    return res.status(502).json({
+      error: 'Could not get planting suggestions from the AI service. Please try again.',
+    });
   }
 
   const cleaned = responseText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -501,7 +539,26 @@ If the image does not clearly show a plant, or the species cannot be reasonably 
     });
     responseText = response.text;
   } catch (err) {
-    return res.status(502).json({ error: `AI request failed: ${err.message}` });
+    // The raw SDK message is meaningless to staff, so log it for the Render
+    // logs and hand the client something they can act on instead.
+    console.error('Species identification failed:', err);
+
+    const status = err.status;
+    const message = (err.message || '').toLowerCase();
+
+    if (status === 429 || message.includes('quota') || message.includes('rate limit')) {
+      return res.status(429).json({
+        error: 'The AI service is busy right now. Please try again in a moment.',
+      });
+    }
+    if (status === 503 || message.includes('overloaded') || message.includes('unavailable')) {
+      return res.status(503).json({
+        error: 'The AI service is temporarily overloaded. Please try again in a moment.',
+      });
+    }
+    return res.status(502).json({
+      error: 'Could not identify the species from the AI service. Please try again.',
+    });
   }
 
   const cleaned = responseText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
