@@ -11,6 +11,17 @@ jest.mock('../../src/config/mailer', () => ({
   getTransporter: jest.fn(),
 }));
 
+// Mock the Gemini SDK so the AI regenerate-and-log test can run without a
+// real GEMINI_API_KEY or network call. mockGenerateContent is declared with
+// the "mock" prefix so babel-plugin-jest-hoist allows the factory below to
+// close over it.
+const mockGenerateContent = jest.fn();
+jest.mock('@google/genai', () => ({
+  GoogleGenAI: jest.fn().mockImplementation(() => ({
+    models: { generateContent: mockGenerateContent },
+  })),
+}));
+
 const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const app = require('../../src/index');
@@ -458,6 +469,132 @@ describe('POST /api/flora/:id/care-recommendation', () => {
 
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('AI service not configured');
+  });
+
+  // Regenerating over an existing recommendation should log the value it
+  // replaced. The Gemini SDK is mocked (see top of file) so this runs
+  // without a real GEMINI_API_KEY or network call.
+  describe('regenerate over an existing recommendation - logs the old value', () => {
+    afterEach(() => {
+      delete process.env.GEMINI_API_KEY;
+      mockGenerateContent.mockReset();
+    });
+
+    test('creates a CareRecommendationLog entry with source: ai and the old value', async () => {
+      const created = await request(app)
+        .post('/api/flora')
+        .set('Authorization', tokens.staff)
+        .send({ species: 'AI Regen Plant' });
+
+      await request(app)
+        .patch(`/api/flora/${created.body.id}`)
+        .set('Authorization', tokens.staff)
+        .send({ care_recommendation: 'Pre-existing recommendation' });
+
+      process.env.GEMINI_API_KEY = 'test-key';
+      mockGenerateContent.mockResolvedValueOnce({ text: 'Fresh AI recommendation' });
+
+      const res = await request(app)
+        .post(`/api/flora/${created.body.id}/care-recommendation`)
+        .set('Authorization', tokens.staff);
+
+      expect(res.status).toBe(200);
+      expect(res.body.care_recommendation).toBe('Fresh AI recommendation');
+
+      const history = await request(app)
+        .get(`/api/flora/${created.body.id}/care-recommendation-history`)
+        .set('Authorization', tokens.staff);
+
+      expect(history.status).toBe(200);
+      expect(history.body).toHaveLength(1);
+      expect(history.body[0].recommendation).toBe('Pre-existing recommendation');
+      expect(history.body[0].source).toBe('ai');
+    });
+  });
+});
+
+describe('PATCH /api/flora/:id - care_recommendation version history', () => {
+  test('overwriting an existing value logs a CareRecommendationLog with source: manual, the old value, and changed_by', async () => {
+    const created = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'Manual Log Plant' });
+
+    await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'First manual value' });
+
+    const res = await request(app)
+      .patch(`/api/flora/${created.body.id}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'Second manual value' });
+    expect(res.status).toBe(200);
+
+    const history = await request(app)
+      .get(`/api/flora/${created.body.id}/care-recommendation-history`)
+      .set('Authorization', tokens.staff);
+
+    expect(history.status).toBe(200);
+    expect(history.body).toHaveLength(1);
+    expect(history.body[0].recommendation).toBe('First manual value');
+    expect(history.body[0].source).toBe('manual');
+    expect(history.body[0].changed_by).toBe(1); // tokens.staff is user id 1 (seeded first, see beforeAll)
+  });
+});
+
+describe('GET /api/flora/:id/care-recommendation-history', () => {
+  let historyPlantId;
+
+  beforeAll(async () => {
+    const created = await request(app)
+      .post('/api/flora')
+      .set('Authorization', tokens.staff)
+      .send({ species: 'History Ordering Plant' });
+    historyPlantId = created.body.id;
+
+    await request(app)
+      .patch(`/api/flora/${historyPlantId}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'First recommendation' });
+    await request(app)
+      .patch(`/api/flora/${historyPlantId}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'Second recommendation' });
+    await request(app)
+      .patch(`/api/flora/${historyPlantId}`)
+      .set('Authorization', tokens.staff)
+      .send({ care_recommendation: 'Third recommendation' });
+  });
+
+  test('returns entries newest first, with the changer association included', async () => {
+    const res = await request(app)
+      .get(`/api/flora/${historyPlantId}/care-recommendation-history`)
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    // Newest first: the most recent overwrite (Second -> Third) logged "Second recommendation".
+    expect(res.body[0].recommendation).toBe('Second recommendation');
+    expect(res.body[1].recommendation).toBe('First recommendation');
+    expect(res.body[0].changer).toBeDefined();
+    expect(res.body[0].changer.name).toBe('staff');
+  });
+
+  test('resident attempts access -> 403', async () => {
+    const res = await request(app)
+      .get(`/api/flora/${historyPlantId}/care-recommendation-history`)
+      .set('Authorization', tokens.res1);
+
+    expect(res.status).toBe(403);
+  });
+
+  test('non-existent plant id -> 404', async () => {
+    const res = await request(app)
+      .get('/api/flora/999999/care-recommendation-history')
+      .set('Authorization', tokens.staff);
+
+    expect(res.status).toBe(404);
   });
 });
 
