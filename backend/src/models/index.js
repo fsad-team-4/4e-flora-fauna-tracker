@@ -3,6 +3,7 @@ const User = require('./User');
 const ResidentReport = require('./ResidentReport');
 const CaseStatusLog = require('./CaseStatusLog');
 const GreeneryRecord = require('./GreeneryRecord');
+const CareRecommendationLog = require('./CareRecommendationLog');
 const AlertRule = require('./AlertRule');
 const NotificationLog = require('./NotificationLog');
 const RodentAssessment = require('./RodentAssessment');
@@ -26,6 +27,12 @@ ZoneAssignment.belongsTo(User, { foreignKey: 'user_id' });
 
 User.hasMany(GreeneryRecord, { foreignKey: 'recorded_by' });
 GreeneryRecord.belongsTo(User, { as: 'recorder', foreignKey: 'recorded_by' });
+
+GreeneryRecord.hasMany(CareRecommendationLog, { foreignKey: 'greenery_id' });
+CareRecommendationLog.belongsTo(GreeneryRecord, { foreignKey: 'greenery_id' });
+
+CareRecommendationLog.belongsTo(User, { as: 'changer', foreignKey: 'changed_by' });
+
 AlertRule.belongsTo(User, { as: 'creator', foreignKey: 'created_by' });
 NotificationLog.belongsTo(AlertRule, { as: 'rule', foreignKey: 'rule_id' });
 
@@ -35,6 +42,7 @@ module.exports = {
   ResidentReport,
   CaseStatusLog,
   GreeneryRecord,
+  CareRecommendationLog,
   AlertRule,
   NotificationLog,
   RodentAssessment,
