@@ -63,9 +63,12 @@ Relationships:
 
 Field notes:
 
-- `care_recommendation` is not set on create or update; it is written only by
+- `care_recommendation` is not set on create. It is written by
   `POST /api/flora/:id/care-recommendation`, which stores the Gemini-generated
-  text there.
+  text there, and can also be manually edited by staff via `PATCH
+  /api/flora/:id` (it's part of `updateSchema`). Either write path logs the
+  value it is about to overwrite to `CareRecommendationLogs` first - see that
+  table below.
 - `is_deleted` drives the soft delete: `DELETE /api/flora/:id` sets it to
   `true`, and every read query filters on `is_deleted = false`, so deleted
   records disappear from the API while remaining in the table (supporting the
@@ -92,8 +95,53 @@ Field notes:
 
 ---
 
+## CareRecommendationLogs
+
+Version history of a plant's `care_recommendation`. One row is written each
+time the field is about to be overwritten - by AI regeneration or a manual
+edit - preserving the old value that would otherwise be lost.
+
+| Column | Type | Constraints |
+|--------|------|-------------|
+| id | INTEGER | PK, auto-increment |
+| greenery_id | INTEGER | NOT NULL, FK -> `GreeneryRecords.id` |
+| recommendation | TEXT | NOT NULL |
+| source | STRING | NOT NULL (`'ai'` or `'manual'`) |
+| changed_by | INTEGER | NOT NULL, FK -> `Users.id` |
+| createdAt | DATETIME | NOT NULL |
+| updatedAt | DATETIME | NOT NULL |
+
+Relationships:
+
+- `CareRecommendationLogs.greenery_id` -> `GreeneryRecords.id` (one plant has
+  many log entries). Defined in `backend/src/models/index.js`:
+  `GreeneryRecord.hasMany(CareRecommendationLog, { foreignKey: 'greenery_id' })`
+  and `CareRecommendationLog.belongsTo(GreeneryRecord, { foreignKey: 'greenery_id' })`.
+- `CareRecommendationLogs.changed_by` -> `Users.id` (association alias
+  `changer`, exposing `{ id, name }` on read). Defined in
+  `backend/src/models/index.js`:
+  `CareRecommendationLog.belongsTo(User, { as: 'changer', foreignKey: 'changed_by' })`.
+
+Field notes:
+
+- A row is only written when a genuine prior value existed
+  (`record.care_recommendation` was truthy) AND the incoming value actually
+  differs from it. A first-time generation on a plant with no prior
+  recommendation is not logged - there's nothing to preserve - and a no-op
+  save where the value doesn't change is also not logged.
+- `source` records which write path caused the overwrite: `'ai'` when
+  `POST /api/flora/:id/care-recommendation` regenerates the text, `'manual'`
+  when `PATCH /api/flora/:id` saves a staff edit.
+- This mirrors the version-history pattern already used by `CaseStatusLog`
+  (`design/klemens/database-schema.md`) - a separate log table with a
+  `changed_by` FK aliased `changer` - kept consistent across modules.
+
+---
+
 ## Foreign key summary
 
 | Foreign key | References |
 |-------------|------------|
 | GreeneryRecords.recorded_by | Users.id |
+| CareRecommendationLogs.greenery_id | GreeneryRecords.id |
+| CareRecommendationLogs.changed_by | Users.id |
