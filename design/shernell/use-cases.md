@@ -600,3 +600,58 @@ still-blank botanical fields) reflect the suggestion, identical to a manual
 Species Autocomplete selection; on "Dismiss" or any error, the form is
 unchanged and nothing is persisted - identification is stateless and does
 not save to the record until the staff member submits the form.
+
+---
+
+## UC-13: Staff views the version history of a care recommendation
+
+- Actor: staff (or admin)
+- Precondition: the user is logged in with role staff or admin; the target
+  record exists and is not soft-deleted.
+
+Client priority served: an AI regeneration or a manual edit (UC-4) both
+overwrite `care_recommendation` in place, so without a history staff have no
+way to recover a prior version they preferred or check what changed. This
+gives them that safety net.
+
+Main flow:
+
+1. On a plant's detail page, in the AI Care Recommendation section, a "View
+   History" button appears next to Edit - but only once
+   `plant.care_recommendation` exists (same visibility guard as Edit).
+2. Clicking "View History" opens a dialog and calls
+   `GET /api/flora/:id/care-recommendation-history`.
+3. The backend looks up the record (`is_deleted = false`) and returns `200`
+   with all `CareRecommendationLog` rows for that plant, ordered newest
+   first (`createdAt DESC`), each including the changer's `id`/`name`.
+4. The dialog renders each entry as a card: a chip labelled "AI Generated"
+   (source `ai`) or "Manual Edit" (source `manual`), a timestamp, "Changed
+   by <name>" when a changer is on record, and the old recommendation text
+   that was overwritten.
+
+Logging behaviour (applies to both UC-4 flows that can overwrite
+`care_recommendation`):
+
+- Regenerating (`POST /api/flora/:id/care-recommendation`) logs the old
+  value with `source: 'ai'` before saving the new one.
+- Manually editing (`PATCH /api/flora/:id` with `care_recommendation`) logs
+  the old value with `source: 'manual'` before saving the new one.
+- In both cases a log entry is only created when a prior value existed
+  (`record.care_recommendation` is truthy) AND it actually differs from the
+  incoming value. A first-time generation on a plant with no prior
+  recommendation is not logged - there is nothing to preserve. A save where
+  the value is unchanged (e.g. Edit -> Save with no edits) is also not
+  logged.
+
+Alternate / edge flows:
+
+- No edits or regenerations have happened yet -> the history array is empty
+  and the dialog shows "No edit history yet." instead of a blank list.
+- Non-existent (or soft-deleted) plant id -> `404`
+  `{ "error": "Greenery record not found" }`.
+- A resident attempting the history endpoint -> `403`.
+
+Postcondition: the staff member sees every prior version of the
+recommendation that was overwritten, each attributed to how it was replaced
+(AI regeneration or manual edit) and by whom; no data is modified by viewing
+history.

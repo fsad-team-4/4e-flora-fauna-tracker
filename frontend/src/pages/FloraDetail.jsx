@@ -116,6 +116,10 @@ export default function FloraDetail() {
   const [recommendationDraft, setRecommendationDraft] = useState('');
   const [savingRecommendation, setSavingRecommendation] = useState(false);
   const [saveRecError, setSaveRecError] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -286,6 +290,21 @@ export default function FloraDetail() {
     } finally {
       setSavingRecommendation(false);
     }
+  };
+
+  const handleOpenHistory = () => {
+    setHistoryOpen(true);
+    setHistoryError('');
+    setHistoryLoading(true);
+    http
+      .get(`/api/flora/${id}/care-recommendation-history`)
+      .then((res) => setHistoryEntries(res.data))
+      .catch((err) => setHistoryError(err.response?.data?.error || 'Failed to load history'))
+      .finally(() => setHistoryLoading(false));
+  };
+
+  const handleCloseHistory = () => {
+    setHistoryOpen(false);
   };
 
   const statusColor = plant ? (HEALTH_STATUS_COLORS[plant.health_status] || 'default') : 'default';
@@ -735,10 +754,17 @@ export default function FloraDetail() {
                 <AutoAwesomeOutlinedIcon fontSize="small" color="action" />
                 <Typography variant="h6">AI Care Recommendation</Typography>
               </Stack>
-              {plant.care_recommendation && !editingRecommendation && (
-                <Button variant="outlined" size="small" startIcon={<EditOutlinedIcon fontSize="small" />} onClick={handleEditRecommendation}>
-                  Edit
-                </Button>
+              {plant.care_recommendation && (
+                <Stack direction="row" spacing={1}>
+                  <Button variant="text" size="small" onClick={handleOpenHistory}>
+                    View History
+                  </Button>
+                  {!editingRecommendation && (
+                    <Button variant="outlined" size="small" startIcon={<EditOutlinedIcon fontSize="small" />} onClick={handleEditRecommendation}>
+                      Edit
+                    </Button>
+                  )}
+                </Stack>
               )}
             </Stack>
             {recError && <Alert severity="error" sx={{ mb: 2 }}>{recError}</Alert>}
@@ -816,6 +842,55 @@ export default function FloraDetail() {
           <Button color="error" onClick={handleDelete} disabled={deleting}>
             {deleting ? 'Deleting...' : 'Delete'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={historyOpen} onClose={handleCloseHistory} maxWidth="sm" fullWidth>
+        <DialogTitle>Care Recommendation History</DialogTitle>
+        <DialogContent dividers>
+          {historyLoading && (
+            <Stack spacing={2}>
+              <Skeleton variant="rounded" height={90} />
+              <Skeleton variant="rounded" height={90} />
+            </Stack>
+          )}
+          {!historyLoading && historyError && <Alert severity="error">{historyError}</Alert>}
+          {!historyLoading && !historyError && historyEntries.length === 0 && (
+            <Typography color="text.secondary">No edit history yet.</Typography>
+          )}
+          {!historyLoading && !historyError && historyEntries.length > 0 && (
+            <Stack spacing={2}>
+              {historyEntries.map((entry) => (
+                <Card key={entry.id} variant="outlined">
+                  <CardContent>
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                      <Chip
+                        label={entry.source === 'ai' ? 'AI Generated' : 'Manual Edit'}
+                        color={entry.source === 'ai' ? 'primary' : 'secondary'}
+                        size="small"
+                      />
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </Typography>
+                    </Stack>
+                    {entry.changer?.name && (
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                        Changed by {entry.changer.name}
+                      </Typography>
+                    )}
+                    <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, p: 1.5, maxHeight: 200, overflowY: 'auto' }}>
+                      <Typography sx={{ whiteSpace: 'pre-line' }}>
+                        {entry.recommendation}
+                      </Typography>
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseHistory}>Close</Button>
         </DialogActions>
       </Dialog>
 

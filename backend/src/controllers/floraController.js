@@ -1,7 +1,7 @@
 const yup = require('yup');
 const { Op } = require('sequelize');
 const { GoogleGenAI } = require('@google/genai');
-const { GreeneryRecord, User } = require('../models');
+const { GreeneryRecord, CareRecommendationLog, User } = require('../models');
 const sequelize = require('../config/database');
 const { sendMail } = require('../config/mailer');
 const floraQueryService = require('../services/floraQueryService');
@@ -211,6 +211,19 @@ async function updateGreenery(req, res) {
 
   const previousStatus = record.health_status;
 
+  if (
+    Object.prototype.hasOwnProperty.call(data, 'care_recommendation') &&
+    record.care_recommendation &&
+    data.care_recommendation !== record.care_recommendation
+  ) {
+    await CareRecommendationLog.create({
+      greenery_id: record.id,
+      recommendation: record.care_recommendation,
+      source: 'manual',
+      changed_by: req.user.user_id,
+    });
+  }
+
   Object.keys(data).forEach((key) => {
     record[key] = data[key];
   });
@@ -349,10 +362,37 @@ Start each bullet with an emoji that matches its topic: 💧 for watering, 🌤�
     });
   }
 
+  if (record.care_recommendation && record.care_recommendation !== recommendation) {
+    await CareRecommendationLog.create({
+      greenery_id: record.id,
+      recommendation: record.care_recommendation,
+      source: 'ai',
+      changed_by: req.user.user_id,
+    });
+  }
+
   record.care_recommendation = recommendation;
   await record.save();
 
   return res.status(200).json(record);
+}
+
+// Return the version history of a plant's care recommendation, newest first
+async function getCareRecommendationHistory(req, res) {
+  const record = await GreeneryRecord.findOne({
+    where: { id: req.params.id, is_deleted: false },
+  });
+  if (!record) {
+    return res.status(404).json({ error: 'Greenery record not found' });
+  }
+
+  const logs = await CareRecommendationLog.findAll({
+    where: { greenery_id: record.id },
+    include: [{ association: 'changer', attributes: ['id', 'name'] }],
+    order: [['createdAt', 'DESC']],
+  });
+
+  return res.status(200).json(logs);
 }
 
 // Answer a natural-language question grounded in the greenery catalog
@@ -578,6 +618,7 @@ module.exports = {
   softDeleteGreenery,
   bulkUploadCSV,
   careRecommendation,
+  getCareRecommendationHistory,
   queryHandbook,
   getPlantingSuggestions,
   identifySpecies,
